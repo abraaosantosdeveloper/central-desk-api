@@ -107,4 +107,4 @@ Em fase de levantamento de requisitos e configuração do ambiente.
 
 ## Documentação
 
-A documentação formal, em LaTeX seguindo as normas ABNT, está em `docs/documentacao.tex`.
+A documentação formal, em LaTeX seguindo as normas ABNT, está em `docs/DOC_SISTEMA_CHAMADOS_0.1.pdf`.
