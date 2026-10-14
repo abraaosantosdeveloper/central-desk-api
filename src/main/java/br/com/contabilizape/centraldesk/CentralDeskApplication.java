@@ -1,10 +1,10 @@
-package br.com.contabilizape.sistema_chamados;
+package br.com.contabilizape.centraldesk;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class SistemaChamadosApplication {
+public class CentralDeskApplication {
 
 	public static void main(String[] args) {
 		System.out.println("DB_URL definida: "
@@ -14,7 +14,7 @@ public class SistemaChamadosApplication {
 				+ (System.getenv("DB_URL") != null
 				&& System.getenv("DB_URL").startsWith("jdbc:")));
 
-		SpringApplication.run(SistemaChamadosApplication.class, args);
+		SpringApplication.run(CentralDeskApplication.class, args);
 	}
 
 }

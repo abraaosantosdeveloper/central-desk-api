@@ -9,10 +9,10 @@
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>br.com.contabilizape</groupId>
-	<artifactId>sistema_chamados</artifactId>
+	<artifactId>centraldesk</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name>sistema_chamados</name>
-	<description/>
+	<name>centraldesk</name>
+	<description>Central de chamados internos</description>
 	<url/>
 	<licenses>
 		<license/>

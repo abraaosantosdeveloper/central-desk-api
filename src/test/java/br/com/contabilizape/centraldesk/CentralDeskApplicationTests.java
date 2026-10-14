@@ -1,10 +1,10 @@
-package br.com.contabilizape.sistema_chamados;
+package br.com.contabilizape.centraldesk;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest
-class SistemaChamadosApplicationTests {
+class CentralDeskApplicationTests {
 
 	@Test
 	void contextLoads() {
