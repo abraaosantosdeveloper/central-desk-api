@@ -36,14 +36,11 @@ Um painel onde os usuários registram seus chamados, classificados por **categor
 - **RF05**: abertura de chamados
 - **RF06**: alteração de status (Em aberto, Em progresso, Concluído/Encerrado)
 - **RF07**: encerramento de chamados
-
-**Propostos (a validar)**
-
 - **RF08**: categorização no momento da abertura
 - **RF09**: definição de urgência
 - **RF10**: associação a setor e colaborador responsável
 - **RF11**: listagem com filtros por status, categoria, urgência, setor e colaborador
-- **RF12**: consulta aos detalhes e ao histórico do chamado
+- **RF12**: consulta aos detalhes e a última alteração do chamado
 - **RF13**: comentários nos chamados
 - **RF14**: notificações por e-mail do domínio da empresa
 - **RF15**: notificações internas na interface
@@ -108,3 +105,20 @@ Em fase de levantamento de requisitos e configuração do ambiente.
 ## Documentação
 
 A documentação formal, em LaTeX seguindo as normas ABNT, está em `docs/DOC_SISTEMA_CHAMADOS_0.1.pdf`.
+
+## Rotas da aplicação
+
+| Endpoint | Método| Finalidade |
+|---|---|---|
+| `/users/register` | `POST` | Cadastrar novos usuários |
+| `/users/login` | `POST` | Iniciar sessão |
+| `/users/logout` | `POST` | Encerrar sessão |
+| `/users/me/edit` | `PUT` | Editar perfil de usuário |
+| `/users/me/deactivate` | `PATCH` | Desativar conta de usuário |
+| `/users/me` | `GET` | Perfil do usuário (Privado) |
+| `/users/{id}` | `GET` | Perfil de usuário de id qualquer (público) |
+| `/users/{id}/deactivate` | `PATCH` | Desativar conta de usuário |
+| `/users/me/tickets` | `GET` | Lista de chamados do usuário de logado |
+| `/users/{id}/tickets` | `GET` | Lista de chamados do usuário de ID correspondente |
+| `/users/{id}/tickets/{id}` | `GET` | Informações do chamado |
+| `/users/` | | |

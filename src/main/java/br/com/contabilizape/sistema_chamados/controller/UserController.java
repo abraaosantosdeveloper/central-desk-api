@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/users")
 public class UserController {
 
-    @GetMapping()
+    @PostMapping("/register")
     public String returnInfo(){
         return "Não há usuários";
 
