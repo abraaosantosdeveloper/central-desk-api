@@ -1,2 +1,6 @@
+# Normaliza fins de linha: o repositório guarda LF; no Windows a cópia local pode ficar em CRLF
+# sem aparecer como modificação no git status.
+* text=auto
+
 /mvnw text eol=lf
 *.cmd text eol=crlf
