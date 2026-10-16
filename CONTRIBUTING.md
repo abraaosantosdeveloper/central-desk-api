@@ -33,6 +33,8 @@ A `main` está **sempre estável**: compila, e `.\mvnw test` passa. Nada é comm
 
 ## Fluxo do dia a dia
 
+Primeira vez numa cópia nova do repositório: ative os hooks (ver [Proteção da `main`](#proteção-da-main)).
+
 ```powershell
 # 1. Partir da main atualizada
 git switch main
@@ -96,9 +98,49 @@ git tag -a v0.1.0 -m "Cadastro de usuários e lista de departamentos"
 git push origin v0.1.0
 ```
 
-## Proteção da `main` (GitHub)
+## Proteção da `main`
 
-Em *Settings → Branches → Branch protection rules*, para a `main`:
+O repositório é privado e a organização está no plano gratuito do GitHub, que **não permite regras de proteção de branch** (exigem o plano Team). Por isso a proteção é feita em duas camadas:
 
-- exigir pull request antes do merge (com 0 aprovações enquanto só há um desenvolvedor back-end);
-- quando houver CI, exigir que a verificação dos testes passe.
+### 1. Hooks locais do Git (obrigatório em toda cópia do repositório)
+
+A pasta `.githooks/` traz dois hooks:
+
+| Hook | O que bloqueia |
+|---|---|
+| `pre-commit` | commit com a `main` ativa |
+| `pre-push` | push direto para a `main` remota |
+
+O merge pelo botão do GitHub não passa pelos hooks e continua funcionando. **Ative uma vez, logo depois de clonar:**
+
+```powershell
+git config core.hooksPath .githooks
+```
+
+Para conferir, `git config core.hooksPath` deve responder `.githooks`. Numa emergência real, `--no-verify` pula o hook (`git commit --no-verify`, `git push --no-verify`), e quem fizer isso avisa o time.
+
+Os hooks evitam **o engano**, não quem decide burlar de propósito; para isso, só a proteção no servidor.
+
+### 2. Configurações do GitHub disponíveis no plano gratuito
+
+Em **Settings → General → Pull Requests**: só *Allow squash merging* e *Automatically delete head branches* marcados.
+
+### Se a organização contratar o plano Team
+
+Criar o *ruleset* em **Settings → Rules → Rulesets**:
+
+| Campo | Valor |
+|---|---|
+| Nome | `proteger-main` |
+| Enforcement status | Active |
+| Bypass list | vazia (a regra vale também para administradores) |
+| Alvo | default branch (`main`) |
+| Restrict deletions | ✅ |
+| Block force pushes | ✅ |
+| Require a pull request before merging | ✅, com 0 aprovações enquanto houver um só desenvolvedor back-end; método permitido: Squash |
+| Require linear history | ✅ |
+| Require status checks to pass | ✅ quando houver CI |
+
+## Integração com o Jira
+
+Com o app **GitHub for Jira** instalado e o repositório conectado, branches, commits e PRs que citam `SCRUM-N` (no nome da branch ou em `Refs:`) aparecem no painel **Development** do item no Jira.

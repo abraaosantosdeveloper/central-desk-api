@@ -458,6 +458,7 @@ Decisão tomada: alteração de status (RF06) e encerramento (RF07) continuam **
 Detalhado no `CONTRIBUTING.md`. Resumo:
 
 - `main` sempre estável; nada é commitado direto nela. Todo trabalho entra por pull request (*squash and merge*).
+- Proteção da `main`: o plano gratuito do GitHub não protege branches de repositório privado, então ela é feita por **hooks locais** em `.githooks/` (`pre-commit` e `pre-push`). Ative em toda cópia nova com `git config core.hooksPath .githooks`. Se a organização contratar o GitHub Team, a configuração do ruleset está no `CONTRIBUTING.md`.
 - Branches curtas no formato `tipo/SCRUM-N-descricao`: `feature/`, `fix/`, `hotfix/` (urgente, em produção), `refactor/`, `test/`, `docs/`, `chore/` e `spike/` (experimento descartável, sem PR).
 - Uma branch por item entregue de uma vez (normalmente a subtarefa).
 - Commits no padrão Conventional Commits, em português, com `Refs: SCRUM-N`.

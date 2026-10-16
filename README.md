@@ -55,6 +55,12 @@ O Maven não precisa ser instalado: o projeto usa o Maven Wrapper (`mvnw`).
 
 ## Como executar
 
+0. Ative os hooks do Git, que bloqueiam commit e push direto na `main` (ver [`CONTRIBUTING.md`](CONTRIBUTING.md)):
+
+   ```powershell
+   git config core.hooksPath .githooks
+   ```
+
 1. Copie `.env.example` para `.env` e preencha as credenciais:
 
    ```env

@@ -1,0 +1,17 @@
+#!/bin/sh
+# Bloqueia push direto para a main remota. O merge pelo botão do GitHub (pull request) continua funcionando.
+# O plano gratuito do GitHub não protege branches de repositório privado; este hook evita o engano local.
+# Emergência: git push --no-verify
+
+while read local_ref local_sha remote_ref remote_sha; do
+    if [ "$remote_ref" = "refs/heads/main" ]; then
+        echo "" >&2
+        echo "  Push direto para a main bloqueado." >&2
+        echo "  Publique a sua branch e abra um pull request (ver CONTRIBUTING.md):" >&2
+        echo "    git push -u origin <sua-branch>" >&2
+        echo "" >&2
+        exit 1
+    fi
+done
+
+exit 0

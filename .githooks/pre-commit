@@ -1,0 +1,17 @@
+#!/bin/sh
+# Bloqueia commit direto na main.
+# O plano gratuito do GitHub não protege branches de repositório privado; este hook evita o engano local.
+# Emergência: git commit --no-verify
+
+branch=$(git symbolic-ref --short HEAD 2>/dev/null)
+
+if [ "$branch" = "main" ]; then
+    echo "" >&2
+    echo "  Commit direto na main bloqueado." >&2
+    echo "  Crie uma branch para o trabalho (ver CONTRIBUTING.md):" >&2
+    echo "    git switch -c feature/SCRUM-N-descricao" >&2
+    echo "" >&2
+    exit 1
+fi
+
+exit 0
