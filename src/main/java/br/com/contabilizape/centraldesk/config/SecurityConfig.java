@@ -28,6 +28,8 @@ public class SecurityConfig {
     static final RequestMatcher PUBLIC_ENDPOINTS = new OrRequestMatcher(
             PATHS.matcher(HttpMethod.POST, "/auth/register"),
             PATHS.matcher(HttpMethod.POST, "/auth/login"),
+            // Chamado justamente quando o access token venceu; o refresh token vem no próprio cookie
+            PATHS.matcher(HttpMethod.POST, "/auth/refresh"),
             // Público de propósito: com a sessão vencida, o logout ainda precisa apagar o cookie
             PATHS.matcher(HttpMethod.POST, "/auth/logout"),
             PATHS.matcher(HttpMethod.GET, "/departments"),

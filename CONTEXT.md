@@ -295,21 +295,31 @@ Preenche `deactivated_at` e bloqueia o login imediatamente, revoga todos os refr
 - **Rotas públicas ignoram o cookie** (`CookieBearerTokenResolver`). Sem isso, um token vencido guardado no navegador faria o Spring responder 401 até no login.
 - Sessão `STATELESS` (o servidor não guarda sessão).
 
-### Logout (RF03, SCRUM-142)
+### Refresh token com rotação (RF03, SCRUM-143)
 
-- `POST /auth/logout` → **204** + `Set-Cookie: access_token=; Max-Age=0` com os mesmos atributos do original (`AccessTokenCookie.clear()`). Sem os mesmos `Path` e atributos, o navegador não substitui o cookie.
-- **Público e idempotente**: está em `PUBLIC_ENDPOINTS`. Com sessão vencida ou sem cookie, também responde 204, e o usuário nunca fica preso logado.
-- **Limitação aceita**: o JWT é stateless, então uma cópia do token feita antes do logout vale até vencer (≤ 15 min). O `HttpOnly` impede que o JavaScript copie o token. A revogação no servidor vem com o refresh token.
+- **Valor**: 32 bytes do `SecureRandom` em base64url (43 caracteres). Em `refresh_tokens` fica **só o hash SHA-256** (hex, `CHAR(64)`); quem lê o banco não consegue usar os tokens. Validade: `app.security.refresh-token.ttl` (7 dias).
+- **Cookie `refresh_token`**: `HttpOnly`, `Secure`, `SameSite=Strict`, **`Path=/auth`**. Só `/auth/refresh` e `/auth/logout` o recebem; as demais rotas da API não.
+- **Login** emite os dois cookies (o `access_token` vem primeiro na resposta).
+- **`POST /auth/refresh`** (público, porque é chamado justamente com o access token vencido): **rotação**. O refresh token atual é revogado (`revoked_at`) e saem um access token e um refresh token novos. As **permissões são recalculadas**, então uma promoção a admin ou uma entrada na Inovação vale a partir da próxima renovação, sem novo login.
+- **Detecção de reuso**: um refresh token já revogado que volta a ser apresentado é tratado como roubo. Todas as sessões ativas do usuário são revogadas (`revokeAllActiveByUserId`) e a resposta é 401.
+- **Recusas**: sem cookie, token desconhecido ou vencido → 401 `Sessão inválida`; conta não `ACTIVE` → todas as sessões revogadas e 403.
+- As recusas **não desfazem a transação** (`noRollbackFor` no `RefreshTokenService.rotate` e no `AuthService.refresh`). Sem isso, a revogação feita antes da exceção seria perdida.
+- **Limitação**: duas abas renovando ao mesmo tempo podem disparar a detecção de reuso e derrubar a sessão. O front-end deve **serializar a renovação**: uma chamada por vez, com as demais requisições aguardando o resultado.
 
-### Previsto: refresh token
+### Logout (RF03, SCRUM-142 e SCRUM-143)
 
-- **Refresh token**: valor aleatório (`SecureRandom`, 32+ bytes), armazenado como **hash SHA-256** em `refresh_tokens`, em cookie com `Path=/auth/refresh`.
-  - Rotação a cada uso: o atual é revogado e um novo é emitido. Reuso de token revogado revoga todos os tokens do usuário.
-- O logout passa a revogar também o refresh token da sessão e a apagar o cookie dele. Continua público: o controller lê o cookie `refresh_token` diretamente, sem passar pelo `CookieBearerTokenResolver`.
+- `POST /auth/logout` → **204**: revoga o refresh token da sessão no banco e apaga os dois cookies (`Max-Age=0`, mesmos `Path` e atributos dos originais; sem isso o navegador não os substitui).
+- **Público e idempotente**: está em `PUBLIC_ENDPOINTS`. O controller lê o cookie `refresh_token` direto (`@CookieValue`), sem passar pelo `CookieBearerTokenResolver`. Com sessão vencida ou sem cookie, também responde 204.
+- Uma cópia do access token feita antes do logout vale até vencer (≤ 15 min), mas não consegue mais renovar a sessão.
+
+### Pendências de sessão
+
+- Limpeza periódica de `refresh_tokens` vencidos ou revogados (tarefa agendada).
+- Desativar uma conta (admin) deve revogar as sessões dela na hora; hoje isso acontece só na próxima renovação.
 
 ### `SecurityConfig` atual
 
-- `PUBLIC_ENDPOINTS` é a lista única de rotas sem login: `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, `GET /departments`, `/error` e as rotas da documentação (`/v3/api-docs/**`, `/swagger-ui/**`, `/swagger-ui.html`). A mesma lista libera o acesso e faz o cookie ser ignorado. Todo o resto exige um JWT válido.
+- `PUBLIC_ENDPOINTS` é a lista única de rotas sem login: `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `GET /departments`, `/error` e as rotas da documentação (`/v3/api-docs/**`, `/swagger-ui/**`, `/swagger-ui.html`). A mesma lista libera o acesso e faz o cookie ser ignorado. Todo o resto exige um JWT válido.
 - `/error` precisa estar liberado: o Spring encaminha os erros para lá, e se a rota estiver protegida o cliente recebe um 401 que esconde o erro real.
 - Com a documentação desligada, as rotas dela respondem 404 (não existem), e não 401.
 - CSRF desligado: o `SameSite=Strict` do cookie impede que outro site envie requisições com ele. Rever se o front-end passar a ficar em outro domínio.
@@ -337,8 +347,8 @@ Preenche `deactivated_at` e bloqueia o login imediatamente, revoga todos os refr
 | POST | `/auth/register` | cadastro de conta (público) | **implementado** |
 | GET | `/departments` | lista de departamentos (`id`, `name`) ordenada por nome, para o select do cadastro (público) | **implementado** |
 | POST | `/auth/login` | login (público): usuário + permissões no corpo, JWT no cookie `access_token` | **implementado** |
-| POST | `/auth/refresh` | rotação do refresh token | previsto |
-| POST | `/auth/logout` | logout (público): 204 e apaga o cookie `access_token` | **implementado** |
+| POST | `/auth/refresh` | renovação da sessão (público): rotação do refresh token, cookies novos | **implementado** |
+| POST | `/auth/logout` | logout (público): revoga o refresh token e apaga os dois cookies (204) | **implementado** |
 | GET | `/users/me` | dados e permissões do usuário logado | **implementado** |
 | PUT | `/users/me` | edição do próprio perfil (DTO restrito: sem senha, e-mail ou permissões) | previsto |
 | PATCH | `/users/me/password` | troca de senha (exige a senha atual) | previsto |
@@ -402,12 +412,15 @@ src/main/java/br/com/contabilizape/centraldesk/
 │                    DepartmentNotFoundException, InvalidCredentialsException,
 │                    AccountNotActiveException, InvalidSessionException
 ├── bootstrap/       AdminBootstrap (cria o primeiro admin), BootstrapAdminProperties (ADMIN_*)
-├── model/           User, UserStatus, Department, Admin, DepartmentRequest, DepartmentRequestStatus
+├── model/           User, UserStatus, Department, Admin, DepartmentRequest, DepartmentRequestStatus,
+│                    RefreshToken
 ├── notification/    DepartmentRequestCreatedEvent, DepartmentRequestNotificationListener
-├── repository/      UserRepository, AdminRepository, DepartmentRepository, DepartmentRequestRepository
+├── repository/      UserRepository, AdminRepository, DepartmentRepository, DepartmentRequestRepository,
+│                    RefreshTokenRepository
 ├── security/        JwtConfig + JwtProperties (chave, encoder, decoder), TokenService, AccessTokenCookie,
-│                    CookieBearerTokenResolver, Roles
-├── service/         UserService, DepartmentService, AuthService (+ AuthenticatedSession, Emails)
+│                    RefreshTokenCookie, CookieBearerTokenResolver, Roles
+├── service/         UserService, DepartmentService, AuthService (+ AuthenticatedSession, Emails),
+│                    RefreshTokenService (+ RotatedRefreshToken)
 └── validation/      @Cpf + CpfValidator, @CorporateEmail + CorporateEmailValidator
 ```
 
@@ -422,18 +435,21 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 ├── controller/AuthControllerIntegrationTest   POST /auth/register de ponta a ponta (8 cenários)
 ├── controller/DepartmentControllerIntegrationTest   GET /departments público e ordenado (4 cenários)
 ├── controller/AuthLoginIntegrationTest        POST /auth/login: cookie, 401, 403, cookie vencido ignorado (8)
-├── controller/AuthLogoutIntegrationTest       POST /auth/logout: apaga o cookie com ou sem sessão (3)
+├── controller/AuthLogoutIntegrationTest       POST /auth/logout: apaga os dois cookies com ou sem sessão (3)
+├── controller/AuthRefreshIntegrationTest      rotação, reuso, vencido, conta inativa, logout revoga (11)
 ├── controller/UserControllerIntegrationTest   GET /users/me: sessão válida, sem cookie, chave errada, vencido (7)
-├── docs/ApiDocsIntegrationTest                OpenAPI e Swagger UI ligados (8 casos)
+├── docs/ApiDocsIntegrationTest                OpenAPI e Swagger UI ligados (9 casos)
 ├── docs/ApiDocsDisabledIntegrationTest        sem API_DOCS_ENABLED: 404 (2 casos)
 ├── dto/UserCreateRequestValidationTest        regras do DTO (Bean Validation)
 ├── service/UserServiceTest                    regras de negócio (JUnit 5 + Mockito, sem banco)
 ├── service/DepartmentServiceTest              listagem ordenada (Mockito, 2 casos)
-├── service/AuthServiceTest                    regras do login e das permissões (Mockito, 8 casos)
+├── service/AuthServiceTest                    login, permissões, renovação e logout (Mockito, 11 casos)
+├── service/RefreshTokenServiceTest            emissão, hash, rotação, reuso, revogação (Mockito, 10)
 ├── security/JwtConfigTest                     tamanho e formato da chave (3)
 ├── security/TokenServiceTest                  claims, validade, chave e emissor errados (5)
 ├── security/CookieBearerTokenResolverTest     leitura do cookie e rotas públicas (5)
 ├── security/AccessTokenCookieTest             atributos do cookie criado e do apagado (2)
+├── security/RefreshTokenCookieTest            idem, com Path=/auth (2)
 ├── validation/CorporateEmailValidatorTest     domínio do e-mail (9 casos)
 └── validation/CpfValidatorTest                algoritmo do CPF (16 casos)
 ```
@@ -445,7 +461,7 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 - Relatório HTML: `.\mvnw surefire-report:report` (em `target\reports\`).
 - Os testes de integração usam `ddl-auto=validate`, então também conferem se as entidades batem com as migrations.
 - **Teste de integração novo usa `@IntegrationTest`** (`@SpringBootTest` + MockMvc + Testcontainers + propriedades que isolam do `.env`). Classes com as mesmas propriedades compartilham um único contexto e um único contêiner. Para mudar uma propriedade, `@TestPropertySource` na classe: tem precedência, mas cria outro contexto (outro contêiner), então use com moderação.
-- Cada teste de integração apaga os usuários criados (preservando administradores, se houver) antes de rodar.
+- Cada teste de integração apaga os usuários criados (preservando administradores, se houver) antes de rodar, com `DatabaseCleanup.removeNonAdminUsers(jdbc)`. A ordem respeita as chaves estrangeiras (`refresh_tokens` → `department_requests` → `users`); toda tabela nova que aponte para `users` entra ali.
 - **Rastreabilidade:** toda execução relevante, **inclusive as que falham**, é registrada em `docs/testes/registro-de-execucoes.md` (comando, resultado, causa raiz, correção). Cada falha vira uma subtarefa `[BUG]` no Jira, com o rótulo `bug`.
 
 Fluxo de uma requisição: `Controller (HTTP + DTO) → Service (regras, @Transactional) → Repository (consultas) → banco`.
@@ -491,7 +507,8 @@ Decisão tomada: alteração de status (RF06) e encerramento (RF07) continuam **
 - [ ] Endpoints de aprovação e recusa de `department_requests` (admin).
 - [x] Login com JWT em cookie e authorities no token (SCRUM-137).
 - [x] Logout que apaga o cookie (SCRUM-142).
-- [ ] Refresh token com rotação; logout passa a revogá-lo (RF03).
+- [x] Refresh token com rotação e detecção de reuso; logout revoga a sessão (SCRUM-143).
+- [ ] Limpeza periódica de `refresh_tokens` e revogação imediata das sessões ao desativar uma conta.
 - [ ] Implementar os services com as regras de transição de status dos chamados.
 - [ ] Modelar as notificações (e-mail via Resend e dentro da interface) e substituir o log provisório.
 - [ ] Definir o significado de `validated_at` (hoje nasce nulo).

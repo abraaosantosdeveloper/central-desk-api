@@ -18,7 +18,7 @@ Um painel onde os colaboradores registram seus chamados, classificados por **cat
 | Back-end | Java 21 + Spring Boot 4.1.1 (Spring Security, Spring Data JPA) |
 | Banco de dados | PostgreSQL 16 (Docker), administrado com pgAdmin |
 | Migrations | Flyway |
-| Autenticação | JWT em cookies `HttpOnly` + refresh token; senhas com bcrypt |
+| Autenticação | JWT em cookie `HttpOnly` + refresh token com rotação (guardado como hash); senhas com bcrypt |
 | Identificadores | UUID |
 | Documentação da API | OpenAPI 3 + Swagger UI (springdoc) |
 
@@ -136,8 +136,8 @@ O Maven não precisa ser instalado: o projeto usa o Maven Wrapper (`mvnw`).
 | `POST` | `/auth/register` | Cadastrar novo usuário (público) | implementada |
 | `GET` | `/departments` | Listar departamentos para o cadastro (público) | implementada |
 | `POST` | `/auth/login` | Iniciar sessão (token em cookie `HttpOnly`) | implementada |
-| `POST` | `/auth/refresh` | Renovar a sessão | prevista |
-| `POST` | `/auth/logout` | Encerrar sessão (apaga o cookie) | implementada |
+| `POST` | `/auth/refresh` | Renovar a sessão (rotação do refresh token) | implementada |
+| `POST` | `/auth/logout` | Encerrar sessão (revoga o refresh token e apaga os cookies) | implementada |
 | `GET` | `/users/me` | Perfil do usuário logado | implementada |
 | `PUT` | `/users/me` | Editar o próprio perfil | prevista |
 | `PATCH` | `/users/me/password` | Trocar a senha | prevista |
@@ -154,7 +154,7 @@ As rotas de autenticação ficam sob `/auth`; a ação vem do método HTTP, não
 
 ## Status
 
-Back-end em desenvolvimento: cadastro de conta, login, logout, lista de departamentos e documentação no Swagger implementados; renovação da sessão (refresh token) é o próximo passo. O andamento é acompanhado no Jira (projeto **Innovation Unit**, chave `SCRUM`).
+Back-end em desenvolvimento: cadastro de conta, login, renovação de sessão, logout, lista de departamentos e documentação no Swagger implementados. O andamento é acompanhado no Jira (projeto **Innovation Unit**, chave `SCRUM`).
 
 ## Como contribuir
 

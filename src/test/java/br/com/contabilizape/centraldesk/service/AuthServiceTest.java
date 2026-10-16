@@ -31,6 +31,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.withSettings;
 
@@ -49,6 +50,7 @@ class AuthServiceTest {
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private TokenService tokenService;
     @Mock private UserService userService;
+    @Mock private RefreshTokenService refreshTokenService;
 
     private AuthService authService;
 
@@ -57,7 +59,7 @@ class AuthServiceTest {
         // O AuthService gera um hash fictício ao ser criado (usado quando o e-mail não existe)
         when(passwordEncoder.encode(anyString())).thenReturn(DUMMY_HASH);
         authService = new AuthService(userRepository, adminRepository, passwordEncoder,
-                tokenService, userService, INNOVATION_ID);
+                tokenService, userService, refreshTokenService, INNOVATION_ID);
     }
 
     @Test
@@ -68,10 +70,12 @@ class AuthServiceTest {
         when(passwordEncoder.matches(PASSWORD, "hash-da-maria")).thenReturn(true);
         when(tokenService.issueAccessToken(USER_ID, EMAIL, List.of())).thenReturn("jwt-123");
         when(userService.getCurrentUser(USER_ID, List.of())).thenReturn(current);
+        when(refreshTokenService.issue(maria)).thenReturn("refresh-123");
 
         AuthenticatedSession session = authService.login(new LoginRequest(EMAIL, PASSWORD));
 
         assertThat(session.accessToken()).isEqualTo("jwt-123");
+        assertThat(session.refreshToken()).isEqualTo("refresh-123");
         assertThat(session.user()).isSameAs(current);
     }
 
@@ -133,6 +137,41 @@ class AuthServiceTest {
     @Test
     void adminFromInnovationReceivesBothRoles() {
         loginReturnsRolesFor(user(INNOVATION_ID, UserStatus.ACTIVE), true, List.of(Roles.ADMIN, Roles.TICKET_HANDLER));
+    }
+
+    // ---------- renovação e logout ----------
+
+    @Test
+    void refreshRotatesTheTokenAndRecalculatesRoles() {
+        // Virou admin depois do login: a renovação já traz a permissão nova
+        User maria = user(INNOVATION_ID, UserStatus.ACTIVE);
+        List<String> roles = List.of(Roles.ADMIN, Roles.TICKET_HANDLER);
+        CurrentUserResponse current = currentUser(roles);
+        when(refreshTokenService.rotate("refresh-velho")).thenReturn(new RotatedRefreshToken(maria, "refresh-novo"));
+        when(adminRepository.existsById(USER_ID)).thenReturn(true);
+        when(tokenService.issueAccessToken(USER_ID, EMAIL, roles)).thenReturn("jwt-novo");
+        when(userService.getCurrentUser(USER_ID, roles)).thenReturn(current);
+
+        AuthenticatedSession session = authService.refresh("refresh-velho");
+
+        assertThat(session.accessToken()).isEqualTo("jwt-novo");
+        assertThat(session.refreshToken()).isEqualTo("refresh-novo");
+        assertThat(session.user()).isSameAs(current);
+    }
+
+    @Test
+    void logoutRevokesTheRefreshToken() {
+        authService.logout("refresh-123");
+
+        verify(refreshTokenService).revoke("refresh-123");
+    }
+
+    @Test
+    void logoutWithoutRefreshTokenDoesNothing() {
+        authService.logout(null);
+        authService.logout("");
+
+        verifyNoInteractions(refreshTokenService);
     }
 
     // ---------- auxiliares ----------

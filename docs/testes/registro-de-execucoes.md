@@ -196,3 +196,21 @@ Modelo de entrada:
   - `ApiDocsIntegrationTest` (+1): logout documentado.
 - Total esperado na execução 10: **130 testes**.
 
+## Execução 10 — 2026-10-16 ~13:44 — suíte completa
+
+- **Comando:** `.\mvnw clean test`
+- **Resultado:** 130 testes, 0 falhas, 0 erros. ✅ (resultado informado pelo desenvolvedor, sem log anexado)
+- **Confirma:** `POST /auth/logout` público e idempotente, que apaga o cookie com sessão, sem cookie ou com cookie inválido (SCRUM-142).
+
+### Mudanças entre a execução 10 e a 11
+
+- Refresh token com rotação (SCRUM-143): entidade `RefreshToken` (tabela `refresh_tokens` da V7), `RefreshTokenService`, cookie `refresh_token` (`Path=/auth`), `POST /auth/refresh`; o login emite os dois cookies e o logout revoga a sessão e apaga os dois.
+- **Limpeza dos testes**: com sessões gravadas em `refresh_tokens` (chave estrangeira para `users`), apagar usuários sem apagar antes as sessões violaria a FK. As quatro classes que limpavam o banco passaram a usar `DatabaseCleanup.removeNonAdminUsers`, que apaga na ordem certa.
+- `AuthLogoutIntegrationTest`: passa a conferir que os **dois** cookies são apagados, cada um com o seu `Path`.
+- Novos testes (27):
+  - `RefreshTokenServiceTest` (10) e `RefreshTokenCookieTest` (2): unitários;
+  - `AuthServiceTest` (+3): renovação com permissões recalculadas e logout com e sem token;
+  - `AuthRefreshIntegrationTest` (11): rotação, só o hash no banco, reuso derruba todas as sessões, sem cookie, token desconhecido, vencido, conta inativa, access token vencido não atrapalha, papel novo aparece na renovação e logout revoga;
+  - `ApiDocsIntegrationTest` (+1): refresh documentado.
+- Total esperado na execução 11: **157 testes**.
+

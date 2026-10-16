@@ -1,5 +1,6 @@
 package br.com.contabilizape.centraldesk.controller;
 
+import br.com.contabilizape.centraldesk.DatabaseCleanup;
 import br.com.contabilizape.centraldesk.IntegrationTest;
 import br.com.contabilizape.centraldesk.security.JwtConfig;
 import br.com.contabilizape.centraldesk.security.JwtProperties;
@@ -50,8 +51,7 @@ class UserControllerIntegrationTest {
 
     @BeforeEach
     void cleanDatabase() {
-        jdbc.update("DELETE FROM department_requests");
-        jdbc.update("DELETE FROM users WHERE id NOT IN (SELECT user_id FROM admins)");
+        DatabaseCleanup.removeNonAdminUsers(jdbc);
     }
 
     @Test

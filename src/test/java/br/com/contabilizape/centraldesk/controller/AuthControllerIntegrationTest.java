@@ -1,5 +1,6 @@
 package br.com.contabilizape.centraldesk.controller;
 
+import br.com.contabilizape.centraldesk.DatabaseCleanup;
 import br.com.contabilizape.centraldesk.IntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,8 +43,7 @@ class AuthControllerIntegrationTest {
     // Cada teste começa só com o que as migrations criam (administradores, se houver, são preservados)
     @BeforeEach
     void cleanDatabase() {
-        jdbc.update("DELETE FROM department_requests");
-        jdbc.update("DELETE FROM users WHERE id NOT IN (SELECT user_id FROM admins)");
+        DatabaseCleanup.removeNonAdminUsers(jdbc);
     }
 
     @Test

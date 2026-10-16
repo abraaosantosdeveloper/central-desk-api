@@ -68,6 +68,16 @@ class ApiDocsIntegrationTest {
     }
 
     @Test
+    void documentsRefresh() throws Exception {
+        String refresh = "$.paths['/auth/refresh'].post";
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(refresh + ".responses['200'].headers['Set-Cookie']").exists())
+                .andExpect(jsonPath(refresh + ".responses['401'].content['" + PROBLEM_JSON + "']").exists())
+                .andExpect(jsonPath(refresh + ".responses['403'].content['" + PROBLEM_JSON + "']").exists());
+    }
+
+    @Test
     void documentsLogout() throws Exception {
         mockMvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk())

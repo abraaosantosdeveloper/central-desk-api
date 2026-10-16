@@ -1,5 +1,6 @@
 package br.com.contabilizape.centraldesk.controller;
 
+import br.com.contabilizape.centraldesk.DatabaseCleanup;
 import br.com.contabilizape.centraldesk.IntegrationTest;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,8 +40,7 @@ class AuthLoginIntegrationTest {
 
     @BeforeEach
     void registerMaria() throws Exception {
-        jdbc.update("DELETE FROM department_requests");
-        jdbc.update("DELETE FROM users WHERE id NOT IN (SELECT user_id FROM admins)");
+        DatabaseCleanup.removeNonAdminUsers(jdbc);
         mockMvc.perform(post("/auth/register").contentType(MediaType.APPLICATION_JSON).content("""
                         { "fullName": "Maria da Silva", "cpf": "52998224725", "email": "%s",
                           "password": "%s", "departmentId": "%s" }

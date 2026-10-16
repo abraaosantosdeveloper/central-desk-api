@@ -1,7 +1,9 @@
 package br.com.contabilizape.centraldesk.controller;
 
+import br.com.contabilizape.centraldesk.DatabaseCleanup;
 import br.com.contabilizape.centraldesk.IntegrationTest;
 import jakarta.servlet.http.Cookie;
+import org.hamcrest.Matcher;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -11,11 +13,12 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -24,7 +27,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * POST /auth/logout: apaga o cookie do access token e responde 204, com ou sem sessão válida.
+ * POST /auth/logout: apaga os cookies da sessão e responde 204, com ou sem sessão válida.
+ * A revogação do refresh token no banco está no AuthRefreshIntegrationTest.
  */
 @IntegrationTest
 class AuthLogoutIntegrationTest {
@@ -42,8 +46,7 @@ class AuthLogoutIntegrationTest {
 
     @BeforeEach
     void cleanDatabase() {
-        jdbc.update("DELETE FROM department_requests");
-        jdbc.update("DELETE FROM users WHERE id NOT IN (SELECT user_id FROM admins)");
+        DatabaseCleanup.removeNonAdminUsers(jdbc);
     }
 
     @Test
@@ -67,15 +70,18 @@ class AuthLogoutIntegrationTest {
 
     // ---------- auxiliares ----------
 
+    // Os dois cookies da sessão (access e refresh) são apagados, cada um com o seu Path
     private static void expectCookieCleared(ResultActions result) throws Exception {
         result.andExpect(status().isNoContent())
                 .andExpect(content().string(""))
-                .andExpect(header().string(HttpHeaders.SET_COOKIE, startsWith("access_token=;")))
-                .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Max-Age=0")))
-                .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Path=/")))
-                .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("HttpOnly")))
-                .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Secure")))
-                .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("SameSite=Strict")));
+                .andExpect(header().stringValues(HttpHeaders.SET_COOKIE, hasItems(
+                        clearedCookie("access_token", "Path=/;"),
+                        clearedCookie("refresh_token", "Path=/auth;"))));
+    }
+
+    private static Matcher<String> clearedCookie(String name, String path) {
+        return allOf(startsWith(name + "=;"), containsString(path), containsString("Max-Age=0"),
+                containsString("HttpOnly"), containsString("Secure"), containsString("SameSite=Strict"));
     }
 
     private Cookie registerAndLogin() throws Exception {
@@ -90,7 +96,7 @@ class AuthLogoutIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getHeader(HttpHeaders.SET_COOKIE);
         assertThat(setCookie).isNotNull();
-        Matcher matcher = TOKEN_IN_COOKIE.matcher(setCookie);
+        java.util.regex.Matcher matcher = TOKEN_IN_COOKIE.matcher(setCookie);
         assertThat(matcher.find()).isTrue();
         return new Cookie("access_token", matcher.group(1));
     }

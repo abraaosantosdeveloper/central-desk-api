@@ -5,6 +5,7 @@ import br.com.contabilizape.centraldesk.dto.LoginRequest;
 import br.com.contabilizape.centraldesk.dto.UserCreateRequest;
 import br.com.contabilizape.centraldesk.dto.UserResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.headers.Header;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
@@ -17,7 +18,7 @@ import org.springframework.http.ResponseEntity;
 /**
  * Documentação OpenAPI dos endpoints de autenticação (implementada pelo AuthController).
  */
-@Tag(name = "Autenticação", description = "Cadastro de conta, login e logout")
+@Tag(name = "Autenticação", description = "Cadastro de conta, login, renovação da sessão e logout")
 public interface AuthApi {
 
     @Operation(
@@ -59,13 +60,16 @@ public interface AuthApi {
             description = """
                     Endpoint público. Confere e-mail e senha e devolve o usuário com as permissões.
 
-                    O access token (JWT, 15 minutos) vai **só no cookie** `access_token`, com `HttpOnly`, \
-                    `Secure` e `SameSite=Strict`. O navegador o envia sozinho nas próximas requisições, \
-                    inclusive aqui no Swagger: depois do login, `GET /users/me` já funciona.""")
+                    Os tokens vão **só em cookies** `HttpOnly`, `Secure` e `SameSite=Strict`:
+                    - `access_token` (JWT, 15 minutos, `Path=/`): enviado em toda requisição da API;
+                    - `refresh_token` (7 dias, `Path=/auth`): usado só em `/auth/refresh` e `/auth/logout`.
+
+                    O navegador envia os cookies sozinho, inclusive aqui no Swagger: depois do login, \
+                    `GET /users/me` já funciona.""")
     @ApiResponse(
             responseCode = "200",
             description = "Login feito.",
-            headers = @Header(name = "Set-Cookie", description = "Cookie access_token com o JWT",
+            headers = @Header(name = "Set-Cookie", description = "Dois cookies: access_token (JWT) e refresh_token",
                     schema = @Schema(type = "string",
                             example = "access_token=eyJhbGciOiJIUzI1NiJ9...; Path=/; Max-Age=900; Secure; HttpOnly; SameSite=Strict")),
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = CurrentUserResponse.class)))
@@ -90,19 +94,47 @@ public interface AuthApi {
     ResponseEntity<CurrentUserResponse> login(LoginRequest request);
 
     @Operation(
+            summary = "Renova a sessão",
+            description = """
+                    Endpoint público, chamado quando o access token vence (o `/users/me` e as demais rotas \
+                    respondem 401). Usa o cookie `refresh_token` e faz **rotação**: o refresh token atual é \
+                    revogado e saem um access token e um refresh token novos. As permissões são recalculadas.
+
+                    Se um refresh token já usado for reapresentado (sinal de roubo), **todas** as sessões \
+                    do usuário são encerradas. Por isso, o front-end deve fazer uma renovação por vez.""")
+    @ApiResponse(
+            responseCode = "200",
+            description = "Sessão renovada.",
+            headers = @Header(name = "Set-Cookie", description = "Novos cookies access_token e refresh_token",
+                    schema = @Schema(type = "string")),
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = CurrentUserResponse.class)))
+    @ApiResponse(
+            responseCode = "401",
+            description = "Sem cookie, refresh token desconhecido, vencido ou já usado: é preciso entrar de novo.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE,
+                    schema = @Schema(implementation = ProblemDetail.class),
+                    examples = @ExampleObject(name = "Sessão inválida", value = ProblemExamples.INVALID_SESSION)))
+    @ApiResponse(
+            responseCode = "403",
+            description = "A conta foi desativada; todas as sessões dela foram encerradas.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE,
+                    schema = @Schema(implementation = ProblemDetail.class)))
+    ResponseEntity<CurrentUserResponse> refresh(@Parameter(hidden = true) String refreshToken);
+
+    @Operation(
             summary = "Sai do sistema",
             description = """
-                    Endpoint público e idempotente: apaga o cookie `access_token` do navegador, \
-                    com ou sem sessão válida, e sempre responde 204.
+                    Endpoint público e idempotente: revoga o refresh token da sessão no servidor e apaga \
+                    os dois cookies do navegador, com ou sem sessão válida. Sempre responde 204.
 
-                    O JWT não é guardado no servidor: uma cópia do token feita antes do logout \
-                    valeria até vencer (no máximo 15 minutos). A revogação no servidor chega com o refresh token.""")
+                    O access token (JWT) não é guardado no servidor: uma cópia feita antes do logout \
+                    valeria até vencer (no máximo 15 minutos), mas não consegue mais renovar a sessão.""")
     @ApiResponse(
             responseCode = "204",
             description = "Sessão encerrada neste navegador.",
-            headers = @Header(name = "Set-Cookie", description = "Cookie access_token vazio, expirando na hora",
+            headers = @Header(name = "Set-Cookie", description = "Cookies access_token e refresh_token vazios, expirando na hora",
                     schema = @Schema(type = "string",
                             example = "access_token=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure; HttpOnly; SameSite=Strict")),
             content = @Content)
-    ResponseEntity<Void> logout();
+    ResponseEntity<Void> logout(@Parameter(hidden = true) String refreshToken);
 }

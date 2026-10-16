@@ -79,6 +79,15 @@ public final class ProblemExamples {
               "instance": "/auth/login"
             }""";
 
+    public static final String INVALID_SESSION = """
+            {
+              "type": "about:blank",
+              "title": "Sessão inválida",
+              "status": 401,
+              "detail": "Sessão inválida. Entre novamente.",
+              "instance": "/auth/refresh"
+            }""";
+
     private ProblemExamples() {
     }
 }
