@@ -1,5 +1,7 @@
 package br.com.contabilizape.centraldesk.controller.doc;
 
+import br.com.contabilizape.centraldesk.dto.CurrentUserResponse;
+import br.com.contabilizape.centraldesk.dto.LoginRequest;
 import br.com.contabilizape.centraldesk.dto.UserCreateRequest;
 import br.com.contabilizape.centraldesk.dto.UserResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -15,7 +17,7 @@ import org.springframework.http.ResponseEntity;
 /**
  * Documentação OpenAPI dos endpoints de autenticação (implementada pelo AuthController).
  */
-@Tag(name = "Autenticação", description = "Cadastro de conta (o login entra na próxima entrega)")
+@Tag(name = "Autenticação", description = "Cadastro de conta e login")
 public interface AuthApi {
 
     @Operation(
@@ -51,4 +53,39 @@ public interface AuthApi {
                             @ExampleObject(name = "CPF já cadastrado", value = ProblemExamples.CPF_TAKEN)
                     }))
     ResponseEntity<UserResponse> register(UserCreateRequest request);
+
+    @Operation(
+            summary = "Entra no sistema",
+            description = """
+                    Endpoint público. Confere e-mail e senha e devolve o usuário com as permissões.
+
+                    O access token (JWT, 15 minutos) vai **só no cookie** `access_token`, com `HttpOnly`, \
+                    `Secure` e `SameSite=Strict`. O navegador o envia sozinho nas próximas requisições, \
+                    inclusive aqui no Swagger: depois do login, `GET /users/me` já funciona.""")
+    @ApiResponse(
+            responseCode = "200",
+            description = "Login feito.",
+            headers = @Header(name = "Set-Cookie", description = "Cookie access_token com o JWT",
+                    schema = @Schema(type = "string",
+                            example = "access_token=eyJhbGciOiJIUzI1NiJ9...; Path=/; Max-Age=900; Secure; HttpOnly; SameSite=Strict")),
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = CurrentUserResponse.class)))
+    @ApiResponse(
+            responseCode = "400",
+            description = "E-mail ou senha em branco.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE,
+                    schema = @Schema(implementation = ProblemDetail.class),
+                    examples = @ExampleObject(name = "Campos em branco", value = ProblemExamples.LOGIN_BLANK_FIELDS)))
+    @ApiResponse(
+            responseCode = "401",
+            description = "E-mail inexistente ou senha errada (mesma resposta nos dois casos).",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE,
+                    schema = @Schema(implementation = ProblemDetail.class),
+                    examples = @ExampleObject(name = "Credenciais inválidas", value = ProblemExamples.INVALID_CREDENTIALS)))
+    @ApiResponse(
+            responseCode = "403",
+            description = "Senha correta, mas a conta não está ativa.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE,
+                    schema = @Schema(implementation = ProblemDetail.class),
+                    examples = @ExampleObject(name = "Conta inativa", value = ProblemExamples.ACCOUNT_NOT_ACTIVE)))
+    ResponseEntity<CurrentUserResponse> login(LoginRequest request);
 }

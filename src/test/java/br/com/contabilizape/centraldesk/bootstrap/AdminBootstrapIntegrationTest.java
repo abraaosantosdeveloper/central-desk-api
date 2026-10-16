@@ -1,12 +1,11 @@
 package br.com.contabilizape.centraldesk.bootstrap;
 
-import br.com.contabilizape.centraldesk.TestcontainersConfiguration;
+import br.com.contabilizape.centraldesk.IntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.DefaultApplicationArguments;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.TestPropertySource;
 
 import java.util.Map;
 
@@ -16,14 +15,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Sobe a aplicação com as credenciais do admin configuradas (como viriam do .env)
  * e confere o que ficou gravado no PostgreSQL.
  */
-@SpringBootTest(properties = {
-        "spring.jpa.hibernate.ddl-auto=validate",
+@IntegrationTest
+@TestPropertySource(properties = {
         "app.bootstrap.admin.name=Ana Administradora",
         "app.bootstrap.admin.cpf=11144477735",
         "app.bootstrap.admin.email=ana.admin@contabilizape.com.br",
         "app.bootstrap.admin.password=senhaForte123"
 })
-@Import(TestcontainersConfiguration.class)
 class AdminBootstrapIntegrationTest {
 
     private static final String INNOVATION_ID = "e9790f1f-41df-4369-bfe7-1be4be535561";

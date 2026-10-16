@@ -56,6 +56,32 @@ class ApiDocsIntegrationTest {
     }
 
     @Test
+    void documentsLoginResponses() throws Exception {
+        String login = "$.paths['/auth/login'].post";
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(login + ".responses['200'].headers['Set-Cookie']").exists())
+                .andExpect(jsonPath(login + ".responses['400'].content['" + PROBLEM_JSON + "']").exists())
+                .andExpect(jsonPath(login + ".responses['401'].content['" + PROBLEM_JSON + "']").exists())
+                .andExpect(jsonPath(login + ".responses['403'].content['" + PROBLEM_JSON + "']").exists())
+                .andExpect(jsonPath("$.components.schemas.LoginRequest.properties.password.writeOnly").value(true));
+    }
+
+    @Test
+    void documentsCurrentUserEndpointAsProtectedByTheCookie() throws Exception {
+        String me = "$.paths['/users/me'].get";
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(me + ".responses['200']").exists())
+                .andExpect(jsonPath(me + ".responses['401']").exists())
+                .andExpect(jsonPath(me + ".responses['403']").exists())
+                .andExpect(jsonPath(me + ".security[0].cookieAuth").isArray())
+                .andExpect(jsonPath("$.components.securitySchemes.cookieAuth.type").value("apiKey"))
+                .andExpect(jsonPath("$.components.securitySchemes.cookieAuth.in").value("cookie"))
+                .andExpect(jsonPath("$.components.securitySchemes.cookieAuth.name").value("access_token"));
+    }
+
+    @Test
     void passwordIsWriteOnlyAndNeverPartOfTheResponse() throws Exception {
         mockMvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk())

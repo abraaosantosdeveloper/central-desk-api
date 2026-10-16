@@ -1,13 +1,18 @@
 package br.com.contabilizape.centraldesk.service;
 
+import br.com.contabilizape.centraldesk.dto.CurrentUserResponse;
 import br.com.contabilizape.centraldesk.dto.UserCreateRequest;
 import br.com.contabilizape.centraldesk.dto.UserResponse;
+import br.com.contabilizape.centraldesk.exception.AccountNotActiveException;
 import br.com.contabilizape.centraldesk.exception.CpfAlreadyRegisteredException;
 import br.com.contabilizape.centraldesk.exception.DepartmentNotFoundException;
 import br.com.contabilizape.centraldesk.exception.EmailAlreadyRegisteredException;
+import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
 import br.com.contabilizape.centraldesk.model.Department;
 import br.com.contabilizape.centraldesk.model.DepartmentRequest;
+import br.com.contabilizape.centraldesk.model.DepartmentRequestStatus;
 import br.com.contabilizape.centraldesk.model.User;
+import br.com.contabilizape.centraldesk.model.UserStatus;
 import br.com.contabilizape.centraldesk.notification.DepartmentRequestCreatedEvent;
 import br.com.contabilizape.centraldesk.repository.DepartmentRepository;
 import br.com.contabilizape.centraldesk.repository.DepartmentRequestRepository;
@@ -18,7 +23,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Locale;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -50,7 +55,7 @@ public class UserService {
 
     @Transactional
     public UserResponse create(UserCreateRequest request) {
-        String email = normalizeEmail(request.email());
+        String email = Emails.normalize(request.email());
 
         validateUniqueness(email, request.cpf());
 
@@ -74,8 +79,18 @@ public class UserService {
         return UserResponse.from(user, needsApproval);
     }
 
-    private String normalizeEmail(String email) {
-        return email.trim().toLowerCase(Locale.ROOT);
+    /**
+     * Dados do usuário logado. As permissões são as do token, calculadas no login.
+     */
+    @Transactional(readOnly = true)
+    public CurrentUserResponse getCurrentUser(UUID userId, List<String> roles) {
+        User user = userRepository.findById(userId).orElseThrow(InvalidSessionException::new);
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            throw new AccountNotActiveException();
+        }
+        boolean approvalPending =
+                departmentRequestRepository.existsByUserIdAndStatus(userId, DepartmentRequestStatus.PENDING);
+        return CurrentUserResponse.from(user, approvalPending, roles);
     }
 
     private void validateUniqueness(String email, String cpf) {

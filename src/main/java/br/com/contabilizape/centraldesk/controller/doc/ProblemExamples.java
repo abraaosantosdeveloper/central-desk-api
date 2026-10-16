@@ -48,6 +48,37 @@ public final class ProblemExamples {
               "instance": "/auth/register"
             }""";
 
+    public static final String LOGIN_BLANK_FIELDS = """
+            {
+              "type": "about:blank",
+              "title": "Dados inválidos",
+              "status": 400,
+              "detail": "Verifique os campos e tente novamente.",
+              "instance": "/auth/login",
+              "errors": {
+                "email": "não deve estar em branco",
+                "password": "não deve estar em branco"
+              }
+            }""";
+
+    public static final String INVALID_CREDENTIALS = """
+            {
+              "type": "about:blank",
+              "title": "Credenciais inválidas",
+              "status": 401,
+              "detail": "E-mail ou senha inválidos.",
+              "instance": "/auth/login"
+            }""";
+
+    public static final String ACCOUNT_NOT_ACTIVE = """
+            {
+              "type": "about:blank",
+              "title": "Conta inativa",
+              "status": 403,
+              "detail": "Esta conta não está ativa. Procure um administrador.",
+              "instance": "/auth/login"
+            }""";
+
     private ProblemExamples() {
     }
 }

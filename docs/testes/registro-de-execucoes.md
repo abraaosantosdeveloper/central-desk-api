@@ -164,3 +164,25 @@ Modelo de entrada:
 - **Comando:** `.\mvnw test`
 - **Resultado:** 76 testes, 0 falhas, 0 erros. ✅ (resultado informado pelo desenvolvedor, sem log anexado)
 - **Confirma:** `GET /departments` público e ordenado (SCRUM-125) e a liberação só do método GET no `SecurityConfig` (SCRUM-124).
+
+### Mudanças entre a execução 8 e a 9
+
+- Login (SCRUM-137): JWT HS256 pelo OAuth2 Resource Server, token no cookie `access_token`, `POST /auth/login` e `GET /users/me`.
+- `@IntegrationTest` passa a fixar uma chave JWT de teste (`IntegrationTest.JWT_SECRET`) e `app.security.cookie.secure=true`. Os testes não dependem do `JWT_SECRET` do `.env`.
+- `AdminBootstrapIntegrationTest` passa a usar `@IntegrationTest` + `@TestPropertySource` com as `ADMIN_*`. Assim ele também recebe a chave JWT, sem a qual o contexto não sobe.
+- `SecurityConfig`: a liberação de `/auth/**` virou a lista explícita `PUBLIC_ENDPOINTS`. `POST /departments` continua bloqueado, mas agora responde 401 (resource server) em vez de 403; o teste aceita os dois.
+- Novos testes (41):
+  - `JwtConfigTest` (3), `TokenServiceTest` (5), `CookieBearerTokenResolverTest` (5): unitários, sem Spring;
+  - `AuthServiceTest` (8, Mockito): os auxiliares que configuram mocks são chamados antes do `when(...)` (lição da execução 4);
+  - `UserServiceTest` (+3): `getCurrentUser`;
+  - `AuthLoginIntegrationTest` (8) e `UserControllerIntegrationTest` (7);
+  - `ApiDocsIntegrationTest` (+2): login e `/users/me` documentados, esquema `cookieAuth`.
+- Total esperado na execução 9: **124 testes**.
+
+## Execução 9 — 2026-10-16 ~13:25 — suíte completa
+
+- **Comando:** `.\mvnw clean test`
+- **Resultado:** 124 testes, 0 falhas, 0 erros. ✅ (resultado informado pelo desenvolvedor, sem log anexado)
+- **Confirma:** emissão e validação do JWT (SCRUM-138), `POST /auth/login` (SCRUM-139), `GET /users/me` (SCRUM-140) e a documentação dos dois no Swagger (SCRUM-141). Também confirma que a troca de `/auth/**` por `PUBLIC_ENDPOINTS` não quebrou o cadastro nem a lista de departamentos.
+- **Validação manual:** no Swagger, a primeira tentativa de login respondeu 401. Foi resolvida pelo desenvolvedor sem mudança no código, e os testes de integração do login passam. Em seguida, o login e o `GET /users/me` funcionaram com o cookie.
+

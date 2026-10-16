@@ -1,10 +1,13 @@
 package br.com.contabilizape.centraldesk.service;
 
+import br.com.contabilizape.centraldesk.dto.CurrentUserResponse;
 import br.com.contabilizape.centraldesk.dto.UserCreateRequest;
 import br.com.contabilizape.centraldesk.dto.UserResponse;
+import br.com.contabilizape.centraldesk.exception.AccountNotActiveException;
 import br.com.contabilizape.centraldesk.exception.CpfAlreadyRegisteredException;
 import br.com.contabilizape.centraldesk.exception.DepartmentNotFoundException;
 import br.com.contabilizape.centraldesk.exception.EmailAlreadyRegisteredException;
+import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
 import br.com.contabilizape.centraldesk.model.Department;
 import br.com.contabilizape.centraldesk.model.DepartmentRequest;
 import br.com.contabilizape.centraldesk.model.DepartmentRequestStatus;
@@ -23,7 +26,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.quality.Strictness;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -189,6 +194,42 @@ class UserServiceTest {
         verify(userRepository, never()).saveAndFlush(any());
     }
 
+    // ---------- usuário logado (/users/me) ----------
+
+    @Test
+    void returnsCurrentUserWithRolesFromToken() {
+        UUID id = UUID.randomUUID();
+        User maria = existingUser(id, general, UserStatus.ACTIVE);
+        when(userRepository.findById(id)).thenReturn(Optional.of(maria));
+        when(departmentRequestRepository.existsByUserIdAndStatus(id, DepartmentRequestStatus.PENDING)).thenReturn(true);
+
+        CurrentUserResponse current = userService.getCurrentUser(id, List.of("ROLE_ADMIN"));
+
+        assertThat(current.id()).isEqualTo(id);
+        assertThat(current.email()).isEqualTo("maria.silva@contabilizape.com.br");
+        assertThat(current.departmentName()).isEqualTo("Geral");
+        assertThat(current.departmentApprovalPending()).isTrue();
+        assertThat(current.roles()).containsExactly("ROLE_ADMIN");
+    }
+
+    @Test
+    void currentUserThatNoLongerExistsIsInvalidSession() {
+        UUID id = UUID.randomUUID();
+        when(userRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userService.getCurrentUser(id, List.of()))
+                .isInstanceOf(InvalidSessionException.class);
+    }
+
+    @Test
+    void currentUserDeactivatedAfterLoginIsRejected() {
+        UUID id = UUID.randomUUID();
+        when(userRepository.findById(id)).thenReturn(Optional.of(existingUser(id, general, UserStatus.DEACTIVATED)));
+
+        assertThatThrownBy(() -> userService.getCurrentUser(id, List.of()))
+                .isInstanceOf(AccountNotActiveException.class);
+    }
+
     // ---------- auxiliares ----------
 
     private static UserCreateRequest request(String email, UUID departmentId) {
@@ -199,6 +240,13 @@ class UserServiceTest {
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).saveAndFlush(captor.capture());
         return captor.getValue();
+    }
+
+    private static User existingUser(UUID id, Department department, UserStatus status) {
+        User user = new User("Maria da Silva", "52998224725", "maria.silva@contabilizape.com.br", "hash", department);
+        ReflectionTestUtils.setField(user, "id", id);
+        ReflectionTestUtils.setField(user, "status", status);
+        return user;
     }
 
     // Department só tem construtor protegido (exigência do JPA); no teste usamos um mock

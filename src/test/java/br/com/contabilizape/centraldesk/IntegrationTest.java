@@ -25,9 +25,14 @@ import java.lang.annotation.Target;
         // O application.properties importa o .env local; os testes não podem depender dele
         "app.bootstrap.admin.name=", "app.bootstrap.admin.cpf=",
         "app.bootstrap.admin.email=", "app.bootstrap.admin.password=",
-        "API_DOCS_ENABLED=false"
+        "API_DOCS_ENABLED=false",
+        "app.security.jwt.secret=" + IntegrationTest.JWT_SECRET,
+        "app.security.cookie.secure=true"
 })
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)
 public @interface IntegrationTest {
+
+    /** Chave dos tokens nos testes (base64 de 33 bytes). A real fica só no .env (JWT_SECRET). */
+    String JWT_SECRET = "Y2VudHJhbGRlc2stdGVzdC1zZWNyZXQtMzItYnl0ZXMh";
 }

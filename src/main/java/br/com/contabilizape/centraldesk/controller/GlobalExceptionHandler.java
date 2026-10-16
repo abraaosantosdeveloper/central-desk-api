@@ -1,8 +1,11 @@
 package br.com.contabilizape.centraldesk.controller;
 
+import br.com.contabilizape.centraldesk.exception.AccountNotActiveException;
 import br.com.contabilizape.centraldesk.exception.CpfAlreadyRegisteredException;
 import br.com.contabilizape.centraldesk.exception.DepartmentNotFoundException;
 import br.com.contabilizape.centraldesk.exception.EmailAlreadyRegisteredException;
+import br.com.contabilizape.centraldesk.exception.InvalidCredentialsException;
+import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -35,6 +38,21 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(DepartmentNotFoundException.class)
     public ProblemDetail handleInvalidInput(RuntimeException exception) {
         return problem(HttpStatus.BAD_REQUEST, "Dados inválidos", exception.getMessage());
+    }
+
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ProblemDetail handleInvalidCredentials(InvalidCredentialsException exception) {
+        return problem(HttpStatus.UNAUTHORIZED, "Credenciais inválidas", exception.getMessage());
+    }
+
+    @ExceptionHandler(InvalidSessionException.class)
+    public ProblemDetail handleInvalidSession(InvalidSessionException exception) {
+        return problem(HttpStatus.UNAUTHORIZED, "Sessão inválida", exception.getMessage());
+    }
+
+    @ExceptionHandler(AccountNotActiveException.class)
+    public ProblemDetail handleAccountNotActive(AccountNotActiveException exception) {
+        return problem(HttpStatus.FORBIDDEN, "Conta inativa", exception.getMessage());
     }
 
     @Override

@@ -89,7 +89,15 @@ O Maven não precisa ser instalado: o projeto usa o Maven Wrapper (`mvnw`).
    - Banco: `localhost:5432`, banco `chamados`
    - pgAdmin: `http://localhost:5050` (ao registrar o servidor, use o host `db`)
 
-3. Inicie o back-end, na raiz do projeto:
+3. Gere a chave dos tokens de login e coloque no `.env` como `JWT_SECRET=<valor>` (sem ela, a aplicação não sobe):
+
+   ```powershell
+   $b = New-Object byte[] 32; $rng = [Security.Cryptography.RandomNumberGenerator]::Create(); $rng.GetBytes($b); $rng.Dispose(); [Convert]::ToBase64String($b)
+   ```
+
+   No Linux, macOS ou WSL: `openssl rand -base64 32`.
+
+4. Inicie o back-end, na raiz do projeto:
 
    ```powershell
    .\mvnw clean spring-boot:run
@@ -97,7 +105,7 @@ O Maven não precisa ser instalado: o projeto usa o Maven Wrapper (`mvnw`).
 
    No Linux, macOS ou WSL: `./mvnw clean spring-boot:run`. O Flyway aplica as migrations ao subir, e a API fica em `http://localhost:8080`.
 
-4. Explore a API no Swagger UI: `http://localhost:8080/swagger-ui.html`. Ele só existe com `API_DOCS_ENABLED=true` no `.env` (já vem assim no `.env.example`); sem a variável, como em produção, as rotas da documentação respondem 404.
+5. Explore a API no Swagger UI: `http://localhost:8080/swagger-ui.html`. Ele só existe com `API_DOCS_ENABLED=true` no `.env` (já vem assim no `.env.example`); sem a variável, como em produção, as rotas da documentação respondem 404.
 
 ## Estrutura do projeto
 
@@ -127,10 +135,10 @@ O Maven não precisa ser instalado: o projeto usa o Maven Wrapper (`mvnw`).
 | --- | --- | --- | --- |
 | `POST` | `/auth/register` | Cadastrar novo usuário (público) | implementada |
 | `GET` | `/departments` | Listar departamentos para o cadastro (público) | implementada |
-| `POST` | `/auth/login` | Iniciar sessão | prevista |
+| `POST` | `/auth/login` | Iniciar sessão (token em cookie `HttpOnly`) | implementada |
 | `POST` | `/auth/refresh` | Renovar a sessão | prevista |
 | `POST` | `/auth/logout` | Encerrar sessão | prevista |
-| `GET` | `/users/me` | Perfil do usuário logado | prevista |
+| `GET` | `/users/me` | Perfil do usuário logado | implementada |
 | `PUT` | `/users/me` | Editar o próprio perfil | prevista |
 | `PATCH` | `/users/me/password` | Trocar a senha | prevista |
 | `GET` | `/users/{id}` | Consultar outro usuário (administrador) | prevista |
@@ -146,7 +154,7 @@ As rotas de autenticação ficam sob `/auth`; a ação vem do método HTTP, não
 
 ## Status
 
-Back-end em desenvolvimento: cadastro de conta, lista de departamentos e documentação no Swagger implementados; login e autenticação são o próximo passo. O andamento é acompanhado no Jira (projeto **Innovation Unit**, chave `SCRUM`).
+Back-end em desenvolvimento: cadastro de conta, login, lista de departamentos e documentação no Swagger implementados; renovação da sessão (refresh token) e logout são o próximo passo. O andamento é acompanhado no Jira (projeto **Innovation Unit**, chave `SCRUM`).
 
 ## Como contribuir
 
