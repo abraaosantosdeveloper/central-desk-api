@@ -453,6 +453,16 @@ Decisão tomada: alteração de status (RF06) e encerramento (RF07) continuam **
 - Comentários explicam o **porquê**, nunca o quê.
 - Equilíbrio com a regra de simplicidade: nada de abstração "para o futuro" (YAGNI).
 
+### Branches e fluxo de trabalho
+
+Detalhado no `CONTRIBUTING.md`. Resumo:
+
+- `main` sempre estável; nada é commitado direto nela. Todo trabalho entra por pull request (*squash and merge*).
+- Branches curtas no formato `tipo/SCRUM-N-descricao`: `feature/`, `fix/`, `hotfix/` (urgente, em produção), `refactor/`, `test/`, `docs/`, `chore/` e `spike/` (experimento descartável, sem PR).
+- Uma branch por item entregue de uma vez (normalmente a subtarefa).
+- Commits no padrão Conventional Commits, em português, com `Refs: SCRUM-N`.
+- Versões com tag `vMAJOR.MINOR.PATCH` na `main`.
+
 ## 14. Gestão no Jira
 
 - Site `contabilizape.atlassian.net`, projeto **Innovation Unit** (chave `SCRUM`).
@@ -467,5 +477,6 @@ Decisão tomada: alteração de status (RF06) e encerramento (RF07) continuam **
 - Ao propor mudanças no banco, criar uma **nova migration**, nunca editar as existentes.
 - Comandos para **PowerShell** (`.\mvnw`), não bash.
 - Seguir a seção 13: em funcionalidades novas, entregar **primeiro a classe de testes** (vermelho) e só depois a implementação (verde).
+- Trabalho novo começa numa branch (`CONTRIBUTING.md`); ao propor commits, sugerir também o nome da branch.
 - Ao entregar código, entregar a **classe inteira** (com `package`, imports, campos e construtor), não só o trecho alterado.
 - Explicar o porquê das escolhas, já que elas também alimentam a documentação ABNT.

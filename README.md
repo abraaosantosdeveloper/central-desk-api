@@ -139,6 +139,10 @@ As rotas de autenticação ficam sob `/auth`; a ação vem do método HTTP, não
 
 Back-end em desenvolvimento: cadastro de conta implementado; login e autenticação são o próximo passo. O andamento é acompanhado no Jira (projeto **Innovation Unit**, chave `SCRUM`).
 
+## Como contribuir
+
+Branches, commits, pull requests e versões estão descritos em [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
 ## Documentação
 
 A documentação formal, em LaTeX seguindo as normas ABNT, está em `docs/DOC_SISTEMA_CHAMADOS_0.1.pdf`.
