@@ -214,3 +214,15 @@ Modelo de entrada:
   - `ApiDocsIntegrationTest` (+1): refresh documentado.
 - Total esperado na execução 11: **157 testes**.
 
+### Mudanças entre a execução 11 e a 12
+
+- Abertura de chamados (SCRUM-145):
+  - entidades `Ticket`, `Category` e `Priority`, com `V10__seed_categories.sql`;
+  - `TicketService`, `TicketCatalogService` e os endpoints `POST /tickets`, `GET /categories` e `GET /priorities`.
+- `DatabaseCleanup` passa a apagar `comments` e `tickets` antes de `users`, por causa das chaves estrangeiras.
+- Novos testes (14):
+  - `TicketServiceTest` (5, Mockito): a categoria e a prioridade são mocks criados fora do `when(...)`;
+  - `TicketControllerIntegrationTest` (8): abertura, solicitante e status vindos do servidor, sem sessão, campos inválidos, categoria ou prioridade inexistente, listas ordenadas, catálogo exige sessão;
+  - `ApiDocsIntegrationTest` (+1).
+- Total esperado na execução 12: **171 testes**.
+

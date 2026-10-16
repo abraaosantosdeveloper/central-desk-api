@@ -1,0 +1,65 @@
+package br.com.contabilizape.centraldesk.service;
+
+import br.com.contabilizape.centraldesk.dto.TicketCreateRequest;
+import br.com.contabilizape.centraldesk.dto.TicketResponse;
+import br.com.contabilizape.centraldesk.exception.AccountNotActiveException;
+import br.com.contabilizape.centraldesk.exception.CategoryNotFoundException;
+import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
+import br.com.contabilizape.centraldesk.exception.PriorityNotFoundException;
+import br.com.contabilizape.centraldesk.model.Category;
+import br.com.contabilizape.centraldesk.model.Priority;
+import br.com.contabilizape.centraldesk.model.Ticket;
+import br.com.contabilizape.centraldesk.model.User;
+import br.com.contabilizape.centraldesk.model.UserStatus;
+import br.com.contabilizape.centraldesk.repository.CategoryRepository;
+import br.com.contabilizape.centraldesk.repository.PriorityRepository;
+import br.com.contabilizape.centraldesk.repository.TicketRepository;
+import br.com.contabilizape.centraldesk.repository.UserRepository;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.UUID;
+
+@Service
+public class TicketService {
+
+    private final TicketRepository ticketRepository;
+    private final UserRepository userRepository;
+    private final CategoryRepository categoryRepository;
+    private final PriorityRepository priorityRepository;
+
+    public TicketService(TicketRepository ticketRepository,
+                         UserRepository userRepository,
+                         CategoryRepository categoryRepository,
+                         PriorityRepository priorityRepository) {
+        this.ticketRepository = ticketRepository;
+        this.userRepository = userRepository;
+        this.categoryRepository = categoryRepository;
+        this.priorityRepository = priorityRepository;
+    }
+
+    /**
+     * Abre um chamado em nome do usuário logado (requesterId vem do token, nunca do corpo).
+     */
+    @Transactional
+    public TicketResponse open(UUID requesterId, TicketCreateRequest request) {
+        User requester = findActiveRequester(requesterId);
+        Category category = categoryRepository.findById(request.categoryId())
+                .orElseThrow(() -> new CategoryNotFoundException(request.categoryId()));
+        Priority priority = priorityRepository.findById(request.priorityId())
+                .orElseThrow(() -> new PriorityNotFoundException(request.priorityId()));
+
+        Ticket ticket = new Ticket(request.title().trim(), request.description().trim(), category, priority, requester);
+        ticketRepository.saveAndFlush(ticket); // flush preenche o createdAt antes de montar a resposta
+        return TicketResponse.from(ticket);
+    }
+
+    // O token vale até 15 min: a conta pode ter sido desativada nesse meio-tempo
+    private User findActiveRequester(UUID requesterId) {
+        User requester = userRepository.findById(requesterId).orElseThrow(InvalidSessionException::new);
+        if (requester.getStatus() != UserStatus.ACTIVE) {
+            throw new AccountNotActiveException();
+        }
+        return requester;
+    }
+}

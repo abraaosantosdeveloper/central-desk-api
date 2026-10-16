@@ -160,6 +160,7 @@ Formato obrigatório: `V<n>__<descricao>.sql` — **`V` maiúsculo** e dois unde
 | `V7__create_refresh_tokens.sql` | refresh tokens |
 | `V8__seed_departments.sql` | departamentos Inovação e Geral (UUIDs fixos). **Sem dados pessoais**: o primeiro admin vem do `AdminBootstrap` |
 | `V9__create_departments_and_requests.sql` | pedidos de entrada em departamento (`department_requests`) |
+| `V10__seed_categories.sql` | categorias iniciais dos chamados (Hardware, Software, Acesso e contas, Rede e internet, Sistemas internos, Outros) |
 
 ### Departamentos fixos (criados na V8)
 
@@ -183,7 +184,7 @@ Os UUIDs são fixos porque a aplicação os referencia por configuração: assim
 - Índice único parcial: no máximo **um pedido pendente por usuário** (pode pedir de novo depois de uma recusa).
 - Pedidos revisados não são apagados: o histórico fica preservado.
 
-**categories** — `id` UUID PK · `label` VARCHAR(60) UNIQUE · `color` CHAR(7) (`#RRGGBB`, validado por CHECK). Cadastradas pelos administradores.
+**categories** — `id` UUID PK · `label` VARCHAR(60) UNIQUE · `color` CHAR(7) (`#RRGGBB`, validado por CHECK). Iniciais na V10; novas entram por migration (no futuro, por uma tela do administrador).
 
 **priorities** — `id` SMALLINT PK · `label` VARCHAR(20) UNIQUE. Valores fixos: 1 Baixa, 2 Média, 3 Alta, 4 Crítica. O `id` define a ordem de urgência.
 
@@ -357,7 +358,9 @@ Preenche `deactivated_at` e bloqueia o login imediatamente, revoga todos os refr
 | GET | `/department-requests` | fila de pedidos pendentes (admin) | previsto |
 | PATCH | `/department-requests/{id}/approve` | aprovar pedido (admin) | previsto |
 | PATCH | `/department-requests/{id}/reject` | recusar pedido (admin) | previsto |
-| POST | `/tickets` | abrir chamado | previsto |
+| POST | `/tickets` | abrir chamado (logado): solicitante = usuário do token, nasce `OPEN` | **implementado** |
+| GET | `/categories` | categorias do formulário de chamado, por nome (logado) | **implementado** |
+| GET | `/priorities` | prioridades, da menos à mais urgente (logado) | **implementado** |
 | PATCH | `/tickets/{id}/assign` | assumir chamado | previsto |
 | PATCH | `/tickets/{id}/close` | encerrar chamado | previsto |
 
@@ -373,6 +376,10 @@ No Spring, rotas literais como `/users/me` têm prioridade sobre `/users/{id}`.
 - Endpoint protegido declara `security = @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH)`. O esquema `cookieAuth` descreve o cookie `access_token`. No Swagger UI, depois do *Try it out* do login, o navegador envia o cookie sozinho (o botão *Authorize* não é necessário).
 - `OpenApiConfig` define o título ("CentralDesk API"), a versão do contrato (`v1`) e a descrição geral, que explica o formato de erro.
 - Os testes `ApiDocsIntegrationTest` (ligado) e `ApiDocsDisabledIntegrationTest` (desligado → 404) garantem o comportamento.
+
+### Testes manuais: use o Swagger
+
+Os endpoints que dependem de sessão (`/users/me`, `/auth/refresh`, `/auth/logout`) são testados no **Swagger UI**. O navegador guarda os cookies `Secure` em `http://localhost`; o Insomnia não guardou nos testes feitos em 16/10/2026. Decisão: manter `COOKIE_SECURE=true`, que é o valor de produção, e não alterar a API por causa de uma ferramenta de teste. O Insomnia continua servindo para os endpoints públicos (cadastro, departamentos, login).
 
 ### Testando o cadastro no Insomnia
 
@@ -405,22 +412,26 @@ Só a classe principal fica na raiz; o Spring procura componentes do pacote dela
 src/main/java/br/com/contabilizape/centraldesk/
 ├── CentralDeskApplication.java
 ├── config/          SecurityConfig, OpenApiConfig
-├── controller/      AuthController, DepartmentController, UserController, GlobalExceptionHandler
-│   └── doc/         AuthApi, DepartmentApi, UserApi (documentação OpenAPI), ProblemExamples
-├── dto/             UserCreateRequest, UserResponse, DepartmentResponse, LoginRequest, CurrentUserResponse
+├── controller/      AuthController, DepartmentController, UserController, TicketController,
+│                    TicketCatalogController, GlobalExceptionHandler
+│   └── doc/         AuthApi, DepartmentApi, UserApi, TicketApi, TicketCatalogApi (OpenAPI), ProblemExamples
+├── dto/             UserCreateRequest, UserResponse, DepartmentResponse, LoginRequest, CurrentUserResponse,
+│                    TicketCreateRequest, TicketResponse, CategoryResponse, PriorityResponse
 ├── exception/       EmailAlreadyRegisteredException, CpfAlreadyRegisteredException,
 │                    DepartmentNotFoundException, InvalidCredentialsException,
-│                    AccountNotActiveException, InvalidSessionException
+│                    AccountNotActiveException, InvalidSessionException, CategoryNotFoundException,
+│                    PriorityNotFoundException
 ├── bootstrap/       AdminBootstrap (cria o primeiro admin), BootstrapAdminProperties (ADMIN_*)
 ├── model/           User, UserStatus, Department, Admin, DepartmentRequest, DepartmentRequestStatus,
-│                    RefreshToken
+│                    RefreshToken, Ticket, TicketStatus,
+│                    Category, Priority
 ├── notification/    DepartmentRequestCreatedEvent, DepartmentRequestNotificationListener
 ├── repository/      UserRepository, AdminRepository, DepartmentRepository, DepartmentRequestRepository,
-│                    RefreshTokenRepository
+│                    RefreshTokenRepository, TicketRepository, CategoryRepository, PriorityRepository
 ├── security/        JwtConfig + JwtProperties (chave, encoder, decoder), TokenService, AccessTokenCookie,
 │                    RefreshTokenCookie, CookieBearerTokenResolver, Roles
 ├── service/         UserService, DepartmentService, AuthService (+ AuthenticatedSession, Emails),
-│                    RefreshTokenService (+ RotatedRefreshToken)
+│                    RefreshTokenService (+ RotatedRefreshToken), TicketService, TicketCatalogService
 └── validation/      @Cpf + CpfValidator, @CorporateEmail + CorporateEmailValidator
 ```
 
@@ -438,13 +449,15 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 ├── controller/AuthLogoutIntegrationTest       POST /auth/logout: apaga os dois cookies com ou sem sessão (3)
 ├── controller/AuthRefreshIntegrationTest      rotação, reuso, vencido, conta inativa, logout revoga (11)
 ├── controller/UserControllerIntegrationTest   GET /users/me: sessão válida, sem cookie, chave errada, vencido (7)
-├── docs/ApiDocsIntegrationTest                OpenAPI e Swagger UI ligados (9 casos)
+├── controller/TicketControllerIntegrationTest abertura de chamado, categorias e prioridades (8)
+├── docs/ApiDocsIntegrationTest                OpenAPI e Swagger UI ligados (10 casos)
 ├── docs/ApiDocsDisabledIntegrationTest        sem API_DOCS_ENABLED: 404 (2 casos)
 ├── dto/UserCreateRequestValidationTest        regras do DTO (Bean Validation)
 ├── service/UserServiceTest                    regras de negócio (JUnit 5 + Mockito, sem banco)
 ├── service/DepartmentServiceTest              listagem ordenada (Mockito, 2 casos)
 ├── service/AuthServiceTest                    login, permissões, renovação e logout (Mockito, 11 casos)
 ├── service/RefreshTokenServiceTest            emissão, hash, rotação, reuso, revogação (Mockito, 10)
+├── service/TicketServiceTest                  abertura: solicitante, categoria, prioridade, conta (Mockito, 5)
 ├── security/JwtConfigTest                     tamanho e formato da chave (3)
 ├── security/TokenServiceTest                  claims, validade, chave e emissor errados (5)
 ├── security/CookieBearerTokenResolverTest     leitura do cookie e rotas públicas (5)
@@ -461,7 +474,7 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 - Relatório HTML: `.\mvnw surefire-report:report` (em `target\reports\`).
 - Os testes de integração usam `ddl-auto=validate`, então também conferem se as entidades batem com as migrations.
 - **Teste de integração novo usa `@IntegrationTest`** (`@SpringBootTest` + MockMvc + Testcontainers + propriedades que isolam do `.env`). Classes com as mesmas propriedades compartilham um único contexto e um único contêiner. Para mudar uma propriedade, `@TestPropertySource` na classe: tem precedência, mas cria outro contexto (outro contêiner), então use com moderação.
-- Cada teste de integração apaga os usuários criados (preservando administradores, se houver) antes de rodar, com `DatabaseCleanup.removeNonAdminUsers(jdbc)`. A ordem respeita as chaves estrangeiras (`refresh_tokens` → `department_requests` → `users`); toda tabela nova que aponte para `users` entra ali.
+- Cada teste de integração apaga os usuários criados (preservando administradores, se houver) antes de rodar, com `DatabaseCleanup.removeNonAdminUsers(jdbc)`. A ordem respeita as chaves estrangeiras (`comments` → `tickets` → `refresh_tokens` → `department_requests` → `users`); toda tabela nova que aponte para `users` entra ali.
 - **Rastreabilidade:** toda execução relevante, **inclusive as que falham**, é registrada em `docs/testes/registro-de-execucoes.md` (comando, resultado, causa raiz, correção). Cada falha vira uma subtarefa `[BUG]` no Jira, com o rótulo `bug`.
 
 Fluxo de uma requisição: `Controller (HTTP + DTO) → Service (regras, @Transactional) → Repository (consultas) → banco`.
@@ -509,7 +522,8 @@ Decisão tomada: alteração de status (RF06) e encerramento (RF07) continuam **
 - [x] Logout que apaga o cookie (SCRUM-142).
 - [x] Refresh token com rotação e detecção de reuso; logout revoga a sessão (SCRUM-143).
 - [ ] Limpeza periódica de `refresh_tokens` e revogação imediata das sessões ao desativar uma conta.
-- [ ] Implementar os services com as regras de transição de status dos chamados.
+- [x] Abertura de chamados (SCRUM-145).
+- [ ] Listar chamados (meus / fila da Inovação), assumir e encerrar, com as regras de transição de status (RF06, RF07).
 - [ ] Modelar as notificações (e-mail via Resend e dentro da interface) e substituir o log provisório.
 - [ ] Definir o significado de `validated_at` (hoje nasce nulo).
 - [ ] Criptografia em repouso (AES-GCM) de comentários e descrições.

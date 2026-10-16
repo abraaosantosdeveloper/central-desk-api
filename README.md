@@ -146,7 +146,9 @@ O Maven não precisa ser instalado: o projeto usa o Maven Wrapper (`mvnw`).
 | `GET` | `/department-requests` | Fila de pedidos de departamento (administrador) | prevista |
 | `PATCH` | `/department-requests/{id}/approve` | Aprovar pedido (administrador) | prevista |
 | `PATCH` | `/department-requests/{id}/reject` | Recusar pedido (administrador) | prevista |
-| `POST` | `/tickets` | Abrir chamado | prevista |
+| `POST` | `/tickets` | Abrir chamado | implementada |
+| `GET` | `/categories` | Categorias do formulário de chamado | implementada |
+| `GET` | `/priorities` | Prioridades do formulário de chamado | implementada |
 | `PATCH` | `/tickets/{id}/assign` | Assumir chamado | prevista |
 | `PATCH` | `/tickets/{id}/close` | Encerrar chamado | prevista |
 
@@ -154,7 +156,7 @@ As rotas de autenticação ficam sob `/auth`; a ação vem do método HTTP, não
 
 ## Status
 
-Back-end em desenvolvimento: cadastro de conta, login, renovação de sessão, logout, lista de departamentos e documentação no Swagger implementados. O andamento é acompanhado no Jira (projeto **Innovation Unit**, chave `SCRUM`).
+Back-end em desenvolvimento: cadastro de conta, login, renovação de sessão, logout, lista de departamentos, abertura de chamados e documentação no Swagger implementados. O andamento é acompanhado no Jira (projeto **Innovation Unit**, chave `SCRUM`).
 
 ## Como contribuir
 

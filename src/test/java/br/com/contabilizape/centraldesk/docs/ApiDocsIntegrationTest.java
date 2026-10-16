@@ -78,6 +78,19 @@ class ApiDocsIntegrationTest {
     }
 
     @Test
+    void documentsTicketOpening() throws Exception {
+        String open = "$.paths['/tickets'].post";
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(open + ".responses['201'].headers.Location").exists())
+                .andExpect(jsonPath(open + ".responses['400'].content['" + PROBLEM_JSON + "']").exists())
+                .andExpect(jsonPath(open + ".responses['401']").exists())
+                .andExpect(jsonPath(open + ".security[0].cookieAuth").isArray())
+                .andExpect(jsonPath("$.paths['/categories'].get.responses['200']").exists())
+                .andExpect(jsonPath("$.paths['/priorities'].get.responses['200']").exists());
+    }
+
+    @Test
     void documentsLogout() throws Exception {
         mockMvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk())

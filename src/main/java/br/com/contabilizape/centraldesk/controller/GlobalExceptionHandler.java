@@ -1,11 +1,13 @@
 package br.com.contabilizape.centraldesk.controller;
 
 import br.com.contabilizape.centraldesk.exception.AccountNotActiveException;
+import br.com.contabilizape.centraldesk.exception.CategoryNotFoundException;
 import br.com.contabilizape.centraldesk.exception.CpfAlreadyRegisteredException;
 import br.com.contabilizape.centraldesk.exception.DepartmentNotFoundException;
 import br.com.contabilizape.centraldesk.exception.EmailAlreadyRegisteredException;
 import br.com.contabilizape.centraldesk.exception.InvalidCredentialsException;
 import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
+import br.com.contabilizape.centraldesk.exception.PriorityNotFoundException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -35,7 +37,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return problem(HttpStatus.CONFLICT, "Cadastro duplicado", exception.getMessage());
     }
 
-    @ExceptionHandler(DepartmentNotFoundException.class)
+    @ExceptionHandler({DepartmentNotFoundException.class, CategoryNotFoundException.class, PriorityNotFoundException.class})
     public ProblemDetail handleInvalidInput(RuntimeException exception) {
         return problem(HttpStatus.BAD_REQUEST, "Dados inválidos", exception.getMessage());
     }

@@ -88,6 +88,28 @@ public final class ProblemExamples {
               "instance": "/auth/refresh"
             }""";
 
+    public static final String TICKET_INVALID_FIELDS = """
+            {
+              "type": "about:blank",
+              "title": "Dados inválidos",
+              "status": 400,
+              "detail": "Verifique os campos e tente novamente.",
+              "instance": "/tickets",
+              "errors": {
+                "title": "não deve estar em branco",
+                "categoryId": "não deve ser nulo"
+              }
+            }""";
+
+    public static final String CATEGORY_NOT_FOUND = """
+            {
+              "type": "about:blank",
+              "title": "Dados inválidos",
+              "status": 400,
+              "detail": "Categoria não encontrada: 00000000-0000-0000-0000-000000000000",
+              "instance": "/tickets"
+            }""";
+
     private ProblemExamples() {
     }
 }
