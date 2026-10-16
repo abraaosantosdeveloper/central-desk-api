@@ -1,0 +1,166 @@
+# Registro de execuções de testes
+
+Histórico das execuções da suíte de testes do CentralDesk, **incluindo as que falharam**. Serve para rastrear quando cada defeito apareceu, qual foi a causa e qual execução confirmou a correção.
+
+## Como registrar
+
+- Toda execução relevante entra aqui: a primeira de uma funcionalidade nova, qualquer execução com falha e a execução que confirma uma correção.
+- Falhas viram uma subtarefa `[BUG]` no Jira, com o rótulo `bug`, na história da funcionalidade. O número da subtarefa é anotado aqui.
+- Os relatórios brutos ficam em `target/surefire-reports/`. Eles não vão para o Git, por isso o resumo fica neste arquivo.
+
+Modelo de entrada:
+
+```
+## Execução N — AAAA-MM-DD HH:MM — <escopo>
+- Comando:
+- Resultado: X testes, Y falhas, Z erros
+- Falhas: <teste> — <mensagem>
+- Causa raiz:
+- Correção:
+- Rastreio: SCRUM-___
+- Confirmada na execução: N+1
+```
+
+---
+
+## Execução 1 — 2026-10-16 ~09:26 — `CpfValidatorTest`
+
+- **Comando:** `.\mvnw test "-Dtest=CpfValidatorTest"`
+- **Resultado:** 16 testes, 0 falhas. ✅
+- **Observação:** o teste foi escrito antes do `CpfValidator` (TDD), mas a implementação foi criada antes da primeira execução, então o vermelho inicial (erro de compilação) não foi registrado.
+- **Rastreio:** SCRUM-126
+
+## Execução 2 — 2026-10-16 09:43 — suíte completa
+
+- **Comando:** `.\mvnw test`
+- **Resultado:** 52 testes, **1 falha**, 0 erros. ❌ (23 s)
+
+| Classe | Testes | Situação |
+|---|---|---|
+| `CentralDeskApplicationTests` | 1 | ✅ |
+| `AuthControllerIntegrationTest` | 8 | ❌ 1 falha |
+| `UserCreateRequestValidationTest` | 16 | ✅ |
+| `UserServiceTest` | 11 | ✅ |
+| `CpfValidatorTest` | 16 | ✅ |
+
+- **Falha:** `AuthControllerIntegrationTest.rejectsInvalidFieldsListingEachOne:114` — `No value at JSON path "$.errors.cpf"`.
+- **Sintoma:** a resposta foi 400, mas no formato padrão do Spring, sem `errors`:
+  `{"detail":"Invalid request content.","instance":"/auth/register","status":400,"title":"Bad Request"}`
+- **Causa raiz:** `spring.mvc.problemdetails.enabled=true` registra o `ProblemDetailsExceptionHandler` do Spring Boot, que também trata `MethodArgumentNotValidException` e foi escolhido antes do nosso `GlobalExceptionHandler`.
+- **Correção:** o `GlobalExceptionHandler` passou a estender `ResponseEntityExceptionHandler` (o Spring Boot deixa de registrar o dele) e a sobrescrever `handleMethodArgumentNotValid`. A propriedade foi removida.
+- **Rastreio:** SCRUM-133
+- **Confirmada na execução:** 3 ✅
+
+### Mudanças entre a execução 2 e a 3
+
+- Correção da SCRUM-133 (acima).
+- Validação do domínio do e-mail movida do `UserService` para a anotação `@CorporateEmail` no DTO:
+  - novo `CorporateEmailValidatorTest` (9 testes);
+  - `UserCreateRequestValidationTest`: +2 testes de domínio;
+  - `UserServiceTest`: −2 testes de domínio;
+  - `AuthControllerIntegrationTest`: o caso de outro domínio passou a esperar `errors.email`.
+- Total esperado na execução 3: **61 testes**.
+
+## Execução 3 — 2026-10-16 09:52 — suíte completa
+
+- **Comando:** `.\mvnw test`
+- **Resultado:** 61 testes, 0 falhas, 0 erros. ✅ (27 s; Java 25.0.4.1, Testcontainers 2.0.5, PostgreSQL 16.15, Docker Desktop 29.8.2)
+
+| Classe | Testes | Situação |
+|---|---|---|
+| `CentralDeskApplicationTests` | 1 | ✅ |
+| `AuthControllerIntegrationTest` | 8 | ✅ (inclui `rejectsInvalidFieldsListingEachOne`, que falhou na execução 2) |
+| `UserCreateRequestValidationTest` | 18 | ✅ |
+| `UserServiceTest` | 9 | ✅ |
+| `CorporateEmailValidatorTest` | 9 | ✅ |
+| `CpfValidatorTest` | 16 | ✅ |
+
+- **Confirma:** a correção da SCRUM-133 e o `@CorporateEmail` (SCRUM-126).
+- **Evidências adicionais no log:** as 9 migrations foram aplicadas num banco vazio, o Hibernate validou o mapeamento (`ddl-auto=validate`) e o ouvinte registrou `Notificar abraao.inovacao@...` para o admin da V8 no cenário da Inovação.
+- **Avisos no log (não são falhas):**
+  - `Using generated security password`: o Spring cria um usuário em memória porque ainda não existe `UserDetailsService`. Some quando o login for implementado.
+  - `spring.jpa.open-in-view is enabled by default`: recomendável desligar (`spring.jpa.open-in-view=false`), para que nenhuma consulta ao banco aconteça fora da camada de service.
+  - `Mockito is currently self-attaching`: nos JDKs futuros, o Mockito vai precisar ser configurado como agente do Surefire no `pom.xml`.
+  - Dois contêineres do Postgres sobem por execução (um por contexto de teste: com e sem `@AutoConfigureMockMvc`). Aceitável por enquanto.
+
+
+### Mudanças entre a execução 3 e a 4
+
+- **V8 sem dados pessoais:** renomeada para `V8__seed_departments.sql`, cria só Inovação e Geral. O primeiro admin passou a ser criado pelo `AdminBootstrap` ao subir a aplicação, a partir das variáveis `ADMIN_*` (SCRUM-134).
+  - Por isso, nos contextos de teste sem `ADMIN_*`, **não existe admin**: o cenário da Inovação no `AuthControllerIntegrationTest` deixa de registrar a linha `Notificar ...` (comportamento esperado).
+- Novos testes:
+  - `AdminBootstrapTest` (7, Mockito): não faz nada se já existe admin ou se faltam variáveis; cria na Inovação com hash e `granted_by_id` nulo; recusa credenciais inválidas e e-mail ou CPF já cadastrados; falha se a Inovação não existir.
+  - `AdminBootstrapIntegrationTest` (2, Postgres real): o admin é criado ao subir e não duplica numa segunda execução.
+- Total esperado na execução 4: **70 testes**.
+
+## Execução 4 — 2026-10-16 10:24 — suíte completa
+
+- **Comando:** `.\mvnw test`
+- **Resultado:** 70 testes, 0 falhas, **1 erro**. ❌ (27 s)
+
+| Classe | Testes | Situação |
+|---|---|---|
+| `AdminBootstrapIntegrationTest` | 2 | ✅ (log: `Administrador inicial criado: ana.admin@contabilizape.com.br`) |
+| `AdminBootstrapTest` | 7 | ❌ 1 erro |
+| `CentralDeskApplicationTests` | 1 | ✅ (log: aviso de que não há `ADMIN_*`, como esperado) |
+| `AuthControllerIntegrationTest` | 8 | ✅ |
+| `UserCreateRequestValidationTest` | 18 | ✅ |
+| `UserServiceTest` | 9 | ✅ |
+| `CorporateEmailValidatorTest` | 9 | ✅ |
+| `CpfValidatorTest` | 16 | ✅ |
+
+- **Erro:** `AdminBootstrapTest.validatesCredentialsWithTheSameRulesAsRegistration` — `UnfinishedStubbingException`.
+- **Causa raiz:** defeito no **código do teste**, não da aplicação. O auxiliar `violation(...)`, que configura mocks com `when(...)`, era chamado dentro do `thenReturn(...)` de outro `when(...)`. O Mockito não permite iniciar uma configuração de mock enquanto outra está em aberto.
+- **Correção:** a violação passou a ser criada numa variável antes do `when(...)`.
+- **Lição:** nunca chamar auxiliares que configuram mocks dentro de `thenReturn(...)`.
+- **Rastreio:** SCRUM-135
+- **Confirmada na execução:** 5 ✅
+
+## Execução 5 — 2026-10-16 10:29 — suíte completa
+
+- **Comando:** `.\mvnw test`
+- **Resultado:** 70 testes, 0 falhas, 0 erros. ✅ (28 s)
+
+| Classe | Testes | Situação |
+|---|---|---|
+| `AdminBootstrapIntegrationTest` | 2 | ✅ |
+| `AdminBootstrapTest` | 7 | ✅ (inclui `validatesCredentialsWithTheSameRulesAsRegistration`, com erro na execução 4) |
+| `CentralDeskApplicationTests` | 1 | ✅ |
+| `AuthControllerIntegrationTest` | 8 | ✅ |
+| `UserCreateRequestValidationTest` | 18 | ✅ |
+| `UserServiceTest` | 9 | ✅ |
+| `CorporateEmailValidatorTest` | 9 | ✅ |
+| `CpfValidatorTest` | 16 | ✅ |
+
+- **Confirma:** a correção da SCRUM-135 e o `AdminBootstrap` com a V8 sem dados pessoais (SCRUM-134).
+- **Evidências no log:** a V8 foi aplicada como `8 - seed departments`; `Administrador inicial criado: ana.admin@contabilizape.com.br` no contexto com `ADMIN_*`; aviso de ausência de `ADMIN_*` nos demais contextos, como esperado.
+
+### Mudanças entre a execução 5 e a 6
+
+- `application.properties` passou a importar o `.env` (`spring.config.import=optional:file:.env[.properties]`). Motivo: com as `ADMIN_*` só no `.env`, o admin não era criado quando a aplicação subia por um caminho que não lê o arquivo.
+- Efeito colateral evitado: como os testes rodam na raiz do projeto, passariam a ler o `.env` local e a criar o admin real. `CentralDeskApplicationTests` e `AuthControllerIntegrationTest` agora zeram `app.bootstrap.admin.*` nas propriedades do teste (o `AdminBootstrapIntegrationTest` já define as suas).
+- Total esperado na execução 6: 70 testes (nenhum teste novo).
+
+## Execução 6 — 2026-10-16 ~10:58 — suíte completa
+
+- **Comando:** `.\mvnw test`
+- **Resultado:** 70 testes, 0 falhas, 0 erros. ✅ (resultado informado pelo desenvolvedor, sem log anexado)
+- **Confirma:** importar o `.env` pelo `application.properties` não afetou os testes, porque os contextos de teste zeram `app.bootstrap.admin.*`.
+- **Validação manual no ambiente local:** com as `ADMIN_*` no `.env`, o admin foi criado ao subir a aplicação (SCRUM-134). Achado: um nome acentuado chegou corrompido ("Ã"), porque o `.env` importado é lido em ISO-8859-1. Correção: escape Unicode no `.env` e `UPDATE` do registro (documentado no `CONTEXT.md` e no `.env.example`).
+
+### Mudanças entre a execução 6 e a 7
+
+- `GET /departments` (SCRUM-125) e a liberação dele no `SecurityConfig` (SCRUM-124).
+- Novos testes:
+  - `DepartmentServiceTest` (2, Mockito): lista ordenada por nome e lista vazia;
+  - `DepartmentControllerIntegrationTest` (4): os departamentos da V8 são acessíveis sem login, a ordem é por nome, a resposta traz só `id` e `name`, e o `POST /departments` continua bloqueado (401/403, e não 405).
+- Os mocks do `DepartmentServiceTest` são criados antes do `when(...)`, aplicando a lição da execução 4.
+- O `DepartmentControllerIntegrationTest` usa as mesmas configurações do `AuthControllerIntegrationTest`, então reaproveita o mesmo contexto e o mesmo contêiner.
+- Total esperado na execução 7: **76 testes**.
+
+
+## Execução 7 — 2026-10-16 ~11:02 — suíte completa
+
+- **Comando:** `.\mvnw test`
+- **Resultado:** 76 testes, 0 falhas, 0 erros. ✅ (resultado informado pelo desenvolvedor, sem log anexado)
+- **Confirma:** `GET /departments` público e ordenado (SCRUM-125) e a liberação só do método GET no `SecurityConfig` (SCRUM-124).

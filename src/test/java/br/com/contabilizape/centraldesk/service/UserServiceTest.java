@@ -1,0 +1,211 @@
+package br.com.contabilizape.centraldesk.service;
+
+import br.com.contabilizape.centraldesk.dto.UserCreateRequest;
+import br.com.contabilizape.centraldesk.dto.UserResponse;
+import br.com.contabilizape.centraldesk.exception.CpfAlreadyRegisteredException;
+import br.com.contabilizape.centraldesk.exception.DepartmentNotFoundException;
+import br.com.contabilizape.centraldesk.exception.EmailAlreadyRegisteredException;
+import br.com.contabilizape.centraldesk.model.Department;
+import br.com.contabilizape.centraldesk.model.DepartmentRequest;
+import br.com.contabilizape.centraldesk.model.DepartmentRequestStatus;
+import br.com.contabilizape.centraldesk.model.User;
+import br.com.contabilizape.centraldesk.model.UserStatus;
+import br.com.contabilizape.centraldesk.notification.DepartmentRequestCreatedEvent;
+import br.com.contabilizape.centraldesk.repository.DepartmentRepository;
+import br.com.contabilizape.centraldesk.repository.DepartmentRequestRepository;
+import br.com.contabilizape.centraldesk.repository.UserRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.quality.Strictness;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.security.crypto.password.PasswordEncoder;
+
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.withSettings;
+
+@ExtendWith(MockitoExtension.class)
+class UserServiceTest {
+
+    private static final UUID INNOVATION_ID = UUID.fromString("e9790f1f-41df-4369-bfe7-1be4be535561");
+    private static final UUID GENERAL_ID = UUID.fromString("3094ed3f-42ab-4bc0-9d8d-f6eb08891016");
+    private static final UUID FINANCE_ID = UUID.randomUUID();
+
+    @Mock private UserRepository userRepository;
+    @Mock private DepartmentRepository departmentRepository;
+    @Mock private DepartmentRequestRepository departmentRequestRepository;
+    @Mock private PasswordEncoder passwordEncoder;
+    @Mock private ApplicationEventPublisher eventPublisher;
+
+    private UserService userService;
+
+    private final Department innovation = department(INNOVATION_ID, "Inovação");
+    private final Department general = department(GENERAL_ID, "Geral");
+    private final Department finance = department(FINANCE_ID, "Financeiro");
+
+    @BeforeEach
+    void setUp() {
+        userService = new UserService(
+                userRepository, departmentRepository, departmentRequestRepository,
+                passwordEncoder, eventPublisher,
+                INNOVATION_ID, GENERAL_ID);
+    }
+
+    // ---------- caminho feliz ----------
+
+    @Test
+    void createsActiveUserInRequestedDepartment() {
+        when(departmentRepository.findById(FINANCE_ID)).thenReturn(Optional.of(finance));
+        when(passwordEncoder.encode("senhaForte123")).thenReturn("hash-bcrypt");
+        when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        UserResponse response = userService.create(request("maria.silva@contabilizape.com.br", FINANCE_ID));
+
+        User saved = savedUser();
+        assertThat(saved.getStatus()).isEqualTo(UserStatus.ACTIVE);
+        assertThat(saved.getDepartment()).isSameAs(finance);
+        assertThat(saved.getPasswordHash()).isEqualTo("hash-bcrypt");
+        assertThat(response.departmentId()).isEqualTo(FINANCE_ID);
+        assertThat(response.departmentApprovalPending()).isFalse();
+        verify(departmentRequestRepository, never()).save(any());
+        verify(eventPublisher, never()).publishEvent(any(Object.class));
+    }
+
+    @Test
+    void normalizesEmailAndTrimsName() {
+        when(departmentRepository.findById(FINANCE_ID)).thenReturn(Optional.of(finance));
+        when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        userService.create(new UserCreateRequest(
+                "  Maria da Silva  ", "52998224725", "  Maria.Silva@ContabilizaPE.com.br ",
+                "senhaForte123", FINANCE_ID));
+
+        User saved = savedUser();
+        assertThat(saved.getEmail()).isEqualTo("maria.silva@contabilizape.com.br");
+        assertThat(saved.getFullName()).isEqualTo("Maria da Silva");
+    }
+
+    @Test
+    void checksDuplicateEmailUsingNormalizedValue() {
+        when(userRepository.existsByEmail("maria.silva@contabilizape.com.br")).thenReturn(true);
+
+        assertThatThrownBy(() -> userService.create(request("MARIA.SILVA@contabilizape.com.br", FINANCE_ID)))
+                .isInstanceOf(EmailAlreadyRegisteredException.class);
+    }
+
+    // ---------- Inovação exige aprovação ----------
+
+    @Test
+    void innovationRequestStartsInGeneralWithPendingRequest() {
+        when(departmentRepository.findById(INNOVATION_ID)).thenReturn(Optional.of(innovation));
+        when(departmentRepository.findById(GENERAL_ID)).thenReturn(Optional.of(general));
+        when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(departmentRequestRepository.save(any(DepartmentRequest.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        UserResponse response = userService.create(request("joao.souza@contabilizape.com.br", INNOVATION_ID));
+
+        User saved = savedUser();
+        assertThat(saved.getDepartment()).isSameAs(general);
+        assertThat(response.departmentId()).isEqualTo(GENERAL_ID);
+        assertThat(response.departmentApprovalPending()).isTrue();
+
+        ArgumentCaptor<DepartmentRequest> requestCaptor = ArgumentCaptor.forClass(DepartmentRequest.class);
+        verify(departmentRequestRepository).save(requestCaptor.capture());
+        DepartmentRequest pending = requestCaptor.getValue();
+        assertThat(pending.getUser()).isSameAs(saved);
+        assertThat(pending.getDepartment()).isSameAs(innovation);
+        assertThat(pending.getStatus()).isEqualTo(DepartmentRequestStatus.PENDING);
+    }
+
+    @Test
+    void innovationRequestPublishesEventForAdmins() {
+        when(departmentRepository.findById(INNOVATION_ID)).thenReturn(Optional.of(innovation));
+        when(departmentRepository.findById(GENERAL_ID)).thenReturn(Optional.of(general));
+        when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(departmentRequestRepository.save(any(DepartmentRequest.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        userService.create(request("joao.souza@contabilizape.com.br", INNOVATION_ID));
+
+        ArgumentCaptor<DepartmentRequestCreatedEvent> eventCaptor =
+                ArgumentCaptor.forClass(DepartmentRequestCreatedEvent.class);
+        verify(eventPublisher).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().requesterName()).isEqualTo("Maria da Silva");
+        assertThat(eventCaptor.getValue().departmentName()).isEqualTo("Inovação");
+    }
+
+    @Test
+    void failsLoudlyWhenDefaultDepartmentIsMissing() {
+        when(departmentRepository.findById(INNOVATION_ID)).thenReturn(Optional.of(innovation));
+        when(departmentRepository.findById(GENERAL_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userService.create(request("joao.souza@contabilizape.com.br", INNOVATION_ID)))
+                .isInstanceOf(IllegalStateException.class);
+        verify(userRepository, never()).saveAndFlush(any());
+    }
+
+    // ---------- recusas ----------
+
+    // O domínio do e-mail é validado no DTO (@CorporateEmail); ver CorporateEmailValidatorTest
+
+    @Test
+    void rejectsDuplicateEmail() {
+        when(userRepository.existsByEmail("maria.silva@contabilizape.com.br")).thenReturn(true);
+
+        assertThatThrownBy(() -> userService.create(request("maria.silva@contabilizape.com.br", FINANCE_ID)))
+                .isInstanceOf(EmailAlreadyRegisteredException.class);
+        verify(userRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void rejectsDuplicateCpf() {
+        when(userRepository.existsByCpf("52998224725")).thenReturn(true);
+
+        assertThatThrownBy(() -> userService.create(request("maria.silva@contabilizape.com.br", FINANCE_ID)))
+                .isInstanceOf(CpfAlreadyRegisteredException.class);
+        verify(userRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void rejectsUnknownDepartment() {
+        UUID unknown = UUID.randomUUID();
+        when(departmentRepository.findById(unknown)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userService.create(request("maria.silva@contabilizape.com.br", unknown)))
+                .isInstanceOf(DepartmentNotFoundException.class);
+        verify(userRepository, never()).saveAndFlush(any());
+    }
+
+    // ---------- auxiliares ----------
+
+    private static UserCreateRequest request(String email, UUID departmentId) {
+        return new UserCreateRequest("Maria da Silva", "52998224725", email, "senhaForte123", departmentId);
+    }
+
+    private User savedUser() {
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).saveAndFlush(captor.capture());
+        return captor.getValue();
+    }
+
+    // Department só tem construtor protegido (exigência do JPA); no teste usamos um mock
+    private static Department department(UUID id, String name) {
+        Department department = mock(Department.class, withSettings().strictness(Strictness.LENIENT));
+        when(department.getId()).thenReturn(id);
+        when(department.getName()).thenReturn(name);
+        return department;
+    }
+}
