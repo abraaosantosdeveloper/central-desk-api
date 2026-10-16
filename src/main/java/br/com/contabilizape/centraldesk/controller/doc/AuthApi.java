@@ -17,7 +17,7 @@ import org.springframework.http.ResponseEntity;
 /**
  * Documentação OpenAPI dos endpoints de autenticação (implementada pelo AuthController).
  */
-@Tag(name = "Autenticação", description = "Cadastro de conta e login")
+@Tag(name = "Autenticação", description = "Cadastro de conta, login e logout")
 public interface AuthApi {
 
     @Operation(
@@ -88,4 +88,21 @@ public interface AuthApi {
                     schema = @Schema(implementation = ProblemDetail.class),
                     examples = @ExampleObject(name = "Conta inativa", value = ProblemExamples.ACCOUNT_NOT_ACTIVE)))
     ResponseEntity<CurrentUserResponse> login(LoginRequest request);
+
+    @Operation(
+            summary = "Sai do sistema",
+            description = """
+                    Endpoint público e idempotente: apaga o cookie `access_token` do navegador, \
+                    com ou sem sessão válida, e sempre responde 204.
+
+                    O JWT não é guardado no servidor: uma cópia do token feita antes do logout \
+                    valeria até vencer (no máximo 15 minutos). A revogação no servidor chega com o refresh token.""")
+    @ApiResponse(
+            responseCode = "204",
+            description = "Sessão encerrada neste navegador.",
+            headers = @Header(name = "Set-Cookie", description = "Cookie access_token vazio, expirando na hora",
+                    schema = @Schema(type = "string",
+                            example = "access_token=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure; HttpOnly; SameSite=Strict")),
+            content = @Content)
+    ResponseEntity<Void> logout();
 }

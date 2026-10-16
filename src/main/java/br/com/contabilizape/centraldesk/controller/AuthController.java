@@ -50,4 +50,12 @@ public class AuthController implements AuthApi {
                 .header(HttpHeaders.SET_COOKIE, accessTokenCookie.create(session.accessToken()).toString())
                 .body(session.user());
     }
+
+    @Override
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout() {
+        return ResponseEntity.noContent()
+                .header(HttpHeaders.SET_COOKIE, accessTokenCookie.clear().toString())
+                .build();
+    }
 }

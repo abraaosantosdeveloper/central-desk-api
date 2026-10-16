@@ -186,3 +186,13 @@ Modelo de entrada:
 - **Confirma:** emissão e validação do JWT (SCRUM-138), `POST /auth/login` (SCRUM-139), `GET /users/me` (SCRUM-140) e a documentação dos dois no Swagger (SCRUM-141). Também confirma que a troca de `/auth/**` por `PUBLIC_ENDPOINTS` não quebrou o cadastro nem a lista de departamentos.
 - **Validação manual:** no Swagger, a primeira tentativa de login respondeu 401. Foi resolvida pelo desenvolvedor sem mudança no código, e os testes de integração do login passam. Em seguida, o login e o `GET /users/me` funcionaram com o cookie.
 
+### Mudanças entre a execução 9 e a 10
+
+- Logout (SCRUM-142): `POST /auth/logout` responde 204 e apaga o cookie (`AccessTokenCookie.clear()`); a rota entrou em `PUBLIC_ENDPOINTS`.
+- `AccessTokenCookie`: os atributos de proteção ficaram num único método, usado tanto pelo cookie criado quanto pelo apagado.
+- Novos testes (6):
+  - `AccessTokenCookieTest` (2): atributos do cookie criado e do apagado;
+  - `AuthLogoutIntegrationTest` (3): logout com sessão, sem cookie e com cookie inválido;
+  - `ApiDocsIntegrationTest` (+1): logout documentado.
+- Total esperado na execução 10: **130 testes**.
+

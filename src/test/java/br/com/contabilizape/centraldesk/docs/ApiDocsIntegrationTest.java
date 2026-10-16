@@ -68,6 +68,13 @@ class ApiDocsIntegrationTest {
     }
 
     @Test
+    void documentsLogout() throws Exception {
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paths['/auth/logout'].post.responses['204'].headers['Set-Cookie']").exists());
+    }
+
+    @Test
     void documentsCurrentUserEndpointAsProtectedByTheCookie() throws Exception {
         String me = "$.paths['/users/me'].get";
         mockMvc.perform(get("/v3/api-docs"))

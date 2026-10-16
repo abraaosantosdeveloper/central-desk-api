@@ -295,15 +295,21 @@ Preenche `deactivated_at` e bloqueia o login imediatamente, revoga todos os refr
 - **Rotas públicas ignoram o cookie** (`CookieBearerTokenResolver`). Sem isso, um token vencido guardado no navegador faria o Spring responder 401 até no login.
 - Sessão `STATELESS` (o servidor não guarda sessão).
 
-### Previsto (RF03)
+### Logout (RF03, SCRUM-142)
+
+- `POST /auth/logout` → **204** + `Set-Cookie: access_token=; Max-Age=0` com os mesmos atributos do original (`AccessTokenCookie.clear()`). Sem os mesmos `Path` e atributos, o navegador não substitui o cookie.
+- **Público e idempotente**: está em `PUBLIC_ENDPOINTS`. Com sessão vencida ou sem cookie, também responde 204, e o usuário nunca fica preso logado.
+- **Limitação aceita**: o JWT é stateless, então uma cópia do token feita antes do logout vale até vencer (≤ 15 min). O `HttpOnly` impede que o JavaScript copie o token. A revogação no servidor vem com o refresh token.
+
+### Previsto: refresh token
 
 - **Refresh token**: valor aleatório (`SecureRandom`, 32+ bytes), armazenado como **hash SHA-256** em `refresh_tokens`, em cookie com `Path=/auth/refresh`.
   - Rotação a cada uso: o atual é revogado e um novo é emitido. Reuso de token revogado revoga todos os tokens do usuário.
-- **Logout** revoga o refresh token da sessão e apaga os cookies. Atenção: `/auth/logout` **não** pode entrar em `PUBLIC_ENDPOINTS`, porque precisa ler o cookie.
+- O logout passa a revogar também o refresh token da sessão e a apagar o cookie dele. Continua público: o controller lê o cookie `refresh_token` diretamente, sem passar pelo `CookieBearerTokenResolver`.
 
 ### `SecurityConfig` atual
 
-- `PUBLIC_ENDPOINTS` é a lista única de rotas sem login: `POST /auth/register`, `POST /auth/login`, `GET /departments`, `/error` e as rotas da documentação (`/v3/api-docs/**`, `/swagger-ui/**`, `/swagger-ui.html`). A mesma lista libera o acesso e faz o cookie ser ignorado. Todo o resto exige um JWT válido.
+- `PUBLIC_ENDPOINTS` é a lista única de rotas sem login: `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, `GET /departments`, `/error` e as rotas da documentação (`/v3/api-docs/**`, `/swagger-ui/**`, `/swagger-ui.html`). A mesma lista libera o acesso e faz o cookie ser ignorado. Todo o resto exige um JWT válido.
 - `/error` precisa estar liberado: o Spring encaminha os erros para lá, e se a rota estiver protegida o cliente recebe um 401 que esconde o erro real.
 - Com a documentação desligada, as rotas dela respondem 404 (não existem), e não 401.
 - CSRF desligado: o `SameSite=Strict` do cookie impede que outro site envie requisições com ele. Rever se o front-end passar a ficar em outro domínio.
@@ -332,7 +338,7 @@ Preenche `deactivated_at` e bloqueia o login imediatamente, revoga todos os refr
 | GET | `/departments` | lista de departamentos (`id`, `name`) ordenada por nome, para o select do cadastro (público) | **implementado** |
 | POST | `/auth/login` | login (público): usuário + permissões no corpo, JWT no cookie `access_token` | **implementado** |
 | POST | `/auth/refresh` | rotação do refresh token | previsto |
-| POST | `/auth/logout` | logout | previsto |
+| POST | `/auth/logout` | logout (público): 204 e apaga o cookie `access_token` | **implementado** |
 | GET | `/users/me` | dados e permissões do usuário logado | **implementado** |
 | PUT | `/users/me` | edição do próprio perfil (DTO restrito: sem senha, e-mail ou permissões) | previsto |
 | PATCH | `/users/me/password` | troca de senha (exige a senha atual) | previsto |
@@ -416,8 +422,9 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 ├── controller/AuthControllerIntegrationTest   POST /auth/register de ponta a ponta (8 cenários)
 ├── controller/DepartmentControllerIntegrationTest   GET /departments público e ordenado (4 cenários)
 ├── controller/AuthLoginIntegrationTest        POST /auth/login: cookie, 401, 403, cookie vencido ignorado (8)
+├── controller/AuthLogoutIntegrationTest       POST /auth/logout: apaga o cookie com ou sem sessão (3)
 ├── controller/UserControllerIntegrationTest   GET /users/me: sessão válida, sem cookie, chave errada, vencido (7)
-├── docs/ApiDocsIntegrationTest                OpenAPI e Swagger UI ligados (7 casos)
+├── docs/ApiDocsIntegrationTest                OpenAPI e Swagger UI ligados (8 casos)
 ├── docs/ApiDocsDisabledIntegrationTest        sem API_DOCS_ENABLED: 404 (2 casos)
 ├── dto/UserCreateRequestValidationTest        regras do DTO (Bean Validation)
 ├── service/UserServiceTest                    regras de negócio (JUnit 5 + Mockito, sem banco)
@@ -426,6 +433,7 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 ├── security/JwtConfigTest                     tamanho e formato da chave (3)
 ├── security/TokenServiceTest                  claims, validade, chave e emissor errados (5)
 ├── security/CookieBearerTokenResolverTest     leitura do cookie e rotas públicas (5)
+├── security/AccessTokenCookieTest             atributos do cookie criado e do apagado (2)
 ├── validation/CorporateEmailValidatorTest     domínio do e-mail (9 casos)
 └── validation/CpfValidatorTest                algoritmo do CPF (16 casos)
 ```
@@ -482,7 +490,8 @@ Decisão tomada: alteração de status (RF06) e encerramento (RF07) continuam **
 - [ ] Trocar `spring.jpa.hibernate.ddl-auto` de `none` para `validate` e adicionar as duas linhas `server.error.*` ao `application.properties`.
 - [ ] Endpoints de aprovação e recusa de `department_requests` (admin).
 - [x] Login com JWT em cookie e authorities no token (SCRUM-137).
-- [ ] Refresh token com rotação e logout (RF03).
+- [x] Logout que apaga o cookie (SCRUM-142).
+- [ ] Refresh token com rotação; logout passa a revogá-lo (RF03).
 - [ ] Implementar os services com as regras de transição de status dos chamados.
 - [ ] Modelar as notificações (e-mail via Resend e dentro da interface) e substituir o log provisório.
 - [ ] Definir o significado de `validated_at` (hoje nasce nulo).
