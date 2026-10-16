@@ -1,5 +1,6 @@
 package br.com.contabilizape.centraldesk.controller;
 
+import br.com.contabilizape.centraldesk.controller.doc.DepartmentApi;
 import br.com.contabilizape.centraldesk.dto.DepartmentResponse;
 import br.com.contabilizape.centraldesk.service.DepartmentService;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,7 +15,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/departments")
-public class DepartmentController {
+public class DepartmentController implements DepartmentApi {
 
     private final DepartmentService departmentService;
 
@@ -22,6 +23,7 @@ public class DepartmentController {
         this.departmentService = departmentService;
     }
 
+    @Override
     @GetMapping
     public List<DepartmentResponse> list() {
         return departmentService.listAll();

@@ -1,0 +1,53 @@
+package br.com.contabilizape.centraldesk.controller.doc;
+
+/**
+ * Exemplos de respostas de erro (ProblemDetail) usados na documentação dos endpoints.
+ * Precisam refletir o que o GlobalExceptionHandler realmente devolve.
+ */
+public final class ProblemExamples {
+
+    public static final String MEDIA_TYPE = "application/problem+json";
+
+    public static final String INVALID_FIELDS = """
+            {
+              "type": "about:blank",
+              "title": "Dados inválidos",
+              "status": 400,
+              "detail": "Verifique os campos e tente novamente.",
+              "instance": "/auth/register",
+              "errors": {
+                "cpf": "CPF inválido",
+                "email": "deve ser um e-mail do domínio @contabilizape.com.br"
+              }
+            }""";
+
+    public static final String DEPARTMENT_NOT_FOUND = """
+            {
+              "type": "about:blank",
+              "title": "Dados inválidos",
+              "status": 400,
+              "detail": "Departamento não encontrado: 00000000-0000-0000-0000-000000000000",
+              "instance": "/auth/register"
+            }""";
+
+    public static final String EMAIL_TAKEN = """
+            {
+              "type": "about:blank",
+              "title": "Cadastro duplicado",
+              "status": 409,
+              "detail": "E-mail já cadastrado",
+              "instance": "/auth/register"
+            }""";
+
+    public static final String CPF_TAKEN = """
+            {
+              "type": "about:blank",
+              "title": "Cadastro duplicado",
+              "status": 409,
+              "detail": "CPF já cadastrado",
+              "instance": "/auth/register"
+            }""";
+
+    private ProblemExamples() {
+    }
+}

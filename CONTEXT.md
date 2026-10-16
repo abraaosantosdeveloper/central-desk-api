@@ -25,7 +25,8 @@ Este documento resume o estado do projeto e as decisões já tomadas. Ele serve 
 | Banco | PostgreSQL 16 (Docker) |
 | Migrations | Flyway |
 | Administração do banco | pgAdmin (Docker) |
-| Testes de API | Insomnia |
+| Documentação da API | springdoc-openapi 3.1.1 (OpenAPI 3 + Swagger UI) |
+| Testes de API | Swagger UI e Insomnia |
 | Ambiente | VS Code no Windows, comandos no **PowerShell**; projeto em `C:\projetos\centraldesk` |
 
 - Pacote base: `br.com.contabilizape.centraldesk`
@@ -42,6 +43,7 @@ No Spring Boot 4, alguns starters mudaram de nome:
 - `spring-boot-starter-validation` (sem ele, `@NotBlank`, `@Email` e `@Valid` são ignorados)
 - `spring-boot-starter-flyway` + `flyway-database-postgresql` (só o `flyway-core` não basta para o Spring rodar as migrations)
 - `postgresql` (runtime), `lombok`, `spring-boot-devtools`, `spring-boot-starter-actuator`
+- `springdoc-openapi-starter-webmvc-ui` (versão na propriedade `springdoc.version`; a linha 3.1.x é a do Spring Boot 4.1)
 
 ## 3. Como rodar
 
@@ -69,9 +71,12 @@ ADMIN_NAME=...
 ADMIN_CPF=...
 ADMIN_EMAIL=...
 ADMIN_PASSWORD=...
+API_DOCS_ENABLED=true
 ```
 
-O compose lê o `.env` automaticamente. O Spring também o lê, pelo `spring.config.import` do `application.properties` — então a aplicação recebe as variáveis tanto pelo VS Code quanto por `.\mvnw spring-boot:run`. Os testes que sobem o Spring zeram `app.bootstrap.admin.*` para não depender do `.env` local.
+O compose lê o `.env` automaticamente. O Spring também o lê, pelo `spring.config.import` do `application.properties` — então a aplicação recebe as variáveis tanto pelo VS Code quanto por `.\mvnw spring-boot:run`. Os testes que sobem o Spring usam a anotação `@IntegrationTest`, que zera `app.bootstrap.admin.*` e fixa `API_DOCS_ENABLED=false`, para não depender do `.env` local.
+
+`API_DOCS_ENABLED=true` liga a documentação da API (Swagger). Sem a variável, ela fica desligada: é o caso de produção.
 
 **Acentos no `.env`:** pelo `spring.config.import`, o Spring lê o `.env` como `.properties`, em **ISO-8859-1**. Um valor acentuado salvo em UTF-8 chega corrompido ("Abraão" vira "AbraÃ£o"). Nas variáveis lidas pelo Spring, escreva acentos como escape Unicode: `ADMIN_NAME=Abra\u00e3o ...` (ã = `\u00e3`, ç = `\u00e7`, é = `\u00e9`). Senhas: prefira só ASCII; um acento corrompido mudaria o hash gravado. As variáveis `ADMIN_*` definem o **primeiro administrador**, criado pela aplicação ao subir (ver seção 5).
 
@@ -108,6 +113,13 @@ app.bootstrap.admin.name=${ADMIN_NAME:}
 app.bootstrap.admin.cpf=${ADMIN_CPF:}
 app.bootstrap.admin.email=${ADMIN_EMAIL:}
 app.bootstrap.admin.password=${ADMIN_PASSWORD:}
+
+# Documentação da API: desligada por padrão; API_DOCS_ENABLED=true no .env liga
+springdoc.api-docs.enabled=${API_DOCS_ENABLED:false}
+springdoc.swagger-ui.enabled=${API_DOCS_ENABLED:false}
+springdoc.override-with-generic-response=false
+springdoc.swagger-ui.operations-sorter=alpha
+springdoc.swagger-ui.tags-sorter=alpha
 ```
 
 - `ddl-auto=validate`: **o Flyway cria as tabelas, o Hibernate só confere** se as entidades batem com o schema ao subir. Um nome de coluna errado impede a aplicação de iniciar, em vez de falhar só na primeira requisição.
@@ -119,7 +131,7 @@ app.bootstrap.admin.password=${ADMIN_PASSWORD:}
 .\mvnw clean spring-boot:run
 ```
 
-O Flyway aplica as migrations ao subir. Para checar só a compilação: `.\mvnw clean compile`. Se o VS Code acusar erros que o terminal não acusa: `Ctrl+Shift+P` → **Java: Clean Java Language Server Workspace**.
+O Flyway aplica as migrations ao subir. Com `API_DOCS_ENABLED=true`, a documentação fica em `http://localhost:8080/swagger-ui.html` (o JSON em `/v3/api-docs`). Para checar só a compilação: `.\mvnw clean compile`. Se o VS Code acusar erros que o terminal não acusa: `Ctrl+Shift+P` → **Java: Clean Java Language Server Workspace**.
 
 ## 4. Banco de dados
 
@@ -265,6 +277,7 @@ Preenche `deactivated_at` e bloqueia o login imediatamente, revoga todos os refr
 ### `SecurityConfig` atual
 
 - `/auth/**`, `GET /departments` e `/error` liberados; todo o resto exige autenticação.
+- `/v3/api-docs/**`, `/swagger-ui/**` e `/swagger-ui.html` também liberados. Com a documentação desligada, essas rotas respondem 404 (não existem), e não 401.
 - `/error` precisa estar liberado: o Spring encaminha os erros (400, 409) para lá, e se a rota estiver protegida o cliente recebe um 401 que esconde o erro real.
 - CSRF desligado por enquanto; volta a ser discutido junto com os cookies (o `SameSite=Strict` já ajuda).
 
@@ -307,6 +320,16 @@ Preenche `deactivated_at` e bloqueia o login imediatamente, revoga todos os refr
 
 No Spring, rotas literais como `/users/me` têm prioridade sobre `/users/{id}`.
 
+### Documentação OpenAPI (Swagger)
+
+- springdoc gera o OpenAPI a partir do código. Liga com `API_DOCS_ENABLED=true` (só em desenvolvimento): Swagger UI em `/swagger-ui.html`, JSON em `/v3/api-docs`.
+- Os textos da documentação ficam em **interfaces** no pacote `controller/doc/` (`AuthApi`, `DepartmentApi`), e o controller as implementa. Assim o controller fica só com o código (mapeamento HTTP e chamada ao service).
+- **Todo endpoint novo** ganha, na interface: `@Operation` (resumo e regras) e um `@ApiResponse` para **cada status** que pode devolver. Erros usam `application/problem+json` com `schema = ProblemDetail.class` e exemplos de `ProblemExamples`, que precisam refletir o que o `GlobalExceptionHandler` devolve de fato.
+- `springdoc.override-with-generic-response=false`: só aparecem as respostas declaradas, e não todos os erros do handler em todos os endpoints.
+- DTOs com `@Schema` (descrição e exemplo). Senhas com `accessMode = WRITE_ONLY`.
+- `OpenApiConfig` define o título ("CentralDesk API"), a versão do contrato (`v1`) e a descrição geral, que explica o formato de erro.
+- Os testes `ApiDocsIntegrationTest` (ligado) e `ApiDocsDisabledIntegrationTest` (desligado → 404) garantem o comportamento.
+
 ### Testando o cadastro no Insomnia
 
 `POST http://localhost:8080/auth/register`, body JSON:
@@ -337,8 +360,9 @@ Só a classe principal fica na raiz; o Spring procura componentes do pacote dela
 ```
 src/main/java/br/com/contabilizape/centraldesk/
 ├── CentralDeskApplication.java
-├── config/          SecurityConfig
+├── config/          SecurityConfig, OpenApiConfig
 ├── controller/      AuthController, DepartmentController, GlobalExceptionHandler
+│   └── doc/         AuthApi, DepartmentApi (documentação OpenAPI), ProblemExamples
 ├── dto/             UserCreateRequest, UserResponse, DepartmentResponse
 ├── exception/       EmailAlreadyRegisteredException, CpfAlreadyRegisteredException,
 │                    DepartmentNotFoundException
@@ -353,12 +377,15 @@ src/main/java/br/com/contabilizape/centraldesk/
 Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 
 ```
+├── IntegrationTest                 meta-anotação dos testes de integração (contexto e propriedades únicos)
 ├── CentralDeskApplicationTests      sobe o contexto inteiro (Postgres real, ddl-auto=validate)
 ├── bootstrap/AdminBootstrapTest               regras do primeiro admin (Mockito, 7 casos)
 ├── bootstrap/AdminBootstrapIntegrationTest    admin criado ao subir, sem duplicar (2 casos)
 ├── TestcontainersConfiguration      PostgreSQL 16 descartável no Docker (@ServiceConnection)
 ├── controller/AuthControllerIntegrationTest   POST /auth/register de ponta a ponta (8 cenários)
 ├── controller/DepartmentControllerIntegrationTest   GET /departments público e ordenado (4 cenários)
+├── docs/ApiDocsIntegrationTest                OpenAPI e Swagger UI ligados (5 casos)
+├── docs/ApiDocsDisabledIntegrationTest        sem API_DOCS_ENABLED: 404 (2 casos)
 ├── dto/UserCreateRequestValidationTest        regras do DTO (Bean Validation)
 ├── service/UserServiceTest                    regras de negócio (JUnit 5 + Mockito, sem banco)
 ├── service/DepartmentServiceTest              listagem ordenada (Mockito, 2 casos)
@@ -372,6 +399,7 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 - Uma classe: `.\mvnw test "-Dtest=UserServiceTest"` (aspas por causa do PowerShell).
 - Relatório HTML: `.\mvnw surefire-report:report` (em `target\reports\`).
 - Os testes de integração usam `ddl-auto=validate`, então também conferem se as entidades batem com as migrations.
+- **Teste de integração novo usa `@IntegrationTest`** (`@SpringBootTest` + MockMvc + Testcontainers + propriedades que isolam do `.env`). Classes com as mesmas propriedades compartilham um único contexto e um único contêiner. Para mudar uma propriedade, `@TestPropertySource` na classe: tem precedência, mas cria outro contexto (outro contêiner), então use com moderação.
 - Cada teste de integração apaga os usuários criados (preservando administradores, se houver) antes de rodar.
 - **Rastreabilidade:** toda execução relevante, **inclusive as que falham**, é registrada em `docs/testes/registro-de-execucoes.md` (comando, resultado, causa raiz, correção). Cada falha vira uma subtarefa `[BUG]` no Jira, com o rótulo `bug`.
 
@@ -420,7 +448,7 @@ Decisão tomada: alteração de status (RF06) e encerramento (RF07) continuam **
 - [ ] Modelar as notificações (e-mail via Resend e dentro da interface) e substituir o log provisório.
 - [ ] Definir o significado de `validated_at` (hoje nasce nulo).
 - [ ] Criptografia em repouso (AES-GCM) de comentários e descrições.
-- [ ] Swagger (springdoc), documentando também o formato de erro `ProblemDetail`.
+- [x] Swagger (springdoc), documentando também o formato de erro `ProblemDetail` (SCRUM-122).
 - [ ] Avisos da execução 3 dos testes: desligar `spring.jpa.open-in-view`; configurar o Mockito como agente do Surefire (ver `docs/testes/registro-de-execucoes.md`).
 - [ ] Decidir se haverá status separado entre *Concluído* (técnico resolveu) e *Encerrado* (solicitante confirmou). Se sim: novo status `RESOLVED` e coluna `resolved_at`.
 - [ ] Decidir se o painel terá uma fila ordenada por prioridade; se sim, criar o índice `(status, priority_id DESC, created_at)`.

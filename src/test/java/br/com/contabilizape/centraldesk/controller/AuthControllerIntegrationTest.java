@@ -1,12 +1,9 @@
 package br.com.contabilizape.centraldesk.controller;
 
-import br.com.contabilizape.centraldesk.TestcontainersConfiguration;
+import br.com.contabilizape.centraldesk.IntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
@@ -26,14 +23,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * POST /auth/register de ponta a ponta: HTTP → validação → service → Postgres real.
  */
-@SpringBootTest(properties = {
-        "spring.jpa.hibernate.ddl-auto=validate",
-        // O application.properties importa o .env local; os testes não podem depender dele
-        "app.bootstrap.admin.name=", "app.bootstrap.admin.cpf=",
-        "app.bootstrap.admin.email=", "app.bootstrap.admin.password="
-})
-@AutoConfigureMockMvc
-@Import(TestcontainersConfiguration.class)
+@IntegrationTest
 class AuthControllerIntegrationTest {
 
     // Departamentos fixos criados pela V8

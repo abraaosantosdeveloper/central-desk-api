@@ -20,6 +20,7 @@ Um painel onde os colaboradores registram seus chamados, classificados por **cat
 | Migrations | Flyway |
 | Autenticação | JWT em cookies `HttpOnly` + refresh token; senhas com bcrypt |
 | Identificadores | UUID |
+| Documentação da API | OpenAPI 3 + Swagger UI (springdoc) |
 
 ## Requisitos funcionais
 
@@ -96,6 +97,8 @@ O Maven não precisa ser instalado: o projeto usa o Maven Wrapper (`mvnw`).
 
    No Linux, macOS ou WSL: `./mvnw clean spring-boot:run`. O Flyway aplica as migrations ao subir, e a API fica em `http://localhost:8080`.
 
+4. Explore a API no Swagger UI: `http://localhost:8080/swagger-ui.html`. Ele só existe com `API_DOCS_ENABLED=true` no `.env` (já vem assim no `.env.example`); sem a variável, como em produção, as rotas da documentação respondem 404.
+
 ## Estrutura do projeto
 
 ```
@@ -123,7 +126,7 @@ O Maven não precisa ser instalado: o projeto usa o Maven Wrapper (`mvnw`).
 | Método | Rota | Finalidade | Situação |
 | --- | --- | --- | --- |
 | `POST` | `/auth/register` | Cadastrar novo usuário (público) | implementada |
-| `GET` | `/departments` | Listar departamentos para o cadastro (público) | prevista |
+| `GET` | `/departments` | Listar departamentos para o cadastro (público) | implementada |
 | `POST` | `/auth/login` | Iniciar sessão | prevista |
 | `POST` | `/auth/refresh` | Renovar a sessão | prevista |
 | `POST` | `/auth/logout` | Encerrar sessão | prevista |
@@ -139,11 +142,11 @@ O Maven não precisa ser instalado: o projeto usa o Maven Wrapper (`mvnw`).
 | `PATCH` | `/tickets/{id}/assign` | Assumir chamado | prevista |
 | `PATCH` | `/tickets/{id}/close` | Encerrar chamado | prevista |
 
-As rotas de autenticação ficam sob `/auth`; a ação vem do método HTTP, não da URL. Detalhes e regras de negócio estão no [`CONTEXT.md`](CONTEXT.md).
+As rotas de autenticação ficam sob `/auth`; a ação vem do método HTTP, não da URL. A documentação completa de cada rota (campos, exemplos e respostas de erro) está no Swagger UI. Detalhes e regras de negócio estão no [`CONTEXT.md`](CONTEXT.md).
 
 ## Status
 
-Back-end em desenvolvimento: cadastro de conta implementado; login e autenticação são o próximo passo. O andamento é acompanhado no Jira (projeto **Innovation Unit**, chave `SCRUM`).
+Back-end em desenvolvimento: cadastro de conta, lista de departamentos e documentação no Swagger implementados; login e autenticação são o próximo passo. O andamento é acompanhado no Jira (projeto **Innovation Unit**, chave `SCRUM`).
 
 ## Como contribuir
 

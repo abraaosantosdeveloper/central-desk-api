@@ -1,5 +1,6 @@
 package br.com.contabilizape.centraldesk.controller;
 
+import br.com.contabilizape.centraldesk.controller.doc.AuthApi;
 import br.com.contabilizape.centraldesk.dto.UserCreateRequest;
 import br.com.contabilizape.centraldesk.dto.UserResponse;
 import br.com.contabilizape.centraldesk.service.UserService;
@@ -14,7 +15,7 @@ import java.net.URI;
 
 @RestController
 @RequestMapping("/auth")
-public class AuthController {
+public class AuthController implements AuthApi {
 
     private final UserService userService;
 
@@ -22,6 +23,7 @@ public class AuthController {
         this.userService = userService;
     }
 
+    @Override
     @PostMapping("/register")
     public ResponseEntity<UserResponse> register(@RequestBody @Valid UserCreateRequest request) {
         UserResponse response = userService.create(request);
