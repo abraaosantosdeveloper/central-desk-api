@@ -158,6 +158,22 @@ class ApiDocsIntegrationTest {
     }
 
     @Test
+    void documentsTicketLists() throws Exception {
+        var docs = mockMvc.perform(get("/v3/api-docs")).andExpect(status().isOk());
+        for (String path : new String[] {"/tickets/mine", "/tickets/queue", "/tickets/assigned"}) {
+            String list = "$.paths['" + path + "'].get";
+            docs.andExpect(jsonPath(list + ".responses['200']").exists())
+                    .andExpect(jsonPath(list + ".responses['400']").exists())
+                    .andExpect(jsonPath(list + ".responses['401']").exists())
+                    .andExpect(jsonPath(list + ".responses['403']").exists())
+                    .andExpect(jsonPath(list + ".security[0].cookieAuth").isArray())
+                    .andExpect(jsonPath(list + ".parameters[?(@.name == 'status')]").isNotEmpty())
+                    .andExpect(jsonPath(list + ".parameters[?(@.name == 'page')]").isNotEmpty());
+        }
+        docs.andExpect(jsonPath("$.components.schemas.TicketSummaryResponse.properties.description").doesNotExist());
+    }
+
+    @Test
     void passwordIsWriteOnlyAndNeverPartOfTheResponse() throws Exception {
         mockMvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk())

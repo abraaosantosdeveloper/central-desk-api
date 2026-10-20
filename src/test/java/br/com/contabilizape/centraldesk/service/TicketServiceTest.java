@@ -1,7 +1,10 @@
 package br.com.contabilizape.centraldesk.service;
 
+import br.com.contabilizape.centraldesk.dto.PageResponse;
 import br.com.contabilizape.centraldesk.dto.TicketCreateRequest;
+import br.com.contabilizape.centraldesk.dto.TicketFilter;
 import br.com.contabilizape.centraldesk.dto.TicketResponse;
+import br.com.contabilizape.centraldesk.dto.TicketSummaryResponse;
 import br.com.contabilizape.centraldesk.dto.TicketUpdateRequest;
 import br.com.contabilizape.centraldesk.exception.AccountNotActiveException;
 import br.com.contabilizape.centraldesk.exception.CategoryNotFoundException;
@@ -29,6 +32,12 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.quality.Strictness;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
@@ -278,6 +287,62 @@ class TicketServiceTest {
         TicketResponse response = ticketService.findById(TICKET_ID, OTHER_ID, roles);
 
         assertThat(response.requesterId()).isEqualTo(REQUESTER_ID);
+    }
+
+    // ---------- listagens ----------
+
+    private static final TicketFilter NO_FILTER = new TicketFilter(null, null, null);
+
+    @Test
+    void myTicketsAreSummarizedNewestFirst() {
+        User maria = requester(UserStatus.ACTIVE);
+        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, maria);
+        when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(maria));
+        when(ticketRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(ticket)));
+
+        PageResponse<TicketSummaryResponse> page = ticketService.listMine(REQUESTER_ID, NO_FILTER, PageRequest.of(0, 20));
+
+        assertThat(page.content()).singleElement().satisfies(summary -> {
+            assertThat(summary.title()).isEqualTo("Impressora");
+            assertThat(summary.requesterName()).isEqualTo("Maria da Silva");
+            assertThat(summary.category().label()).isEqualTo("Hardware");
+        });
+        assertThat(page.totalElements()).isEqualTo(1);
+        assertThat(usedPageable().getSort()).isEqualTo(Sort.by(Sort.Direction.DESC, "createdAt"));
+    }
+
+    @Test
+    void clientSortIsIgnoredAndPageSizeIsCapped() {
+        User maria = requester(UserStatus.ACTIVE);
+        when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(maria));
+        when(ticketRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(Page.empty());
+
+        ticketService.listMine(REQUESTER_ID, NO_FILTER, PageRequest.of(2, 500, Sort.by("title")));
+
+        Pageable used = usedPageable();
+        assertThat(used.getPageNumber()).isEqualTo(2);
+        assertThat(used.getPageSize()).isEqualTo(TicketService.MAX_PAGE_SIZE);
+        assertThat(used.getSort()).isEqualTo(Sort.by(Sort.Direction.DESC, "createdAt"));
+    }
+
+    @Test
+    void deactivatedUserCannotListTickets() {
+        User maria = requester(UserStatus.DEACTIVATED);
+        when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(maria));
+
+        assertThatThrownBy(() -> ticketService.listQueue(REQUESTER_ID, NO_FILTER, PageRequest.of(0, 20)))
+                .isInstanceOf(AccountNotActiveException.class);
+        assertThatThrownBy(() -> ticketService.listAssigned(REQUESTER_ID, NO_FILTER, PageRequest.of(0, 20)))
+                .isInstanceOf(AccountNotActiveException.class);
+        verify(ticketRepository, never()).findAll(any(Specification.class), any(Pageable.class));
+    }
+
+    @SuppressWarnings("unchecked")
+    private Pageable usedPageable() {
+        ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+        verify(ticketRepository).findAll(any(Specification.class), captor.capture());
+        return captor.getValue();
     }
 
     // ---------- auxiliares ----------

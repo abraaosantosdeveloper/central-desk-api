@@ -1,7 +1,10 @@
 package br.com.contabilizape.centraldesk.service;
 
+import br.com.contabilizape.centraldesk.dto.PageResponse;
 import br.com.contabilizape.centraldesk.dto.TicketCreateRequest;
+import br.com.contabilizape.centraldesk.dto.TicketFilter;
 import br.com.contabilizape.centraldesk.dto.TicketResponse;
+import br.com.contabilizape.centraldesk.dto.TicketSummaryResponse;
 import br.com.contabilizape.centraldesk.dto.TicketUpdateRequest;
 import br.com.contabilizape.centraldesk.exception.AccountNotActiveException;
 import br.com.contabilizape.centraldesk.exception.CategoryNotFoundException;
@@ -20,6 +23,10 @@ import br.com.contabilizape.centraldesk.repository.PriorityRepository;
 import br.com.contabilizape.centraldesk.repository.TicketRepository;
 import br.com.contabilizape.centraldesk.repository.UserRepository;
 import br.com.contabilizape.centraldesk.security.Roles;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -89,6 +96,38 @@ public class TicketService {
                 .filter(found -> canView(found, userId, roles))
                 .orElseThrow(() -> new TicketNotFoundException(ticketId));
         return TicketResponse.from(ticket);
+    }
+
+    public static final int MAX_PAGE_SIZE = 100;
+
+    private static final Sort NEWEST_FIRST = Sort.by(Sort.Direction.DESC, "createdAt");
+
+    /** Painel do colaborador: os chamados que ele abriu. */
+    @Transactional(readOnly = true)
+    public PageResponse<TicketSummaryResponse> listMine(UUID userId, TicketFilter filter, Pageable pageable) {
+        findActiveRequester(userId);
+        return list(TicketSpecifications.requestedBy(userId), filter, pageable);
+    }
+
+    /** Fila da Inovação: chamados OPEN, ainda sem responsável. Quem pode ver é decidido no SecurityConfig. */
+    @Transactional(readOnly = true)
+    public PageResponse<TicketSummaryResponse> listQueue(UUID userId, TicketFilter filter, Pageable pageable) {
+        findActiveRequester(userId);
+        return list(TicketSpecifications.inQueue(), filter, pageable);
+    }
+
+    /** Chamados sob responsabilidade do usuário logado, em atendimento ou já encerrados. */
+    @Transactional(readOnly = true)
+    public PageResponse<TicketSummaryResponse> listAssigned(UUID userId, TicketFilter filter, Pageable pageable) {
+        findActiveRequester(userId);
+        return list(TicketSpecifications.assignedTo(userId), filter, pageable);
+    }
+
+    // A ordem é sempre "mais recentes primeiro"; a ordenação pedida pelo cliente é ignorada
+    private PageResponse<TicketSummaryResponse> list(Specification<Ticket> scope, TicketFilter filter, Pageable pageable) {
+        Pageable page = PageRequest.of(pageable.getPageNumber(), Math.min(pageable.getPageSize(), MAX_PAGE_SIZE), NEWEST_FIRST);
+        Specification<Ticket> spec = Specification.allOf(scope, TicketSpecifications.matching(filter));
+        return PageResponse.from(ticketRepository.findAll(spec, page), TicketSummaryResponse::from);
     }
 
     private static boolean canView(Ticket ticket, UUID userId, List<String> roles) {

@@ -433,6 +433,9 @@ Ninguém é notificado de uma ação que ele mesmo fez (o `actor` nunca é o des
 | PATCH | `/department-requests/{id}/approve` | aprovar pedido (admin) | previsto |
 | PATCH | `/department-requests/{id}/reject` | recusar pedido (admin) | previsto |
 | POST | `/tickets` | abrir chamado (logado): solicitante = usuário do token, nasce `OPEN` | **implementado** |
+| GET | `/tickets/mine` | chamados abertos pelo usuário: paginado, mais recentes primeiro, filtros `status`/`categoryId`/`priorityId`, resumo sem descrição (SCRUM-160) | **implementado** |
+| GET | `/tickets/queue` | fila da Inovação: `OPEN` sem responsável; só `TICKET_HANDLER` e admin (SCRUM-160) | **implementado** |
+| GET | `/tickets/assigned` | chamados sob responsabilidade do usuário; só `TICKET_HANDLER` e admin (SCRUM-160) | **implementado** |
 | GET | `/tickets/{id}` | detalhes do chamado: solicitante, `TICKET_HANDLER` e admin; demais → 404 (SCRUM-161) | **implementado** |
 | PUT | `/tickets/{id}` | editar chamado: só o solicitante e só enquanto `OPEN` (403 / 409 / 404) | **implementado** |
 | GET | `/categories` | categorias do formulário de chamado, por nome (logado) | **implementado** |
@@ -514,7 +517,7 @@ src/main/java/br/com/contabilizape/centraldesk/
 ├── security/        JwtConfig + JwtProperties (chave, encoder, decoder), TokenService, AccessTokenCookie,
 │                    RefreshTokenCookie, CookieBearerTokenResolver, Roles
 ├── service/         UserService, DepartmentService, AuthService (+ AuthenticatedSession, Emails),
-│                    RefreshTokenService (+ RotatedRefreshToken), TicketService, TicketCatalogService,
+│                    RefreshTokenService (+ RotatedRefreshToken), TicketService (+ TicketSpecifications), TicketCatalogService,
 │                    AccountAnonymizationService
 └── validation/      @Cpf + CpfValidator, @CorporateEmail + CorporateEmailValidator, @StrongPassword (regras de senha)
 ```
@@ -536,8 +539,9 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 ├── controller/AuthRefreshIntegrationTest      rotação, reuso, vencido, conta inativa, logout revoga (11)
 ├── controller/UserControllerIntegrationTest   /users/me: GET (7), PUT nome (4), PATCH senha (5)
 ├── controller/TicketControllerIntegrationTest abertura, detalhes, edição, categorias e prioridades (20)
+├── controller/TicketListIntegrationTest       /tickets/mine, /queue e /assigned: ordem, paginação, filtros, 400, 401, 403 (10)
 ├── controller/AccountAnonymizationIntegrationTest  DELETE /users/me e PATCH /users/{id}/anonymize (10)
-├── docs/ApiDocsIntegrationTest                OpenAPI e Swagger UI ligados (12 casos)
+├── docs/ApiDocsIntegrationTest                OpenAPI e Swagger UI ligados (13 casos)
 ├── docs/ApiDocsDisabledIntegrationTest        sem API_DOCS_ENABLED: 404 (2 casos)
 ├── dto/UserCreateRequestValidationTest        regras do DTO (Bean Validation)
 ├── dto/PasswordChangeRequestValidationTest    senha atual obrigatória e  na nova (6)
@@ -546,7 +550,7 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 ├── service/AccountAnonymizationServiceTest   anonimização: dados, sessões, fila, notificações, último admin (Mockito, 10)
 ├── service/AuthServiceTest                    login, permissões, renovação, logout e troca de senha (Mockito, 16 casos)
 ├── service/RefreshTokenServiceTest            emissão, hash, rotação, reuso, revogação, revogar todas (Mockito, 11)
-├── service/TicketServiceTest                  abertura, detalhes e edição: solicitante, visibilidade, status, categoria, conta (Mockito, 16)
+├── service/TicketServiceTest                  abertura, detalhes, edição e listagens: visibilidade, paginação, conta (Mockito, 19)
 ├── security/JwtConfigTest                     tamanho e formato da chave (3)
 ├── security/TokenServiceTest                  claims, validade, chave e emissor errados (5)
 ├── security/CookieBearerTokenResolverTest     leitura do cookie e rotas públicas (5)
@@ -629,6 +633,7 @@ Requisitos complementares (README): RF08 categorização, RF09 urgência, RF10 s
 
 **Implementação da RF04 (SCRUM-159, 20/10):** dispara pelos dois caminhos — o próprio usuário (`DELETE /users/me`, confirmando a senha; errada → 400 em `errors.password`) e o admin (`PATCH /users/{id}/anonymize`, só com a conta `DEACTIVATED`, senão 409; regra de rota `hasAuthority(ROLE_ADMIN)` no `SecurityConfig`). Na mesma transação: dados pessoais anonimizados (`User.anonymize`), todos os refresh tokens revogados, chamados `IN_PROGRESS` do usuário voltam a `OPEN` sem responsável (`Ticket.returnToQueue`; os `CLOSED` guardam o histórico), notificações apagadas (via `NotificationCleanupRepository`, até a entidade existir) e o registro em `admins` removido — recusado com 409 se for o último admin ativo.
 **Implementação da RF12 (SCRUM-161, 20/10):** `GET /tickets/{id}` usa as permissões do token (como o `/users/me`) e decide a visibilidade em `TicketService.canView` (base para comentários e ações). Quem não pode ver recebe 404, não 403. O `TicketResponse` ganhou `assigneeName`, `assignedAt`, `closedById`, `closedByName`, `closedAt` e `updatedAt`; as listagens (SCRUM-160) usarão um resumo sem a descrição.
+**Implementação da RF11 (SCRUM-160, 20/10):** `GET /tickets/mine` (qualquer usuário ativo), `/tickets/queue` (`OPEN` sem responsável) e `/tickets/assigned` (responsável = usuário logado, inclusive encerrados); fila e atribuídos só para `TICKET_HANDLER` e admin, por regra de rota no `SecurityConfig`. Resposta em `PageResponse<TicketSummaryResponse>` (`content`, `page`, `size`, `totalElements`, `totalPages`), formato próprio para não serializar o `PageImpl`. Ordem fixa por `created_at` decrescente (a ordenação enviada pelo cliente é ignorada); `size` padrão 20, máximo 100. Filtros por `Specification` (`TicketSpecifications`); o `findAll` paginado tem `@EntityGraph` para não fazer uma consulta por chamado.
 
 **Notificações e avaliações (incluídas em 20/10), em fatias que acompanham o roteiro:**
 

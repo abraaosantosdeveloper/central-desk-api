@@ -52,6 +52,8 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                 .requestMatchers(PATHS.matcher(HttpMethod.PATCH, "/users/*/anonymize")).hasAuthority(Roles.ADMIN)
+                .requestMatchers(PATHS.matcher(HttpMethod.GET, "/tickets/queue"), PATHS.matcher(HttpMethod.GET, "/tickets/assigned"))
+                    .hasAnyAuthority(Roles.TICKET_HANDLER, Roles.ADMIN)
                 .anyRequest().authenticated()
             )
             .oauth2ResourceServer(oauth2 -> oauth2

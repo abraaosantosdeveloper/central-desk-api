@@ -291,3 +291,14 @@ Modelo de entrada:
 - **Antes (TDD):** execução direcionada falhou pelo motivo esperado (405 e `UnsupportedOperationException`).
 - **Primeira execução completa:** falhou na compilação — `unknownTicketIsNotFound()` já existia em `TicketServiceTest` e `TicketControllerIntegrationTest` (a execução direcionada anterior tinha usado classes compiladas antigas). **Correção:** os testes novos foram renomeados para `unknownTicketDetailsAreNotFound`.
 - **Resultado:** 240 testes, 0 falhas, 0 erros. ✅
+
+### Mudanças entre a execução 16 e a 17
+
+- Listagens dos painéis (SCRUM-160): `GET /tickets/mine`, `/tickets/queue` e `/tickets/assigned`; `TicketSummaryResponse`, `TicketFilter`, `PageResponse` e `TicketSpecifications`; `TicketRepository` com `JpaSpecificationExecutor` e `@EntityGraph`.
+- Novos testes (14): `TicketServiceTest` (+3: resumo e ordem, ordenação do cliente ignorada e `size` limitado, conta desativada); `TicketListIntegrationTest` (10, novo); `ApiDocsIntegrationTest` (+1).
+
+## Execução 17 — 2026-10-20 — suíte completa (SCRUM-160)
+
+- **Comando:** `.\mvnw clean test` (Docker ligado)
+- **Antes (TDD):** a execução direcionada falhou pelo motivo esperado: sem rotas próprias, `/tickets/mine` caía em `/tickets/{id}` e voltava 400 (conversão para UUID); no service, `UnsupportedOperationException`. Dois cadastros também falharam com 400 por CPF que eu tinha alterado errado no teste; os valores corretos foram restaurados.
+- **Resultado:** 254 testes, 0 falhas, 0 erros. ✅
