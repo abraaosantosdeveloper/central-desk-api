@@ -1,6 +1,7 @@
 package br.com.contabilizape.centraldesk.controller;
 
 import br.com.contabilizape.centraldesk.exception.AccountNotActiveException;
+import br.com.contabilizape.centraldesk.exception.AccountNotDeactivatedException;
 import br.com.contabilizape.centraldesk.exception.CategoryNotFoundException;
 import br.com.contabilizape.centraldesk.exception.CpfAlreadyRegisteredException;
 import br.com.contabilizape.centraldesk.exception.DepartmentNotFoundException;
@@ -8,10 +9,12 @@ import br.com.contabilizape.centraldesk.exception.EmailAlreadyRegisteredExceptio
 import br.com.contabilizape.centraldesk.exception.InvalidCredentialsException;
 import br.com.contabilizape.centraldesk.exception.InvalidFieldException;
 import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
+import br.com.contabilizape.centraldesk.exception.LastAdminException;
 import br.com.contabilizape.centraldesk.exception.PriorityNotFoundException;
 import br.com.contabilizape.centraldesk.exception.TicketEditForbiddenException;
 import br.com.contabilizape.centraldesk.exception.TicketNotEditableException;
 import br.com.contabilizape.centraldesk.exception.TicketNotFoundException;
+import br.com.contabilizape.centraldesk.exception.UserNotFoundException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -69,6 +72,16 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(InvalidSessionException.class)
     public ProblemDetail handleInvalidSession(InvalidSessionException exception) {
         return problem(HttpStatus.UNAUTHORIZED, "Sessão inválida", exception.getMessage());
+    }
+
+    @ExceptionHandler(UserNotFoundException.class)
+    public ProblemDetail handleUserNotFound(UserNotFoundException exception) {
+        return problem(HttpStatus.NOT_FOUND, "Usuário não encontrado", exception.getMessage());
+    }
+
+    @ExceptionHandler({AccountNotDeactivatedException.class, LastAdminException.class})
+    public ProblemDetail handleAccountConflict(RuntimeException exception) {
+        return problem(HttpStatus.CONFLICT, "Operação não permitida", exception.getMessage());
     }
 
     @ExceptionHandler(AccountNotActiveException.class)

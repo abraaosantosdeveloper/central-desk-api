@@ -97,6 +97,10 @@ public class User {
         return this.createdAt;
     }
 
+    public OffsetDateTime getDeletedAt() {
+        return this.deletedAt;
+    }
+
     /** Edição do próprio perfil: só o nome muda. */
     public void rename(String fullName) {
         this.fullName = fullName;
@@ -109,5 +113,18 @@ public class User {
 
     public boolean isActive() {
         return this.status == UserStatus.ACTIVE;
+    }
+
+    /**
+     * Encerramento de conta (LGPD): apaga os dados pessoais e mantém o registro, para preservar
+     * o histórico dos chamados. O e-mail fica único e num domínio que não recebe mensagens.
+     */
+    public void anonymize(String randomPasswordHash, OffsetDateTime now) {
+        this.fullName = "Usuário removido";
+        this.cpf = null;
+        this.email = "anonimizado-" + this.id + "@anonimizado.invalid";
+        this.passwordHash = randomPasswordHash;
+        this.status = UserStatus.ANONYMIZED;
+        this.deletedAt = now;
     }
 }

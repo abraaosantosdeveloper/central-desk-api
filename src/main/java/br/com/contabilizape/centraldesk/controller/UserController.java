@@ -1,12 +1,14 @@
 package br.com.contabilizape.centraldesk.controller;
 
 import br.com.contabilizape.centraldesk.controller.doc.UserApi;
+import br.com.contabilizape.centraldesk.dto.AccountDeletionRequest;
 import br.com.contabilizape.centraldesk.dto.CurrentUserResponse;
 import br.com.contabilizape.centraldesk.dto.PasswordChangeRequest;
 import br.com.contabilizape.centraldesk.dto.UserProfileUpdateRequest;
 import br.com.contabilizape.centraldesk.security.AccessTokenCookie;
 import br.com.contabilizape.centraldesk.security.RefreshTokenCookie;
 import br.com.contabilizape.centraldesk.security.TokenService;
+import br.com.contabilizape.centraldesk.service.AccountAnonymizationService;
 import br.com.contabilizape.centraldesk.service.AuthService;
 import br.com.contabilizape.centraldesk.service.AuthenticatedSession;
 import br.com.contabilizape.centraldesk.service.UserService;
@@ -15,8 +17,10 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -32,13 +36,16 @@ public class UserController implements UserApi {
 
     private final UserService userService;
     private final AuthService authService;
+    private final AccountAnonymizationService accountAnonymizationService;
     private final AccessTokenCookie accessTokenCookie;
     private final RefreshTokenCookie refreshTokenCookie;
 
     public UserController(UserService userService, AuthService authService,
+                          AccountAnonymizationService accountAnonymizationService,
                           AccessTokenCookie accessTokenCookie, RefreshTokenCookie refreshTokenCookie) {
         this.userService = userService;
         this.authService = authService;
+        this.accountAnonymizationService = accountAnonymizationService;
         this.accessTokenCookie = accessTokenCookie;
         this.refreshTokenCookie = refreshTokenCookie;
     }
@@ -67,6 +74,25 @@ public class UserController implements UserApi {
                         accessTokenCookie.create(session.accessToken()).toString(),
                         refreshTokenCookie.create(session.refreshToken()).toString())
                 .build();
+    }
+
+    /** Encerra a própria conta: anonimiza, derruba as sessões e apaga os cookies deste navegador. */
+    @Override
+    @DeleteMapping("/me")
+    public ResponseEntity<Void> deleteOwnAccount(@AuthenticationPrincipal Jwt jwt,
+                                                 @RequestBody @Valid AccountDeletionRequest request) {
+        accountAnonymizationService.anonymizeOwnAccount(userId(jwt), request.password());
+        return ResponseEntity.noContent()
+                .header(HttpHeaders.SET_COOKIE, accessTokenCookie.clear().toString(), refreshTokenCookie.clear().toString())
+                .build();
+    }
+
+    /** Só administradores (regra no SecurityConfig) e só contas já desativadas. */
+    @Override
+    @PatchMapping("/{id}/anonymize")
+    public ResponseEntity<Void> anonymize(@PathVariable UUID id) {
+        accountAnonymizationService.anonymizeByAdmin(id);
+        return ResponseEntity.noContent().build();
     }
 
     private static UUID userId(Jwt jwt) {

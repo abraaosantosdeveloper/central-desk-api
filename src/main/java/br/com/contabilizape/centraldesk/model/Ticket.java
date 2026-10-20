@@ -83,6 +83,13 @@ public class Ticket {
         return status == TicketStatus.OPEN;
     }
 
+    /** Devolve à fila um chamado em atendimento (o responsável saiu: conta desativada ou anonimizada). */
+    public void returnToQueue() {
+        this.assignee = null;
+        this.assignedAt = null;
+        this.status = TicketStatus.OPEN;
+    }
+
     public UUID getId() { return id; }
     public String getTitle() { return title; }
     public String getDescription() { return description; }

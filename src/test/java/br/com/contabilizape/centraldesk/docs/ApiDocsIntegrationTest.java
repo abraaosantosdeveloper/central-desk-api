@@ -136,6 +136,25 @@ class ApiDocsIntegrationTest {
     }
 
     @Test
+    void documentsAccountAnonymization() throws Exception {
+        String delete = "$.paths['/users/me'].delete";
+        String anonymize = "$.paths['/users/{id}/anonymize'].patch";
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(delete + ".responses['204'].headers['Set-Cookie']").exists())
+                .andExpect(jsonPath(delete + ".responses['400']").exists())
+                .andExpect(jsonPath(delete + ".responses['401']").exists())
+                .andExpect(jsonPath(delete + ".responses['403']").exists())
+                .andExpect(jsonPath(delete + ".responses['409']").exists())
+                .andExpect(jsonPath(anonymize + ".responses['204']").exists())
+                .andExpect(jsonPath(anonymize + ".responses['401']").exists())
+                .andExpect(jsonPath(anonymize + ".responses['403']").exists())
+                .andExpect(jsonPath(anonymize + ".responses['404']").exists())
+                .andExpect(jsonPath(anonymize + ".responses['409']").exists())
+                .andExpect(jsonPath(anonymize + ".security[0].cookieAuth").isArray());
+    }
+
+    @Test
     void passwordIsWriteOnlyAndNeverPartOfTheResponse() throws Exception {
         mockMvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk())

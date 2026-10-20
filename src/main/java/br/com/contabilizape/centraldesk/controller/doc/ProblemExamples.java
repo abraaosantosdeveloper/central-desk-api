@@ -176,6 +176,45 @@ public final class ProblemExamples {
               }
             }""";
 
+    public static final String DELETE_ACCOUNT_WRONG_PASSWORD = """
+            {
+              "type": "about:blank",
+              "title": "Dados inválidos",
+              "status": 400,
+              "detail": "Verifique os campos e tente novamente.",
+              "instance": "/users/me",
+              "errors": {
+                "password": "senha incorreta"
+              }
+            }""";
+
+    public static final String LAST_ADMIN = """
+            {
+              "type": "about:blank",
+              "title": "Operação não permitida",
+              "status": 409,
+              "detail": "Esta é a última conta de administrador ativa e não pode ser removida.",
+              "instance": "/users/me"
+            }""";
+
+    public static final String USER_NOT_FOUND = """
+            {
+              "type": "about:blank",
+              "title": "Usuário não encontrado",
+              "status": 404,
+              "detail": "Usuário não encontrado.",
+              "instance": "/users/0f8b2c1e-6d3a-4f5e-9b7c-1a2b3c4d5e6f/anonymize"
+            }""";
+
+    public static final String ACCOUNT_NOT_DEACTIVATED = """
+            {
+              "type": "about:blank",
+              "title": "Operação não permitida",
+              "status": 409,
+              "detail": "Só contas desativadas podem ser anonimizadas. Desative a conta antes.",
+              "instance": "/users/0f8b2c1e-6d3a-4f5e-9b7c-1a2b3c4d5e6f/anonymize"
+            }""";
+
     private ProblemExamples() {
     }
 }

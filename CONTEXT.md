@@ -423,8 +423,10 @@ Ninguém é notificado de uma ação que ele mesmo fez (o `actor` nunca é o des
 | POST | `/auth/refresh` | renovação da sessão (público): rotação do refresh token, cookies novos | **implementado** |
 | POST | `/auth/logout` | logout (público): revoga o refresh token e apaga os dois cookies (204) | **implementado** |
 | GET | `/users/me` | dados e permissões do usuário logado | **implementado** |
-| PUT | `/users/me` | edição do próprio perfil: **só o nome** (SCRUM-156) | previsto |
-| PATCH | `/users/me/password` | troca de senha: exige a atual, revoga as outras sessões (SCRUM-157) | previsto |
+| PUT | `/users/me` | edição do próprio perfil: **só o nome** (SCRUM-156) | **implementado** |
+| PATCH | `/users/me/password` | troca de senha: exige a atual, revoga todas as sessões e reabre a atual com cookies novos (204) (SCRUM-157) | **implementado** |
+| DELETE | `/users/me` | encerramento da própria conta: confirma a senha, anonimiza e apaga os cookies (204); último admin → 409 (SCRUM-159) | **implementado** |
+| PATCH | `/users/{id}/anonymize` | anonimização pelo admin, só de conta `DEACTIVATED` (404 / 409) (SCRUM-159) | **implementado** |
 | GET | `/users/{id}` | consulta de outro usuário (admin) | previsto |
 | PATCH | `/users/{id}/deactivate` | desativação de conta (admin) | previsto |
 | GET | `/department-requests` | fila de pedidos pendentes (admin) | previsto |
@@ -506,11 +508,13 @@ src/main/java/br/com/contabilizape/centraldesk/
 │                    Category, Priority
 ├── notification/    DepartmentRequestCreatedEvent, DepartmentRequestNotificationListener
 ├── repository/      UserRepository, AdminRepository, DepartmentRepository, DepartmentRequestRepository,
-│                    RefreshTokenRepository, TicketRepository, CategoryRepository, PriorityRepository
+│                    RefreshTokenRepository, TicketRepository, CategoryRepository, PriorityRepository,
+│                    NotificationCleanupRepository (JdbcTemplate, provisório até a SCRUM-152)
 ├── security/        JwtConfig + JwtProperties (chave, encoder, decoder), TokenService, AccessTokenCookie,
 │                    RefreshTokenCookie, CookieBearerTokenResolver, Roles
 ├── service/         UserService, DepartmentService, AuthService (+ AuthenticatedSession, Emails),
-│                    RefreshTokenService (+ RotatedRefreshToken), TicketService, TicketCatalogService
+│                    RefreshTokenService (+ RotatedRefreshToken), TicketService, TicketCatalogService,
+│                    AccountAnonymizationService
 └── validation/      @Cpf + CpfValidator, @CorporateEmail + CorporateEmailValidator, @StrongPassword (regras de senha)
 ```
 
@@ -531,12 +535,14 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 ├── controller/AuthRefreshIntegrationTest      rotação, reuso, vencido, conta inativa, logout revoga (11)
 ├── controller/UserControllerIntegrationTest   /users/me: GET (7), PUT nome (4), PATCH senha (5)
 ├── controller/TicketControllerIntegrationTest abertura, edição, categorias e prioridades (14)
-├── docs/ApiDocsIntegrationTest                OpenAPI e Swagger UI ligados (11 casos)
+├── controller/AccountAnonymizationIntegrationTest  DELETE /users/me e PATCH /users/{id}/anonymize (10)
+├── docs/ApiDocsIntegrationTest                OpenAPI e Swagger UI ligados (12 casos)
 ├── docs/ApiDocsDisabledIntegrationTest        sem API_DOCS_ENABLED: 404 (2 casos)
 ├── dto/UserCreateRequestValidationTest        regras do DTO (Bean Validation)
 ├── dto/PasswordChangeRequestValidationTest    senha atual obrigatória e  na nova (6)
 ├── service/UserServiceTest                    regras de negócio (JUnit 5 + Mockito, sem banco)
 ├── service/DepartmentServiceTest              listagem ordenada (Mockito, 2 casos)
+├── service/AccountAnonymizationServiceTest   anonimização: dados, sessões, fila, notificações, último admin (Mockito, 10)
 ├── service/AuthServiceTest                    login, permissões, renovação, logout e troca de senha (Mockito, 16 casos)
 ├── service/RefreshTokenServiceTest            emissão, hash, rotação, reuso, revogação, revogar todas (Mockito, 11)
 ├── service/TicketServiceTest                  abertura e edição: solicitante, status, categoria, conta (Mockito, 10)
@@ -608,7 +614,7 @@ Requisitos complementares (README): RF08 categorização, RF09 urgência, RF10 s
 ### Roteiro (definido em 16/10/2026, atualizado em 20/10/2026)
 
 0. **Fechar a SCRUM-146 (edição de chamado):** os commits estão na branch `feature/SCRUM-146-editar-chamado`. Falta registrar a execução 13 dos testes (182 esperados) e fazer o PR e o merge.
-1. **Edição dos dados do usuário (RF02):** `PUT /users/me` (perfil, com DTO restrito: sem senha, e-mail ou permissões) e `PATCH /users/me/password` (exige a senha atual). Fecha a parte de contas.
+1. ✅ **Edição dos dados do usuário (RF02)** — implementada na branch `feature/SCRUM-147-edicao-dados-usuario` (20/10): `PUT /users/me` (perfil, com DTO restrito: sem senha, e-mail ou permissões) e `PATCH /users/me/password` (exige a senha atual). Fecha a parte de contas.
 2. **Chamados:** listar (os meus e a fila da Inovação), assumir (`PATCH /tickets/{id}/assign`) e encerrar (`PATCH /tickets/{id}/close`), com as regras de transição de status (RF06 e RF07).
 3. **Comentários** nos chamados.
 4. **Gerenciamento de contas (admin):** aprovar e recusar `department_requests`, desativar contas (revogando as sessões na hora) e consultar usuários.
@@ -617,6 +623,10 @@ Requisitos complementares (README): RF08 categorização, RF09 urgência, RF10 s
 **Histórias no Jira (20/10):** RF02 SCRUM-147 (subtarefas 156, 157, 158) · RF04 SCRUM-159 · RF11 SCRUM-160 · RF12 SCRUM-161 · RF06 SCRUM-162 · RF07 SCRUM-163 · RF13 SCRUM-164 · admin SCRUM-165 · RF15 SCRUM-149 (subtarefas 152 a 155) · RF16 SCRUM-150 · DEC-006 SCRUM-151.
 
 **Decisões da RF02 (20/10):** `PUT /users/me` edita só o nome; `PATCH /users/me/password` exige a senha atual (errada → 400 em `errors.currentPassword`), aplica as regras de senha do cadastro e revoga as outras sessões, mantendo a atual.
+
+**Implementação da RF02 (SCRUM-147, 20/10):** como o cookie `refresh_token` tem `Path=/auth`, ele não chega em `/users/me/password`. Em vez de mudar o `Path`, a troca de senha revoga **todas** as sessões e devolve, no próprio 204, cookies novos (`access_token` e `refresh_token`) para a sessão atual. As regras de senha ficaram na anotação composta `@StrongPassword` (pacote `validation/`), usada no cadastro e na troca. Erros de negócio ligados a um campo estendem `InvalidFieldException` e saem como 400 com `errors.<campo>`, no mesmo formato do Bean Validation.
+
+**Implementação da RF04 (SCRUM-159, 20/10):** dispara pelos dois caminhos — o próprio usuário (`DELETE /users/me`, confirmando a senha; errada → 400 em `errors.password`) e o admin (`PATCH /users/{id}/anonymize`, só com a conta `DEACTIVATED`, senão 409; regra de rota `hasAuthority(ROLE_ADMIN)` no `SecurityConfig`). Na mesma transação: dados pessoais anonimizados (`User.anonymize`), todos os refresh tokens revogados, chamados `IN_PROGRESS` do usuário voltam a `OPEN` sem responsável (`Ticket.returnToQueue`; os `CLOSED` guardam o histórico), notificações apagadas (via `NotificationCleanupRepository`, até a entidade existir) e o registro em `admins` removido — recusado com 409 se for o último admin ativo.
 
 **Notificações e avaliações (incluídas em 20/10), em fatias que acompanham o roteiro:**
 

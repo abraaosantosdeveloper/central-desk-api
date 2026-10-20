@@ -1,6 +1,7 @@
 package br.com.contabilizape.centraldesk.config;
 
 import br.com.contabilizape.centraldesk.security.CookieBearerTokenResolver;
+import br.com.contabilizape.centraldesk.security.Roles;
 import br.com.contabilizape.centraldesk.security.TokenService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -50,6 +51,7 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
+                .requestMatchers(PATHS.matcher(HttpMethod.PATCH, "/users/*/anonymize")).hasAuthority(Roles.ADMIN)
                 .anyRequest().authenticated()
             )
             .oauth2ResourceServer(oauth2 -> oauth2

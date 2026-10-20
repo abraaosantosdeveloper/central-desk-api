@@ -264,3 +264,18 @@ Modelo de entrada:
 - **Comando:** `.\mvnw clean test` (Docker ligado)
 - **Resultado:** 207 testes, 0 falhas, 0 erros. ✅
 - **Antes (TDD):** a execução direcionada das classes acima falhou pelo motivo esperado (rotas 404/405 e `UnsupportedOperationException` nos stubs). Um teste meu falhou com `UnfinishedStubbing` (mock criado dentro do `thenReturn`); corrigido no próprio teste.
+
+### Mudanças entre a execução 14 e a 15
+
+- Encerramento de conta (SCRUM-159): `DELETE /users/me` (próprio usuário, confirma a senha) e `PATCH /users/{id}/anonymize` (admin, só conta `DEACTIVATED`).
+- `DatabaseCleanup` passa a apagar `notifications` e `ticket_ratings` antes de `comments`.
+- Novos testes (21):
+  - `AccountAnonymizationServiceTest` (10, novo);
+  - `AccountAnonymizationIntegrationTest` (10, novo): anonimização completa (dados, sessões, fila, notificações, cookies, CPF e e-mail liberados), senha errada, sem senha, sem cookie, último admin, admin anonimiza desativada, conta ativa → 409, inexistente → 404, não admin → 403, sem cookie → 401;
+  - `ApiDocsIntegrationTest` (+1).
+
+## Execução 15 — 2026-10-20 — suíte completa (SCRUM-159)
+
+- **Comando:** `.\mvnw clean test` (Docker ligado)
+- **Resultado:** 228 testes, 0 falhas, 0 erros. ✅
+- **Antes (TDD):** as duas classes novas falharam pelo motivo esperado (rotas 404/405 e `UnsupportedOperationException` no service).

@@ -1,6 +1,7 @@
 package br.com.contabilizape.centraldesk.controller.doc;
 
 import br.com.contabilizape.centraldesk.config.OpenApiConfig;
+import br.com.contabilizape.centraldesk.dto.AccountDeletionRequest;
 import br.com.contabilizape.centraldesk.dto.CurrentUserResponse;
 import br.com.contabilizape.centraldesk.dto.PasswordChangeRequest;
 import br.com.contabilizape.centraldesk.dto.UserProfileUpdateRequest;
@@ -16,6 +17,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.oauth2.jwt.Jwt;
+
+import java.util.UUID;
 
 /**
  * Documentação OpenAPI dos endpoints de usuários (implementada pelo UserController).
@@ -103,4 +106,72 @@ public interface UserApi {
             description = "A conta não está ativa.",
             content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
     ResponseEntity<Void> changePassword(@Parameter(hidden = true) Jwt jwt, PasswordChangeRequest request);
+
+    @Operation(
+            summary = "Encerra a própria conta",
+            description = """
+                    Anonimiza a conta (LGPD), sem exclusão física: nome vira "Usuário removido", CPF é apagado, \
+                    o e-mail é substituído e ninguém mais entra com ela. Os chamados abertos pelo usuário ficam \
+                    no histórico; os que estavam em atendimento com ele voltam para a fila. Todas as sessões \
+                    são encerradas e as notificações dele são apagadas. Exige a senha atual.
+
+                    O último administrador ativo não pode encerrar a própria conta.""",
+            security = @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH))
+    @ApiResponse(
+            responseCode = "204",
+            description = "Conta encerrada.",
+            headers = @Header(name = "Set-Cookie", description = "Cookies access_token e refresh_token vazios, expirando na hora",
+                    schema = @Schema(type = "string")),
+            content = @Content)
+    @ApiResponse(
+            responseCode = "400",
+            description = "Senha em branco ou errada (`errors.password`).",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE,
+                    schema = @Schema(implementation = ProblemDetail.class),
+                    examples = @ExampleObject(name = "Senha errada", value = ProblemExamples.DELETE_ACCOUNT_WRONG_PASSWORD)))
+    @ApiResponse(
+            responseCode = "401",
+            description = "Sem cookie, token inválido ou vencido, ou usuário que não existe mais.",
+            content = @Content)
+    @ApiResponse(
+            responseCode = "403",
+            description = "A conta não está ativa.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    @ApiResponse(
+            responseCode = "409",
+            description = "É a última conta de administrador ativa.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE,
+                    schema = @Schema(implementation = ProblemDetail.class),
+                    examples = @ExampleObject(name = "Último administrador", value = ProblemExamples.LAST_ADMIN)))
+    ResponseEntity<Void> deleteOwnAccount(@Parameter(hidden = true) Jwt jwt, AccountDeletionRequest request);
+
+    @Operation(
+            summary = "Anonimiza uma conta (administrador)",
+            description = """
+                    Só para administradores, e só para contas **já desativadas**. Mesmo efeito do encerramento \
+                    pelo próprio usuário: dados pessoais apagados, sessões encerradas, chamados em atendimento \
+                    de volta à fila e notificações apagadas.""",
+            security = @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH))
+    @ApiResponse(responseCode = "204", description = "Conta anonimizada.", content = @Content)
+    @ApiResponse(
+            responseCode = "401",
+            description = "Sem cookie, token inválido ou vencido.",
+            content = @Content)
+    @ApiResponse(
+            responseCode = "403",
+            description = "Quem chamou não é administrador.",
+            content = @Content)
+    @ApiResponse(
+            responseCode = "404",
+            description = "Usuário não encontrado.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE,
+                    schema = @Schema(implementation = ProblemDetail.class),
+                    examples = @ExampleObject(name = "Usuário não encontrado", value = ProblemExamples.USER_NOT_FOUND)))
+    @ApiResponse(
+            responseCode = "409",
+            description = "A conta não está desativada (ativa ou já anonimizada), ou é o último administrador ativo.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE,
+                    schema = @Schema(implementation = ProblemDetail.class),
+                    examples = @ExampleObject(name = "Conta não desativada", value = ProblemExamples.ACCOUNT_NOT_DEACTIVATED)))
+    ResponseEntity<Void> anonymize(@Parameter(description = "Id do usuário") UUID id);
 }
