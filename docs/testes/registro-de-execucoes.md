@@ -226,3 +226,22 @@ Modelo de entrada:
   - `ApiDocsIntegrationTest` (+1).
 - Total esperado na execução 12: **171 testes**.
 
+## Execução 11 — refresh token (SCRUM-143)
+
+- **Resultado:** o desenvolvedor não informou esta execução separadamente; o merge do PR #7 foi feito e a execução 12 roda a suíte inteira, com o refresh token incluído.
+
+## Execução 12 — 2026-10-16 ~14:16 — suíte completa
+
+- **Comando:** `.\mvnw clean test`
+- **Resultado:** 171 testes, 0 falhas, 0 erros. ✅ (resultado informado pelo desenvolvedor, sem log anexado)
+- **Confirma:** abertura de chamados, categorias e prioridades (SCRUM-145) e, de tabela, o refresh token com rotação (SCRUM-143).
+
+### Mudanças entre a execução 12 e a 13
+
+- Edição de chamado (SCRUM-146): `PUT /tickets/{id}`, `Ticket.edit()` e `Ticket.isOpen()`; exceções `TicketNotFoundException` (404), `TicketEditForbiddenException` (403) e `TicketNotEditableException` (409).
+- Novos testes (11):
+  - `TicketServiceTest` (+5): edição pelo solicitante, chamado inexistente, outro usuário, chamado já assumido e categoria inexistente;
+  - `TicketControllerIntegrationTest` (+6): 200, 403, 409, 404, 401 e 400;
+  - `ApiDocsIntegrationTest`: o teste de chamados passou a conferir também o `PUT`.
+- Total esperado na execução 13: **182 testes**.
+

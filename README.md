@@ -147,6 +147,7 @@ O Maven não precisa ser instalado: o projeto usa o Maven Wrapper (`mvnw`).
 | `PATCH` | `/department-requests/{id}/approve` | Aprovar pedido (administrador) | prevista |
 | `PATCH` | `/department-requests/{id}/reject` | Recusar pedido (administrador) | prevista |
 | `POST` | `/tickets` | Abrir chamado | implementada |
+| `PUT` | `/tickets/{id}` | Editar o próprio chamado enquanto ninguém o assumiu | implementada |
 | `GET` | `/categories` | Categorias do formulário de chamado | implementada |
 | `GET` | `/priorities` | Prioridades do formulário de chamado | implementada |
 | `PATCH` | `/tickets/{id}/assign` | Assumir chamado | prevista |

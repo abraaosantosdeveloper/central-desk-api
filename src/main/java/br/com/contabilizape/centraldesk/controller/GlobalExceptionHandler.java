@@ -8,6 +8,9 @@ import br.com.contabilizape.centraldesk.exception.EmailAlreadyRegisteredExceptio
 import br.com.contabilizape.centraldesk.exception.InvalidCredentialsException;
 import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
 import br.com.contabilizape.centraldesk.exception.PriorityNotFoundException;
+import br.com.contabilizape.centraldesk.exception.TicketEditForbiddenException;
+import br.com.contabilizape.centraldesk.exception.TicketNotEditableException;
+import br.com.contabilizape.centraldesk.exception.TicketNotFoundException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -40,6 +43,21 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler({DepartmentNotFoundException.class, CategoryNotFoundException.class, PriorityNotFoundException.class})
     public ProblemDetail handleInvalidInput(RuntimeException exception) {
         return problem(HttpStatus.BAD_REQUEST, "Dados inválidos", exception.getMessage());
+    }
+
+    @ExceptionHandler(TicketNotFoundException.class)
+    public ProblemDetail handleTicketNotFound(TicketNotFoundException exception) {
+        return problem(HttpStatus.NOT_FOUND, "Chamado não encontrado", exception.getMessage());
+    }
+
+    @ExceptionHandler(TicketEditForbiddenException.class)
+    public ProblemDetail handleTicketEditForbidden(TicketEditForbiddenException exception) {
+        return problem(HttpStatus.FORBIDDEN, "Acesso negado", exception.getMessage());
+    }
+
+    @ExceptionHandler(TicketNotEditableException.class)
+    public ProblemDetail handleTicketNotEditable(TicketNotEditableException exception) {
+        return problem(HttpStatus.CONFLICT, "Chamado não editável", exception.getMessage());
     }
 
     @ExceptionHandler(InvalidCredentialsException.class)

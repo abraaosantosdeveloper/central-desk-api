@@ -71,6 +71,18 @@ public class Ticket {
         this.requester = requester;
     }
 
+    /** Troca o conteúdo do formulário. Quem pode e quando é decidido no TicketService. */
+    public void edit(String title, String description, Category category, Priority priority) {
+        this.title = title;
+        this.description = description;
+        this.category = category;
+        this.priority = priority;
+    }
+
+    public boolean isOpen() {
+        return status == TicketStatus.OPEN;
+    }
+
     public UUID getId() { return id; }
     public String getTitle() { return title; }
     public String getDescription() { return description; }

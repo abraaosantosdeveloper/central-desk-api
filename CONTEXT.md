@@ -359,6 +359,7 @@ Preenche `deactivated_at` e bloqueia o login imediatamente, revoga todos os refr
 | PATCH | `/department-requests/{id}/approve` | aprovar pedido (admin) | previsto |
 | PATCH | `/department-requests/{id}/reject` | recusar pedido (admin) | previsto |
 | POST | `/tickets` | abrir chamado (logado): solicitante = usuário do token, nasce `OPEN` | **implementado** |
+| PUT | `/tickets/{id}` | editar chamado: só o solicitante e só enquanto `OPEN` (403 / 409 / 404) | **implementado** |
 | GET | `/categories` | categorias do formulário de chamado, por nome (logado) | **implementado** |
 | GET | `/priorities` | prioridades, da menos à mais urgente (logado) | **implementado** |
 | PATCH | `/tickets/{id}/assign` | assumir chamado | previsto |
@@ -416,11 +417,12 @@ src/main/java/br/com/contabilizape/centraldesk/
 │                    TicketCatalogController, GlobalExceptionHandler
 │   └── doc/         AuthApi, DepartmentApi, UserApi, TicketApi, TicketCatalogApi (OpenAPI), ProblemExamples
 ├── dto/             UserCreateRequest, UserResponse, DepartmentResponse, LoginRequest, CurrentUserResponse,
-│                    TicketCreateRequest, TicketResponse, CategoryResponse, PriorityResponse
+│                    TicketCreateRequest, TicketUpdateRequest, TicketResponse, CategoryResponse, PriorityResponse
 ├── exception/       EmailAlreadyRegisteredException, CpfAlreadyRegisteredException,
 │                    DepartmentNotFoundException, InvalidCredentialsException,
 │                    AccountNotActiveException, InvalidSessionException, CategoryNotFoundException,
-│                    PriorityNotFoundException
+│                    PriorityNotFoundException, TicketNotFoundException, TicketEditForbiddenException,
+│                    TicketNotEditableException
 ├── bootstrap/       AdminBootstrap (cria o primeiro admin), BootstrapAdminProperties (ADMIN_*)
 ├── model/           User, UserStatus, Department, Admin, DepartmentRequest, DepartmentRequestStatus,
 │                    RefreshToken, Ticket, TicketStatus,
@@ -449,7 +451,7 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 ├── controller/AuthLogoutIntegrationTest       POST /auth/logout: apaga os dois cookies com ou sem sessão (3)
 ├── controller/AuthRefreshIntegrationTest      rotação, reuso, vencido, conta inativa, logout revoga (11)
 ├── controller/UserControllerIntegrationTest   GET /users/me: sessão válida, sem cookie, chave errada, vencido (7)
-├── controller/TicketControllerIntegrationTest abertura de chamado, categorias e prioridades (8)
+├── controller/TicketControllerIntegrationTest abertura, edição, categorias e prioridades (14)
 ├── docs/ApiDocsIntegrationTest                OpenAPI e Swagger UI ligados (10 casos)
 ├── docs/ApiDocsDisabledIntegrationTest        sem API_DOCS_ENABLED: 404 (2 casos)
 ├── dto/UserCreateRequestValidationTest        regras do DTO (Bean Validation)
@@ -457,7 +459,7 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 ├── service/DepartmentServiceTest              listagem ordenada (Mockito, 2 casos)
 ├── service/AuthServiceTest                    login, permissões, renovação e logout (Mockito, 11 casos)
 ├── service/RefreshTokenServiceTest            emissão, hash, rotação, reuso, revogação (Mockito, 10)
-├── service/TicketServiceTest                  abertura: solicitante, categoria, prioridade, conta (Mockito, 5)
+├── service/TicketServiceTest                  abertura e edição: solicitante, status, categoria, conta (Mockito, 10)
 ├── security/JwtConfigTest                     tamanho e formato da chave (3)
 ├── security/TokenServiceTest                  claims, validade, chave e emissor errados (5)
 ├── security/CookieBearerTokenResolverTest     leitura do cookie e rotas públicas (5)
@@ -522,7 +524,7 @@ Decisão tomada: alteração de status (RF06) e encerramento (RF07) continuam **
 - [x] Logout que apaga o cookie (SCRUM-142).
 - [x] Refresh token com rotação e detecção de reuso; logout revoga a sessão (SCRUM-143).
 - [ ] Limpeza periódica de `refresh_tokens` e revogação imediata das sessões ao desativar uma conta.
-- [x] Abertura de chamados (SCRUM-145).
+- [x] Abertura de chamados (SCRUM-145) e edição pelo solicitante enquanto `OPEN` (SCRUM-146).
 - [ ] Listar chamados (meus / fila da Inovação), assumir e encerrar, com as regras de transição de status (RF06, RF07).
 - [ ] Modelar as notificações (e-mail via Resend e dentro da interface) e substituir o log provisório.
 - [ ] Definir o significado de `validated_at` (hoje nasce nulo).

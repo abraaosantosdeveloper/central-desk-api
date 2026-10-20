@@ -23,6 +23,7 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -130,6 +131,70 @@ class TicketControllerIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM tickets", Integer.class)).isZero();
     }
 
+    // ---------- edição ----------
+
+    @Test
+    void requesterEditsOpenTicket() throws Exception {
+        UUID ticketId = openTicketAndGetId();
+
+        mockMvc.perform(editTicket(ticketId, body("Título corrigido", hardwareId, "3")).cookie(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Título corrigido"))
+                .andExpect(jsonPath("$.priority.label").value("Alta"))
+                .andExpect(jsonPath("$.status").value("OPEN"));
+
+        Map<String, Object> row = jdbc.queryForMap("SELECT title, priority_id, updated_at FROM tickets WHERE id = ?", ticketId);
+        assertThat(row.get("title")).isEqualTo("Título corrigido");
+        assertThat(((Number) row.get("priority_id")).intValue()).isEqualTo(3);
+        assertThat(row.get("updated_at")).isNotNull();
+    }
+
+    @Test
+    void anotherUserCannotEdit() throws Exception {
+        UUID ticketId = openTicketAndGetId();
+        Cookie joao = registerAndLogin("joao.souza@contabilizape.com.br", "11144477735");
+
+        mockMvc.perform(editTicket(ticketId, body("Invasão", hardwareId, "4")).cookie(joao))
+                .andExpect(status().isForbidden());
+        assertThat(jdbc.queryForObject("SELECT title FROM tickets WHERE id = ?", String.class, ticketId))
+                .isEqualTo("Impressora parada");
+    }
+
+    @Test
+    void assumedTicketCannotBeEdited() throws Exception {
+        UUID ticketId = openTicketAndGetId();
+        jdbc.update("UPDATE tickets SET status = 'IN_PROGRESS' WHERE id = ?", ticketId);
+
+        mockMvc.perform(editTicket(ticketId, body("Tarde demais", hardwareId, "2")).cookie(session))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void unknownTicketIsNotFound() throws Exception {
+        mockMvc.perform(editTicket(UUID.randomUUID(), body("Título", hardwareId, "2")).cookie(session))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void editWithoutSessionIsUnauthorized() throws Exception {
+        UUID ticketId = openTicketAndGetId();
+
+        mockMvc.perform(editTicket(ticketId, body("Título", hardwareId, "2")))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void editWithInvalidFieldsIsBadRequest() throws Exception {
+        UUID ticketId = openTicketAndGetId();
+
+        mockMvc.perform(editTicket(ticketId, """
+                        { "title": "", "description": "", "categoryId": "%s", "priorityId": 2 }
+                        """.formatted(hardwareId)).cookie(session))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.title").exists())
+                .andExpect(jsonPath("$.errors.description").exists());
+    }
+
     // ---------- opções do formulário ----------
 
     @Test
@@ -157,6 +222,33 @@ class TicketControllerIntegrationTest {
     }
 
     // ---------- auxiliares ----------
+
+    private UUID openTicketAndGetId() throws Exception {
+        String location = mockMvc.perform(openTicket(body("Impressora parada", hardwareId, "2")).cookie(session))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getHeader(HttpHeaders.LOCATION);
+        return UUID.fromString(location.substring("/tickets/".length()));
+    }
+
+    private Cookie registerAndLogin(String email, String cpf) throws Exception {
+        mockMvc.perform(post("/auth/register").contentType(MediaType.APPLICATION_JSON).content("""
+                        { "fullName": "João Souza", "cpf": "%s", "email": "%s",
+                          "password": "%s", "departmentId": "%s" }
+                        """.formatted(cpf, email, PASSWORD, GENERAL_ID)))
+                .andExpect(status().isCreated());
+        String setCookie = mockMvc.perform(post("/auth/login").contentType(MediaType.APPLICATION_JSON).content("""
+                        { "email": "%s", "password": "%s" }
+                        """.formatted(email, PASSWORD)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getHeader(HttpHeaders.SET_COOKIE);
+        Matcher matcher = TOKEN_IN_COOKIE.matcher(setCookie);
+        assertThat(matcher.find()).isTrue();
+        return new Cookie("access_token", matcher.group(1));
+    }
+
+    private static MockHttpServletRequestBuilder editTicket(UUID id, String body) {
+        return put("/tickets/" + id).contentType(MediaType.APPLICATION_JSON).content(body);
+    }
 
     private static MockHttpServletRequestBuilder openTicket(String body) {
         return post("/tickets").contentType(MediaType.APPLICATION_JSON).content(body);

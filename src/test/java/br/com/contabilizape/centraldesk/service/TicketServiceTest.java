@@ -2,10 +2,14 @@ package br.com.contabilizape.centraldesk.service;
 
 import br.com.contabilizape.centraldesk.dto.TicketCreateRequest;
 import br.com.contabilizape.centraldesk.dto.TicketResponse;
+import br.com.contabilizape.centraldesk.dto.TicketUpdateRequest;
 import br.com.contabilizape.centraldesk.exception.AccountNotActiveException;
 import br.com.contabilizape.centraldesk.exception.CategoryNotFoundException;
 import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
 import br.com.contabilizape.centraldesk.exception.PriorityNotFoundException;
+import br.com.contabilizape.centraldesk.exception.TicketEditForbiddenException;
+import br.com.contabilizape.centraldesk.exception.TicketNotEditableException;
+import br.com.contabilizape.centraldesk.exception.TicketNotFoundException;
 import br.com.contabilizape.centraldesk.model.Category;
 import br.com.contabilizape.centraldesk.model.Department;
 import br.com.contabilizape.centraldesk.model.Priority;
@@ -123,6 +127,85 @@ class TicketServiceTest {
 
         assertThatThrownBy(() -> ticketService.open(REQUESTER_ID, request("Título", CATEGORY_ID, MEDIUM)))
                 .isInstanceOf(InvalidSessionException.class);
+    }
+
+    // ---------- edição ----------
+
+    private static final UUID TICKET_ID = UUID.randomUUID();
+
+    @Test
+    void requesterEditsOpenTicket() {
+        User maria = requester(UserStatus.ACTIVE);
+        Ticket ticket = new Ticket("Antigo", "Descrição antiga", hardware, medium, maria);
+        when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(maria));
+        when(ticketRepository.findById(TICKET_ID)).thenReturn(Optional.of(ticket));
+        when(categoryRepository.findById(CATEGORY_ID)).thenReturn(Optional.of(hardware));
+        when(priorityRepository.findById(MEDIUM)).thenReturn(Optional.of(medium));
+
+        TicketResponse response = ticketService.edit(TICKET_ID, REQUESTER_ID,
+                new TicketUpdateRequest("  Novo título ", "Nova descrição", CATEGORY_ID, MEDIUM));
+
+        assertThat(ticket.getTitle()).isEqualTo("Novo título");
+        assertThat(ticket.getDescription()).isEqualTo("Nova descrição");
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.OPEN);
+        assertThat(response.title()).isEqualTo("Novo título");
+        verify(ticketRepository).flush();
+    }
+
+    @Test
+    void unknownTicketIsNotFound() {
+        User maria = requester(UserStatus.ACTIVE);
+        when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(maria));
+        when(ticketRepository.findById(TICKET_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> ticketService.edit(TICKET_ID, REQUESTER_ID, update()))
+                .isInstanceOf(TicketNotFoundException.class);
+    }
+
+    @Test
+    void onlyTheRequesterCanEdit() {
+        User maria = requester(UserStatus.ACTIVE);
+        UUID joaoId = UUID.randomUUID();
+        User joao = new User("João Souza", "11144477735", "joao.souza@contabilizape.com.br", "hash", mock(Department.class));
+        ReflectionTestUtils.setField(joao, "id", joaoId);
+        ReflectionTestUtils.setField(joao, "status", UserStatus.ACTIVE);
+        Ticket ticketOfMaria = new Ticket("Antigo", "Descrição", hardware, medium, maria);
+        when(userRepository.findById(joaoId)).thenReturn(Optional.of(joao));
+        when(ticketRepository.findById(TICKET_ID)).thenReturn(Optional.of(ticketOfMaria));
+
+        assertThatThrownBy(() -> ticketService.edit(TICKET_ID, joaoId, update()))
+                .isInstanceOf(TicketEditForbiddenException.class);
+        assertThat(ticketOfMaria.getTitle()).isEqualTo("Antigo");
+    }
+
+    @Test
+    void ticketAlreadyAssumedCannotBeEdited() {
+        User maria = requester(UserStatus.ACTIVE);
+        Ticket ticket = new Ticket("Antigo", "Descrição", hardware, medium, maria);
+        ReflectionTestUtils.setField(ticket, "status", TicketStatus.IN_PROGRESS);
+        when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(maria));
+        when(ticketRepository.findById(TICKET_ID)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> ticketService.edit(TICKET_ID, REQUESTER_ID, update()))
+                .isInstanceOf(TicketNotEditableException.class);
+        assertThat(ticket.getTitle()).isEqualTo("Antigo");
+    }
+
+    @Test
+    void editWithUnknownCategoryIsRejected() {
+        User maria = requester(UserStatus.ACTIVE);
+        Ticket ticket = new Ticket("Antigo", "Descrição", hardware, medium, maria);
+        when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(maria));
+        when(ticketRepository.findById(TICKET_ID)).thenReturn(Optional.of(ticket));
+        when(categoryRepository.findById(CATEGORY_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> ticketService.edit(TICKET_ID, REQUESTER_ID, update()))
+                .isInstanceOf(CategoryNotFoundException.class);
+        assertThat(ticket.getTitle()).isEqualTo("Antigo");
+    }
+
+    private static TicketUpdateRequest update() {
+        return new TicketUpdateRequest("Novo título", "Nova descrição", CATEGORY_ID, MEDIUM);
     }
 
     // ---------- auxiliares ----------

@@ -86,6 +86,10 @@ class ApiDocsIntegrationTest {
                 .andExpect(jsonPath(open + ".responses['400'].content['" + PROBLEM_JSON + "']").exists())
                 .andExpect(jsonPath(open + ".responses['401']").exists())
                 .andExpect(jsonPath(open + ".security[0].cookieAuth").isArray())
+                .andExpect(jsonPath("$.paths['/tickets/{id}'].put.responses['200']").exists())
+                .andExpect(jsonPath("$.paths['/tickets/{id}'].put.responses['403'].content['" + PROBLEM_JSON + "']").exists())
+                .andExpect(jsonPath("$.paths['/tickets/{id}'].put.responses['404']").exists())
+                .andExpect(jsonPath("$.paths['/tickets/{id}'].put.responses['409'].content['" + PROBLEM_JSON + "']").exists())
                 .andExpect(jsonPath("$.paths['/categories'].get.responses['200']").exists())
                 .andExpect(jsonPath("$.paths['/priorities'].get.responses['200']").exists());
     }

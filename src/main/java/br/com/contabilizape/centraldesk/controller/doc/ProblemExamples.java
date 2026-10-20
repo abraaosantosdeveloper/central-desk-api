@@ -110,6 +110,24 @@ public final class ProblemExamples {
               "instance": "/tickets"
             }""";
 
+    public static final String TICKET_EDIT_FORBIDDEN = """
+            {
+              "type": "about:blank",
+              "title": "Acesso negado",
+              "status": 403,
+              "detail": "Só quem abriu o chamado pode editá-lo.",
+              "instance": "/tickets/0f8b2c1e-6d3a-4f5e-9b7c-1a2b3c4d5e6f"
+            }""";
+
+    public static final String TICKET_NOT_EDITABLE = """
+            {
+              "type": "about:blank",
+              "title": "Chamado não editável",
+              "status": 409,
+              "detail": "O chamado já foi assumido e não pode mais ser editado.",
+              "instance": "/tickets/0f8b2c1e-6d3a-4f5e-9b7c-1a2b3c4d5e6f"
+            }""";
+
     private ProblemExamples() {
     }
 }
