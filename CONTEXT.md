@@ -2,7 +2,7 @@
 
 Este documento resume o estado do projeto e as decisões já tomadas. Ele serve como contexto para continuar o desenvolvimento em novas conversas: **as decisões listadas aqui já foram discutidas e não precisam ser reabertas**, a menos que eu peça.
 
-Última atualização: 15/10/2026.
+Última atualização: 20/10/2026.
 
 ---
 
@@ -12,7 +12,8 @@ Este documento resume o estado do projeto e as decisões já tomadas. Ele serve 
 
 - Atende **todo tipo de suporte**, não só manutenção física.
 - **Somente o departamento de Inovação atende chamados** (equipe de 3 pessoas, com um coordenador).
-- Notificações: por e-mail (envio via **Resend**) e dentro da interface. **Ainda não modeladas**; hoje existe só o ponto de disparo (seção 6).
+- Notificações: **painel de notificações na interface, com filtro por categoria** (modelado em 20/10, seção 6) e, depois, e-mail (envio via **Resend**).
+- **Avaliação do atendimento**: o solicitante pode avaliar o profissional que atendeu o chamado encerrado (modelada em 20/10, seção 5).
 - O projeto também tem uma **documentação formal em ABNT, escrita no Overleaf** (`docs/DOC_SISTEMA_CHAMADOS_0.1.pdf`).
 - As tarefas do projeto são organizadas no **Jira**.
 
@@ -161,6 +162,10 @@ Formato obrigatório: `V<n>__<descricao>.sql` — **`V` maiúsculo** e dois unde
 | `V8__seed_departments.sql` | departamentos Inovação e Geral (UUIDs fixos). **Sem dados pessoais**: o primeiro admin vem do `AdminBootstrap` |
 | `V9__create_departments_and_requests.sql` | pedidos de entrada em departamento (`department_requests`) |
 | `V10__seed_categories.sql` | categorias iniciais dos chamados (Hardware, Software, Acesso e contas, Rede e internet, Sistemas internos, Outros) |
+| `V11__create_ticket_ratings.sql` | avaliações do atendimento (`ticket_ratings`). **Escrita em 20/10, ainda não aplicada** |
+| `V12__create_notifications.sql` | notificações do painel (`notifications`). **Escrita em 20/10, ainda não aplicada** |
+
+Conferido em 20/10: a V11 e a V12 não conflitam com as anteriores (numeração, nomes de tabelas, índices e constraints livres; todas as FKs apontam para tabelas já existentes). Até serem aplicadas, ainda podem ser ajustadas.
 
 ### Departamentos fixos (criados na V8)
 
@@ -194,28 +199,42 @@ Os UUIDs são fixos porque a aplicação os referencia por configuração: assim
 
 **refresh_tokens** — `id` UUID PK · `user_id` FK · `token_hash` CHAR(64) UNIQUE (SHA-256) · `created_at` · `expires_at` NOT NULL · `revoked_at` nullable
 
+**ticket_ratings** (V11) — `id` UUID PK · `ticket_id` FK, UNIQUE (`uq_ticket_ratings_ticket`: no máximo uma avaliação por chamado) · `rater_id` FK (o solicitante) · `rated_id` FK (o responsável no momento do encerramento) · `score` SMALLINT (`chk_ticket_ratings_score`: 1 a 5) · `comment` TEXT nullable · `created_at`
+- `chk_ticket_ratings_not_self`: `rater_id <> rated_id` (ninguém avalia a si mesmo).
+- `rated_id` é gravado, e não lido de `tickets.assignee_id`, para que uma reatribuição posterior não mude quem foi avaliado.
+- Sem `updated_at`: a avaliação não é editada depois de enviada.
+- Índice `(rated_id, created_at)` para consultas de desempenho por profissional.
+
+**notifications** (V12) — `id` UUID PK · `recipient_id` FK · `type` VARCHAR(40) (`chk_notifications_type`) · `actor_id` FK nullable (quem causou o evento) · `ticket_id` FK nullable · `department_request_id` FK nullable · `read_at` nullable · `created_at`
+- Tipos: `TICKET_ASSIGNED`, `TICKET_COMMENTED`, `TICKET_CLOSED`, `DEPARTMENT_REQUEST_CREATED`, `DEPARTMENT_REQUEST_APPROVED`, `DEPARTMENT_REQUEST_REJECTED`, `ADMIN_GRANTED`. Um tipo novo exige migration que altere o `CHECK`.
+- **Uma linha por destinatário**: cada um tem o próprio estado de leitura, sem tabela intermediária.
+- **Sem coluna de texto**: o front monta a mensagem a partir de `type`, `actor` e das referências. O texto nunca fica desatualizado e o conteúdo de comentários (que será cifrado) não é copiado para cá.
+- Referências com FKs explícitas e anuláveis, e não um par genérico `entity_type`/`entity_id`: são poucos alvos, e o banco garante a integridade.
+- Índices: `(recipient_id, created_at DESC)` para a listagem; parcial `(recipient_id) WHERE read_at IS NULL` para o contador de não lidas; `ticket_id` e `department_request_id`.
+
 ### Convenções do banco
 
 - Nomes de tabelas e colunas em inglês, `snake_case`, minúsculas.
+- Nomes de constraints: `chk_<tabela>_<regra>` para `CHECK` e `uq_<tabela>_<coluna>` para unicidade (padrão da V9).
 - Chaves primárias UUID com `DEFAULT gen_random_uuid()` no banco **e** `@GeneratedValue(strategy = GenerationType.UUID)` no Java. A aplicação gera o UUID antes do `INSERT`; o default do banco serve para inserts feitos fora da aplicação (seeds, pgAdmin). Os dois convivem sem conflito.
 - Datas de eventos sempre `TIMESTAMPTZ` com `DEFAULT CURRENT_TIMESTAMP` (Java: `OffsetDateTime`, `@CreationTimestamp` / `@UpdateTimestamp`).
-- Valores fixos ligados ao código (status): `VARCHAR` + `CHECK`, mapeados com `@Enumerated(EnumType.STRING)`. Nunca `ORDINAL`.
+- Valores fixos ligados ao código (status, tipos de notificação): `VARCHAR` + `CHECK`, mapeados com `@Enumerated(EnumType.STRING)`. Nunca `ORDINAL`.
 - Valores cadastráveis (categorias, departamentos): tabela própria com FK.
-- **Soft delete**: usuários não são apagados; são desativados e depois anonimizados, para preservar o histórico dos chamados. Por isso as FKs não usam `ON DELETE CASCADE`.
+- **Soft delete**: usuários não são apagados; são desativados e depois anonimizados, para preservar o histórico dos chamados. Por isso as FKs não usam `ON DELETE CASCADE`. **Exceção:** notificações não têm valor histórico e são apagadas fisicamente na anonimização.
 - Índices em todas as FKs usadas em consultas frequentes, além de `(assignee_id, status)` em tickets, `(ticket_id, created_at)` em comments e `(status, created_at)` em department_requests.
-- **Criptografia em repouso com AES-GCM**: comentários e descrições dos chamados ficam cifrados no banco, com a chave no servidor (variável `CONTENT_ENCRYPTION_KEY`), além do HTTPS. Consequência aceita: não há busca no conteúdo cifrado. Ainda não implementado (ADR no Jira: SCRUM-52).
+- **Criptografia em repouso com AES-GCM**: comentários e descrições dos chamados ficam cifrados no banco, com a chave no servidor (variável `CONTENT_ENCRYPTION_KEY`), além do HTTPS. O comentário da avaliação (`ticket_ratings.comment`) segue a mesma regra. Consequência aceita: não há busca no conteúdo cifrado. Ainda não implementado (ADR no Jira: SCRUM-52).
 
 ### Diagramas
 
 - Modelo conceitual (notação de Chen): `modelo_conceitual_chamados.drawio`
 - Modelo lógico: `modelo_logico_chamados.dbml` (para o dbdiagram.io)
-- Ambos ainda não incluem `department_requests`.
+- Ambos ainda não incluem `department_requests`, `ticket_ratings` e `notifications`.
 
 ## 5. Regras de negócio
 
 ### Permissões
 
-- **Colaborador comum**: abre chamados, comenta nos próprios chamados, edita o próprio perfil.
+- **Colaborador comum**: abre chamados, comenta nos próprios chamados, avalia o atendimento dos próprios chamados, edita o próprio perfil.
 - **Membro da Inovação** (authority `TICKET_HANDLER`): assume, atende, reatribui e encerra chamados. Identificado pelo departamento: no login, `user.department.id` é comparado com `app.tickets.handler-department-id`.
 - **Administrador** (registro na tabela `admins`, authority `ROLE_ADMIN`): tudo o que a Inovação faz, mais aprovar ou recusar pedidos de departamento, desativar e anonimizar contas, cadastrar categorias e conceder ou remover privilégio de administrador.
   - Só membros da Inovação podem ser administradores (condição necessária, não suficiente). Entrar na Inovação **não** torna ninguém admin: a concessão é sempre um ato explícito de outro admin, registrado em `granted_by_id` e `granted_at`.
@@ -260,19 +279,72 @@ O status **não é editado livremente**: ele muda como consequência de ações.
 - Encerrar → `CLOSED`, preenche `closed_by_id` e `closed_at`.
 - Cada ação é um endpoint próprio, e o service valida se a transição é permitida (máquina de estados).
 
+Os status continuam `OPEN`, `IN_PROGRESS` e `CLOSED` (enum `TicketStatus`). A separação entre *Concluído* e *Encerrado* segue como pendência (seção 12) e **não** foi adotada para a avaliação.
+
 Métricas previstas: tempo de resposta (`assigned_at - created_at`) e tempo de resolução (`closed_at - created_at`).
+
+### Avaliação do atendimento (decidida em 20/10/2026)
+
+O solicitante avalia o profissional que atendeu o chamado com uma nota de **1 a 5** e um comentário opcional. A avaliação é **opcional**: o usuário pode simplesmente fechar o formulário.
+
+**Quando o formulário aparece** (comparando `tickets.requester_id` com `tickets.closed_by_id`):
+
+| Situação | Comportamento |
+|---|---|
+| Quem encerrou é o próprio solicitante | o front abre o formulário logo depois do encerramento |
+| Quem encerrou foi outra pessoa | o solicitante recebe uma notificação `TICKET_CLOSED`, e o painel oferece a avaliação a partir dela |
+| O solicitante é o próprio responsável (`requester_id = assignee_id`) | não há avaliação (seria autoavaliação), e nenhuma notificação de avaliação é criada |
+| Chamado encerrado sem responsável (`assignee_id` nulo) | não há avaliação (não há quem avaliar) |
+
+**Regras do back-end** (`POST /tickets/{id}/rating`):
+
+- só o solicitante do chamado avalia (403 para os demais);
+- o chamado precisa estar `CLOSED` e ter `assignee_id` (409 caso contrário);
+- o avaliador não pode ser o avaliado (409; o `CHECK` do banco garante o mesmo);
+- uma segunda avaliação do mesmo chamado → 409;
+- `rated_id` recebe o `assignee_id` do chamado no momento da avaliação.
+
+**O encerramento não sabe da avaliação.** O front chama `PATCH /tickets/{id}/close` e, se o usuário quiser, abre o formulário e faz o `POST`. "Pular" significa não chamar nada. Assim o endpoint de encerramento não ganha um campo opcional que mistura duas responsabilidades.
+
+**Em aberto** (decidir com o coordenador antes de expor as notas): quem vê as avaliações (só coordenador e admins? o avaliado vê as próprias? notas individuais ou só médias?) e se haverá prazo para avaliar. Numa equipe de 3 pessoas a avaliação é nominal, então isso tem um lado de clima de equipe e de LGPD (dado de desempenho de uma pessoa).
 
 ### Desativação de conta (ex.: demissão)
 
-Preenche `deactivated_at` e bloqueia o login imediatamente, revoga todos os refresh tokens do usuário e devolve à fila (`assignee_id = NULL`) os chamados que estavam com ele. A anonimização (LGPD) vem depois, sem apagar fisicamente o registro.
+Preenche `deactivated_at` e bloqueia o login imediatamente, revoga todos os refresh tokens do usuário e devolve à fila (`assignee_id = NULL`) os chamados que estavam com ele. A anonimização (LGPD) vem depois, sem apagar fisicamente o registro do usuário; as notificações dele são apagadas.
 
 ## 6. Notificações e tempo real
 
-- **Atualizações em tempo real na interface via SSE** (Server-Sent Events), e não WebSocket: o fluxo é só do servidor para o cliente, com um stream único por usuário. Limite conhecido: funciona com uma única instância da aplicação; pub/sub entre instâncias fica como trabalho futuro (ADR no Jira: SCRUM-51).
-- Canais de notificação no MVP (e-mail e interface, ou só interface e e-mail depois) ainda em decisão (SCRUM-44).
+### Painel de notificações (decidido em 20/10/2026)
+
+O sistema terá um **painel de notificações** na interface, com **filtro por categoria**. Decidimos pelo painel porque as filas (de chamados para a Inovação, de pedidos para os admins) não cobrem o solicitante: ele precisa saber de comentários novos, encerramentos e avaliações pendentes sem ter de abrir cada chamado.
+
+**Tipos e destinatários:**
+
+| Tipo | Destinatário | Disparado por | Categoria |
+|---|---|---|---|
+| `TICKET_ASSIGNED` | solicitante | alguém assume o chamado | `TICKETS` |
+| `TICKET_COMMENTED` | solicitante e responsável, exceto o autor do comentário | comentário novo | `TICKETS` |
+| `TICKET_CLOSED` | solicitante, **só se outra pessoa encerrou** (convida a avaliar) | encerramento | `TICKETS` |
+| `DEPARTMENT_REQUEST_CREATED` | cada administrador ativo | cadastro pedindo Inovação | `ADMINISTRATION` |
+| `DEPARTMENT_REQUEST_APPROVED` | quem pediu | admin aprova | `ACCOUNT` |
+| `DEPARTMENT_REQUEST_REJECTED` | quem pediu | admin recusa | `ACCOUNT` |
+| `ADMIN_GRANTED` | o novo administrador | admin concede o privilégio | `ACCOUNT` |
+
+Ninguém é notificado de uma ação que ele mesmo fez (o `actor` nunca é o destinatário).
+
+**Categorização:** a categoria **não é coluna no banco**. É um enum `NotificationCategory` (`TICKETS`, `ACCOUNT`, `ADMINISTRATION`) no Java, e cada `NotificationType` sabe a sua categoria. O filtro vira `WHERE type IN (...)` com os tipos da categoria. Assim não há coluna redundante que possa divergir do tipo, e mudar um tipo de categoria não exige migration.
+
+**Fora do escopo agora** (YAGNI): preferências por categoria (silenciar, escolher canais) e registro de envio de e-mail por notificação. Se o "silenciar" virar requisito, entra uma tabela `notification_preferences`.
+
+**Leitura:** `read_at` preenchido quando o usuário marca como lida (uma ou todas). Só o destinatário pode marcar a própria notificação; a de outra pessoa responde 404, para não revelar que ela existe.
+
+### Infraestrutura
+
+- **Atualizações em tempo real na interface via SSE** (Server-Sent Events), e não WebSocket: o fluxo é só do servidor para o cliente, com um stream único por usuário. Limite conhecido: funciona com uma única instância da aplicação; pub/sub entre instâncias fica como trabalho futuro (ADR no Jira: SCRUM-51). O painel pode começar consultando a API e ganhar o SSE depois.
+- Canais no MVP: **painel na interface primeiro**; e-mail depois, aproveitando os mesmos eventos (SCRUM-44).
 - E-mail: previsto com `spring-boot-starter-mail` (`JavaMailSender`) via SMTP — Resend com domínio próprio para testes, Mailpit no Docker para desenvolvimento, e SMTP da empresa (`@contabilizape.com.br`) como alvo de produção. Ainda não implementado.
 - Disparadas por **eventos do Spring** (`ApplicationEventPublisher`), ouvidos com `@TransactionalEventListener(phase = AFTER_COMMIT)`: o ouvinte só roda depois que a transação foi gravada, e uma falha no envio não desfaz a operação.
-- Implementado: `DepartmentRequestCreatedEvent` → `DepartmentRequestNotificationListener`, que busca os admins ativos (`UserRepository.findAdminsByStatus`). **Provisório**: por enquanto só registra no log (`Notificar ...`). Quando o envio pelo Resend e a notificação na interface forem modelados, só o ouvinte muda.
+- Implementado: `DepartmentRequestCreatedEvent` → `DepartmentRequestNotificationListener`, que busca os admins ativos (`UserRepository.findAdminsByStatus`). **Provisório**: por enquanto só registra no log (`Notificar ...`). Com o painel, o ouvinte passa a gravar uma notificação `DEPARTMENT_REQUEST_CREATED` por administrador.
 
 ## 7. Autenticação
 
@@ -351,8 +423,8 @@ Preenche `deactivated_at` e bloqueia o login imediatamente, revoga todos os refr
 | POST | `/auth/refresh` | renovação da sessão (público): rotação do refresh token, cookies novos | **implementado** |
 | POST | `/auth/logout` | logout (público): revoga o refresh token e apaga os dois cookies (204) | **implementado** |
 | GET | `/users/me` | dados e permissões do usuário logado | **implementado** |
-| PUT | `/users/me` | edição do próprio perfil (DTO restrito: sem senha, e-mail ou permissões) | previsto |
-| PATCH | `/users/me/password` | troca de senha (exige a senha atual) | previsto |
+| PUT | `/users/me` | edição do próprio perfil: **só o nome** (SCRUM-156) | previsto |
+| PATCH | `/users/me/password` | troca de senha: exige a atual, revoga as outras sessões (SCRUM-157) | previsto |
 | GET | `/users/{id}` | consulta de outro usuário (admin) | previsto |
 | PATCH | `/users/{id}/deactivate` | desativação de conta (admin) | previsto |
 | GET | `/department-requests` | fila de pedidos pendentes (admin) | previsto |
@@ -364,8 +436,13 @@ Preenche `deactivated_at` e bloqueia o login imediatamente, revoga todos os refr
 | GET | `/priorities` | prioridades, da menos à mais urgente (logado) | **implementado** |
 | PATCH | `/tickets/{id}/assign` | assumir chamado | previsto |
 | PATCH | `/tickets/{id}/close` | encerrar chamado | previsto |
+| POST | `/tickets/{id}/rating` | avaliar o atendimento: só o solicitante, chamado `CLOSED` com responsável, uma vez (201 / 403 / 404 / 409) | previsto |
+| GET | `/notifications` | notificações do usuário logado, mais recentes primeiro, paginadas; filtros opcionais `category` e `unread` | previsto |
+| GET | `/notifications/unread-count` | contador de não lidas (para o ícone do painel) | previsto |
+| PATCH | `/notifications/{id}/read` | marcar uma como lida (204; 404 se não for do usuário) | previsto |
+| PATCH | `/notifications/read-all` | marcar todas como lidas, respeitando o filtro `category` se vier (204) | previsto |
 
-No Spring, rotas literais como `/users/me` têm prioridade sobre `/users/{id}`.
+No Spring, rotas literais como `/users/me` têm prioridade sobre `/users/{id}` (o mesmo vale para `/notifications/read-all` e `/notifications/unread-count`).
 
 ### Documentação OpenAPI (Swagger)
 
@@ -437,6 +514,8 @@ src/main/java/br/com/contabilizape/centraldesk/
 └── validation/      @Cpf + CpfValidator, @CorporateEmail + CorporateEmailValidator
 ```
 
+Previsto para notificações e avaliações: `model/` ganha `Notification`, `NotificationType` (com a categoria) e `NotificationCategory`, além de `TicketRating`; `repository/` ganha `NotificationRepository` e `TicketRatingRepository`; `service/` ganha `NotificationService` e `TicketRatingService`; `controller/` ganha `NotificationController` (doc em `NotificationApi`) e o endpoint de avaliação no `TicketController`.
+
 Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 
 ```
@@ -476,7 +555,7 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 - Relatório HTML: `.\mvnw surefire-report:report` (em `target\reports\`).
 - Os testes de integração usam `ddl-auto=validate`, então também conferem se as entidades batem com as migrations.
 - **Teste de integração novo usa `@IntegrationTest`** (`@SpringBootTest` + MockMvc + Testcontainers + propriedades que isolam do `.env`). Classes com as mesmas propriedades compartilham um único contexto e um único contêiner. Para mudar uma propriedade, `@TestPropertySource` na classe: tem precedência, mas cria outro contexto (outro contêiner), então use com moderação.
-- Cada teste de integração apaga os usuários criados (preservando administradores, se houver) antes de rodar, com `DatabaseCleanup.removeNonAdminUsers(jdbc)`. A ordem respeita as chaves estrangeiras (`comments` → `tickets` → `refresh_tokens` → `department_requests` → `users`); toda tabela nova que aponte para `users` entra ali.
+- Cada teste de integração apaga os usuários criados (preservando administradores, se houver) antes de rodar, com `DatabaseCleanup.removeNonAdminUsers(jdbc)`. A ordem respeita as chaves estrangeiras (`notifications` → `ticket_ratings` → `comments` → `tickets` → `refresh_tokens` → `department_requests` → `users`); toda tabela nova que aponte para `users` entra ali. **`notifications` e `ticket_ratings` entram na mesma entrega da V11/V12.**
 - **Rastreabilidade:** toda execução relevante, **inclusive as que falham**, é registrada em `docs/testes/registro-de-execucoes.md` (comando, resultado, causa raiz, correção). Cada falha vira uma subtarefa `[BUG]` no Jira, com o rótulo `bug`.
 
 Fluxo de uma requisição: `Controller (HTTP + DTO) → Service (regras, @Transactional) → Repository (consultas) → banco`.
@@ -493,6 +572,7 @@ Fluxo de uma requisição: `Controller (HTTP + DTO) → Service (regras, @Transa
 - Validadores customizados ficam em `validation/` (não são "middlewares": não veem a requisição; são acionados pelo `@Valid`). O que participa da cadeia HTTP do Spring Security (leitura do cookie, JWT) fica em `security/`.
 - Teste unitário do `TokenService` e do `JwtConfig` usa os beans reais, sem Spring: `new JwtConfig().jwtEncoder(...)`. O `TokenService` recebe um `Clock`, o que permite gerar tokens já vencidos nos testes.
 - Validador que precisa de configuração (como o `CorporateEmailValidator`) recebe o valor pelo construtor com `@Value`: o Spring cria os validadores como beans. Em teste unitário sem Spring, instancia-se o validador passando o valor (ver `UserCreateRequestValidationTest`).
+- `ticket_ratings.score` é `SMALLINT`: mapear como `short` (ou `Short`) no Java, senão o `validate` acusa divergência de tipo (*found int2, expecting integer*).
 
 ## 10. Requisitos funcionais
 
@@ -509,14 +589,44 @@ Fluxo de uma requisição: `Controller (HTTP + DTO) → Service (regras, @Transa
 
 Decisão tomada: alteração de status (RF06) e encerramento (RF07) continuam **separados**, porque o encerramento tem regras próprias. O README lista requisitos complementares (RF08 a RF15: categorização, urgência, filtros, comentários, notificações).
 
+Requisitos complementares (README): RF08 categorização, RF09 urgência, RF10 setor e responsável, RF11 listagem com filtros, RF12 detalhes, RF13 comentários, RF14 notificações por e-mail, RF15 notificações internas na interface. Incluídos em 20/10:
+
+- **RF15** detalhado como **painel de notificações com filtro por categoria** (SCRUM-149).
+- **RF16 — Avaliação do atendimento** pelo solicitante, depois do encerramento (novo; SCRUM-150). Precisa entrar no README e na documentação ABNT.
+
 ## 11. Documentação ABNT (Overleaf)
 
 - Texto em português; termos técnicos em inglês em itálico.
 - Na primeira menção: "chamado (denominado *ticket* no código-fonte)".
 - O diagrama de estados do chamado é recomendado para ilustrar RF06 e RF07.
 - O nome das colunas na documentação deve ser o mesmo das migrations.
+- A documentação precisa incluir as tabelas `ticket_ratings` e `notifications` e os dois requisitos complementares de 20/10.
 
 ## 12. Pendências
+
+### Roteiro (definido em 16/10/2026, atualizado em 20/10/2026)
+
+0. **Fechar a SCRUM-146 (edição de chamado):** os commits estão na branch `feature/SCRUM-146-editar-chamado`. Falta registrar a execução 13 dos testes (182 esperados) e fazer o PR e o merge.
+1. **Edição dos dados do usuário (RF02):** `PUT /users/me` (perfil, com DTO restrito: sem senha, e-mail ou permissões) e `PATCH /users/me/password` (exige a senha atual). Fecha a parte de contas.
+2. **Chamados:** listar (os meus e a fila da Inovação), assumir (`PATCH /tickets/{id}/assign`) e encerrar (`PATCH /tickets/{id}/close`), com as regras de transição de status (RF06 e RF07).
+3. **Comentários** nos chamados.
+4. **Gerenciamento de contas (admin):** aprovar e recusar `department_requests`, desativar contas (revogando as sessões na hora) e consultar usuários.
+5. **Segregação por papel:** colaborador, `TICKET_HANDLER` e `ROLE_ADMIN` veem e podem fazer coisas diferentes. No back-end, as camadas de segurança são as regras por rota e por método (`@PreAuthorize`) e as checagens no service. O front-end só esconde as opções, e a API continua barrando sozinha.
+
+**Histórias no Jira (20/10):** RF02 SCRUM-147 (subtarefas 156, 157, 158) · RF04 SCRUM-159 · RF11 SCRUM-160 · RF12 SCRUM-161 · RF06 SCRUM-162 · RF07 SCRUM-163 · RF13 SCRUM-164 · admin SCRUM-165 · RF15 SCRUM-149 (subtarefas 152 a 155) · RF16 SCRUM-150 · DEC-006 SCRUM-151.
+
+**Decisões da RF02 (20/10):** `PUT /users/me` edita só o nome; `PATCH /users/me/password` exige a senha atual (errada → 400 em `errors.currentPassword`), aplica as regras de senha do cadastro e revoga as outras sessões, mantendo a atual.
+
+**Notificações e avaliações (incluídas em 20/10), em fatias que acompanham o roteiro:**
+
+- **Núcleo do painel (independente, pode começar já):** V12, entidade e repository, `NotificationService` (listar com filtro de categoria e não lidas, contador, marcar uma e todas como lidas), `NotificationController`, e o `DepartmentRequestNotificationListener` passando a gravar `DEPARTMENT_REQUEST_CREATED` em vez de só registrar no log.
+- **Com o passo 2:** `TICKET_ASSIGNED` e `TICKET_CLOSED`; V11 e `POST /tickets/{id}/rating`. A avaliação depende do encerramento.
+- **Com o passo 3:** `TICKET_COMMENTED`.
+- **Com o passo 4:** `DEPARTMENT_REQUEST_APPROVED`, `DEPARTMENT_REQUEST_REJECTED` e `ADMIN_GRANTED`.
+- **Depois:** SSE para atualizar o painel em tempo real e e-mail para os mesmos eventos.
+
+**Processo combinado:** depois de cada merge no GitHub, rode `git switch main` e `git pull` antes de começar a branch seguinte, para que ela nasça da `main` atualizada.
+
 
 - [ ] Trocar `spring.jpa.hibernate.ddl-auto` de `none` para `validate` e adicionar as duas linhas `server.error.*` ao `application.properties`.
 - [ ] Endpoints de aprovação e recusa de `department_requests` (admin).
@@ -526,14 +636,18 @@ Decisão tomada: alteração de status (RF06) e encerramento (RF07) continuam **
 - [ ] Limpeza periódica de `refresh_tokens` e revogação imediata das sessões ao desativar uma conta.
 - [x] Abertura de chamados (SCRUM-145) e edição pelo solicitante enquanto `OPEN` (SCRUM-146).
 - [ ] Listar chamados (meus / fila da Inovação), assumir e encerrar, com as regras de transição de status (RF06, RF07).
-- [ ] Modelar as notificações (e-mail via Resend e dentro da interface) e substituir o log provisório.
+- [x] Modelar as notificações: painel na interface com filtro por categoria (20/10, V12). E-mail fica para depois.
+- [ ] Implementar o painel de notificações e substituir o log provisório do `DepartmentRequestNotificationListener`.
+- [ ] Implementar a avaliação do atendimento (V11, `POST /tickets/{id}/rating`), depois do encerramento.
+- [ ] Decidir com o coordenador quem vê as avaliações e se haverá prazo para avaliar.
+- [ ] Limpeza periódica de notificações lidas há mais de N dias (junto da limpeza de `refresh_tokens`).
 - [ ] Definir o significado de `validated_at` (hoje nasce nulo).
-- [ ] Criptografia em repouso (AES-GCM) de comentários e descrições.
+- [ ] Criptografia em repouso (AES-GCM) de comentários, descrições e comentários das avaliações.
 - [x] Swagger (springdoc), documentando também o formato de erro `ProblemDetail` (SCRUM-122).
 - [ ] Avisos da execução 3 dos testes: desligar `spring.jpa.open-in-view`; configurar o Mockito como agente do Surefire (ver `docs/testes/registro-de-execucoes.md`).
-- [ ] Decidir se haverá status separado entre *Concluído* (técnico resolveu) e *Encerrado* (solicitante confirmou). Se sim: novo status `RESOLVED` e coluna `resolved_at`.
+- [ ] Decidir se haverá status separado entre *Concluído* (técnico resolveu) e *Encerrado* (solicitante confirmou). Se sim: novo status `RESOLVED` e coluna `resolved_at`. **Adiado em 20/10**: a avaliação foi desenhada sobre `CLOSED`.
 - [ ] Decidir se o painel terá uma fila ordenada por prioridade; se sim, criar o índice `(status, priority_id DESC, created_at)`.
-- [ ] Incluir `department_requests` nos diagramas e alinhar a documentação ABNT com os nomes finais do banco.
+- [ ] Incluir `department_requests`, `ticket_ratings` e `notifications` nos diagramas e alinhar a documentação ABNT com os nomes finais do banco.
 
 ## 13. Princípios de desenvolvimento
 
