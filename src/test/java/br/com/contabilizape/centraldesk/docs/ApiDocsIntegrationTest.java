@@ -174,6 +174,19 @@ class ApiDocsIntegrationTest {
     }
 
     @Test
+    void documentsTicketAssignment() throws Exception {
+        String assign = "$.paths['/tickets/{id}/assign'].patch";
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(assign + ".responses['200']").exists())
+                .andExpect(jsonPath(assign + ".responses['401']").exists())
+                .andExpect(jsonPath(assign + ".responses['403']").exists())
+                .andExpect(jsonPath(assign + ".responses['404'].content['" + PROBLEM_JSON + "']").exists())
+                .andExpect(jsonPath(assign + ".responses['409'].content['" + PROBLEM_JSON + "']").exists())
+                .andExpect(jsonPath(assign + ".security[0].cookieAuth").isArray());
+    }
+
+    @Test
     void passwordIsWriteOnlyAndNeverPartOfTheResponse() throws Exception {
         mockMvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk())

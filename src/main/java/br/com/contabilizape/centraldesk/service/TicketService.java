@@ -30,6 +30,8 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -40,15 +42,33 @@ public class TicketService {
     private final UserRepository userRepository;
     private final CategoryRepository categoryRepository;
     private final PriorityRepository priorityRepository;
+    private final Clock clock;
 
     public TicketService(TicketRepository ticketRepository,
                          UserRepository userRepository,
                          CategoryRepository categoryRepository,
-                         PriorityRepository priorityRepository) {
+                         PriorityRepository priorityRepository,
+                         Clock clock) {
         this.ticketRepository = ticketRepository;
         this.userRepository = userRepository;
         this.categoryRepository = categoryRepository;
         this.priorityRepository = priorityRepository;
+        this.clock = clock;
+    }
+
+    /**
+     * O usuário logado (Inovação ou admin, regra no SecurityConfig) assume o chamado: OPEN → IN_PROGRESS.
+     * A linha fica travada até o fim da transação; se duas pessoas assumirem ao mesmo tempo,
+     * a segunda encontra IN_PROGRESS e recebe 409.
+     */
+    @Transactional
+    public TicketResponse assign(UUID ticketId, UUID userId) {
+        User assignee = findActiveRequester(userId);
+        Ticket ticket = ticketRepository.findByIdForUpdate(ticketId)
+                .orElseThrow(() -> new TicketNotFoundException(ticketId));
+        ticket.assign(assignee, OffsetDateTime.now(clock));
+        ticketRepository.flush(); // grava agora e atualiza o updated_at
+        return TicketResponse.from(ticket);
     }
 
     /**

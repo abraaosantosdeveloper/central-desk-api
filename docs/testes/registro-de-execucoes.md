@@ -302,3 +302,15 @@ Modelo de entrada:
 - **Comando:** `.\mvnw clean test` (Docker ligado)
 - **Antes (TDD):** a execução direcionada falhou pelo motivo esperado: sem rotas próprias, `/tickets/mine` caía em `/tickets/{id}` e voltava 400 (conversão para UUID); no service, `UnsupportedOperationException`. Dois cadastros também falharam com 400 por CPF que eu tinha alterado errado no teste; os valores corretos foram restaurados.
 - **Resultado:** 254 testes, 0 falhas, 0 erros. ✅
+
+### Mudanças entre a execução 17 e a 18
+
+- Assumir chamado (SCRUM-162): `PATCH /tickets/{id}/assign`; máquina de estados em `TicketStatus.canTransitionTo` + `Ticket.moveTo`; `InvalidTicketTransitionException` (409); `TicketRepository.findByIdForUpdate` com trava pessimista; `TicketService` recebe `Clock`.
+- Novos testes (27): `TicketTest` (14, novo: 9 transições da tabela, assumir, assumir em atendimento, assumir encerrado, devolver à fila, encerrado não volta); `TicketServiceTest` (+4); `TicketAssignIntegrationTest` (8, novo); `ApiDocsIntegrationTest` (+1).
+
+## Execução 18 — 2026-10-20 — suíte completa (SCRUM-162)
+
+- **Comando:** `.\mvnw clean test` (Docker ligado)
+- **Antes (TDD):** a execução direcionada falhou pelo motivo esperado (rota inexistente → 404; `UnsupportedOperationException` nos stubs).
+- **Primeira tentativa da suíte completa:** interrompida manualmente (sem resultado); rodada de novo em seguida.
+- **Resultado:** 281 testes, 0 falhas, 0 erros. ✅

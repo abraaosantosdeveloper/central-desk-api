@@ -116,6 +116,34 @@ public interface TicketApi {
                                                      @ParameterObject Pageable pageable);
 
     @Operation(
+            summary = "Assume um chamado",
+            description = """
+                    O usuário logado passa a ser o responsável e o chamado vai de `OPEN` para `IN_PROGRESS`. \
+                    Só para a Inovação (`TICKET_HANDLER`) e administradores. Se duas pessoas tentarem ao mesmo \
+                    tempo, só a primeira consegue; a outra recebe 409. Sem corpo.""",
+            security = @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH))
+    @ApiResponse(responseCode = "200", description = "Chamado assumido.",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = TicketResponse.class)))
+    @ApiResponse(responseCode = "401", description = "Sem sessão.", content = @Content)
+    @ApiResponse(
+            responseCode = "403",
+            description = "Quem chamou não é da Inovação nem administrador (sem corpo), ou a conta foi desativada.",
+            content = @Content)
+    @ApiResponse(
+            responseCode = "404",
+            description = "Chamado inexistente.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE,
+                    schema = @Schema(implementation = ProblemDetail.class),
+                    examples = @ExampleObject(name = "Chamado não encontrado", value = ProblemExamples.TICKET_NOT_FOUND)))
+    @ApiResponse(
+            responseCode = "409",
+            description = "O chamado não está `OPEN` (já assumido ou encerrado).",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE,
+                    schema = @Schema(implementation = ProblemDetail.class),
+                    examples = @ExampleObject(name = "Já assumido", value = ProblemExamples.INVALID_TICKET_TRANSITION)))
+    TicketResponse assign(@Parameter(hidden = true) Jwt jwt, UUID id);
+
+    @Operation(
             summary = "Detalhes de um chamado",
             description = """
                     Chamado completo, com descrição, responsável e encerramento. Veem: **quem abriu**, \

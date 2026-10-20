@@ -16,6 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -69,6 +70,13 @@ public class TicketController implements TicketApi {
     public PageResponse<TicketSummaryResponse> listAssigned(@AuthenticationPrincipal Jwt jwt, TicketFilter filter,
                                                             @PageableDefault(size = 20) Pageable pageable) {
         return ticketService.listAssigned(UUID.fromString(jwt.getSubject()), filter, pageable);
+    }
+
+    /** Só Inovação e administradores (regra no SecurityConfig). */
+    @Override
+    @PatchMapping("/{id}/assign")
+    public TicketResponse assign(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {
+        return ticketService.assign(id, UUID.fromString(jwt.getSubject()));
     }
 
     @Override

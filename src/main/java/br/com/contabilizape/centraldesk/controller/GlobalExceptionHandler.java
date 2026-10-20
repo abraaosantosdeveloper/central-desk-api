@@ -9,6 +9,7 @@ import br.com.contabilizape.centraldesk.exception.EmailAlreadyRegisteredExceptio
 import br.com.contabilizape.centraldesk.exception.InvalidCredentialsException;
 import br.com.contabilizape.centraldesk.exception.InvalidFieldException;
 import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
+import br.com.contabilizape.centraldesk.exception.InvalidTicketTransitionException;
 import br.com.contabilizape.centraldesk.exception.LastAdminException;
 import br.com.contabilizape.centraldesk.exception.PriorityNotFoundException;
 import br.com.contabilizape.centraldesk.exception.TicketEditForbiddenException;
@@ -57,6 +58,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(TicketEditForbiddenException.class)
     public ProblemDetail handleTicketEditForbidden(TicketEditForbiddenException exception) {
         return problem(HttpStatus.FORBIDDEN, "Acesso negado", exception.getMessage());
+    }
+
+    @ExceptionHandler(InvalidTicketTransitionException.class)
+    public ProblemDetail handleInvalidTicketTransition(InvalidTicketTransitionException exception) {
+        return problem(HttpStatus.CONFLICT, "Transição de status inválida", exception.getMessage());
     }
 
     @ExceptionHandler(TicketNotEditableException.class)

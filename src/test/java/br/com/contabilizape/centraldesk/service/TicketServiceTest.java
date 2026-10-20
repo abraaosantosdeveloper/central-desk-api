@@ -8,6 +8,7 @@ import br.com.contabilizape.centraldesk.dto.TicketSummaryResponse;
 import br.com.contabilizape.centraldesk.dto.TicketUpdateRequest;
 import br.com.contabilizape.centraldesk.exception.AccountNotActiveException;
 import br.com.contabilizape.centraldesk.exception.CategoryNotFoundException;
+import br.com.contabilizape.centraldesk.exception.InvalidTicketTransitionException;
 import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
 import br.com.contabilizape.centraldesk.exception.PriorityNotFoundException;
 import br.com.contabilizape.centraldesk.exception.TicketEditForbiddenException;
@@ -40,6 +41,9 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -59,6 +63,7 @@ class TicketServiceTest {
     private static final UUID REQUESTER_ID = UUID.fromString("0f8b2c1e-6d3a-4f5e-9b7c-1a2b3c4d5e6f");
     private static final UUID CATEGORY_ID = UUID.randomUUID();
     private static final short MEDIUM = 2;
+    private static final Instant NOW = Instant.parse("2026-10-20T12:00:00Z");
 
     @Mock private TicketRepository ticketRepository;
     @Mock private UserRepository userRepository;
@@ -73,7 +78,8 @@ class TicketServiceTest {
 
     @BeforeEach
     void setUp() {
-        ticketService = new TicketService(ticketRepository, userRepository, categoryRepository, priorityRepository);
+        ticketService = new TicketService(ticketRepository, userRepository, categoryRepository, priorityRepository,
+                Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     @Test
@@ -343,6 +349,55 @@ class TicketServiceTest {
         ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
         verify(ticketRepository).findAll(any(Specification.class), captor.capture());
         return captor.getValue();
+    }
+
+    // ---------- assumir ----------
+
+    @Test
+    void handlerAssignsOpenTicketToHimself() {
+        User handler = user(OTHER_ID, UserStatus.ACTIVE);
+        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, requester(UserStatus.ACTIVE));
+        when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(handler));
+        when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
+
+        TicketResponse response = ticketService.assign(TICKET_ID, OTHER_ID);
+
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+        assertThat(ticket.getAssignee()).isSameAs(handler);
+        assertThat(ticket.getAssignedAt()).isEqualTo(NOW.atOffset(ZoneOffset.UTC));
+        assertThat(response.assigneeId()).isEqualTo(OTHER_ID);
+    }
+
+    @Test
+    void assigningUnknownTicketIsNotFound() {
+        User handler = user(OTHER_ID, UserStatus.ACTIVE);
+        when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(handler));
+        when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> ticketService.assign(TICKET_ID, OTHER_ID))
+                .isInstanceOf(TicketNotFoundException.class);
+    }
+
+    @Test
+    void assigningTicketAlreadyInProgressIsInvalidTransition() {
+        User handler = user(OTHER_ID, UserStatus.ACTIVE);
+        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, requester(UserStatus.ACTIVE));
+        ReflectionTestUtils.setField(ticket, "status", TicketStatus.IN_PROGRESS);
+        when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(handler));
+        when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> ticketService.assign(TICKET_ID, OTHER_ID))
+                .isInstanceOf(InvalidTicketTransitionException.class);
+    }
+
+    @Test
+    void deactivatedHandlerCannotAssign() {
+        User handler = user(OTHER_ID, UserStatus.DEACTIVATED);
+        when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(handler));
+
+        assertThatThrownBy(() -> ticketService.assign(TICKET_ID, OTHER_ID))
+                .isInstanceOf(AccountNotActiveException.class);
+        verify(ticketRepository, never()).findByIdForUpdate(any());
     }
 
     // ---------- auxiliares ----------

@@ -1,5 +1,6 @@
 package br.com.contabilizape.centraldesk.model;
 
+import br.com.contabilizape.centraldesk.exception.InvalidTicketTransitionException;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -83,11 +84,26 @@ public class Ticket {
         return status == TicketStatus.OPEN;
     }
 
+    /** Alguém da Inovação assume o chamado: OPEN → IN_PROGRESS. Quem pode é decidido no SecurityConfig. */
+    public void assign(User assignee, OffsetDateTime now) {
+        moveTo(TicketStatus.IN_PROGRESS);
+        this.assignee = assignee;
+        this.assignedAt = now;
+    }
+
     /** Devolve à fila um chamado em atendimento (o responsável saiu: conta desativada ou anonimizada). */
     public void returnToQueue() {
+        moveTo(TicketStatus.OPEN);
         this.assignee = null;
         this.assignedAt = null;
-        this.status = TicketStatus.OPEN;
+    }
+
+    // Único ponto que altera o status: a tabela de transições fica em TicketStatus
+    private void moveTo(TicketStatus target) {
+        if (!status.canTransitionTo(target)) {
+            throw new InvalidTicketTransitionException(status, target);
+        }
+        this.status = target;
     }
 
     public UUID getId() { return id; }
