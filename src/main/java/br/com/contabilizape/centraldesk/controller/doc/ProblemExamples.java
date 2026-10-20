@@ -128,6 +128,54 @@ public final class ProblemExamples {
               "instance": "/tickets/0f8b2c1e-6d3a-4f5e-9b7c-1a2b3c4d5e6f"
             }""";
 
+    public static final String PROFILE_INVALID_FIELDS = """
+            {
+              "type": "about:blank",
+              "title": "Dados inválidos",
+              "status": 400,
+              "detail": "Verifique os campos e tente novamente.",
+              "instance": "/users/me",
+              "errors": {
+                "fullName": "não deve estar em branco"
+              }
+            }""";
+
+    public static final String CURRENT_PASSWORD_MISMATCH = """
+            {
+              "type": "about:blank",
+              "title": "Dados inválidos",
+              "status": 400,
+              "detail": "Verifique os campos e tente novamente.",
+              "instance": "/users/me/password",
+              "errors": {
+                "currentPassword": "senha atual incorreta"
+              }
+            }""";
+
+    public static final String WEAK_NEW_PASSWORD = """
+            {
+              "type": "about:blank",
+              "title": "Dados inválidos",
+              "status": 400,
+              "detail": "Verifique os campos e tente novamente.",
+              "instance": "/users/me/password",
+              "errors": {
+                "newPassword": "deve conter ao menos uma letra e um número"
+              }
+            }""";
+
+    public static final String NEW_PASSWORD_SAME_AS_CURRENT = """
+            {
+              "type": "about:blank",
+              "title": "Dados inválidos",
+              "status": 400,
+              "detail": "Verifique os campos e tente novamente.",
+              "instance": "/users/me/password",
+              "errors": {
+                "newPassword": "deve ser diferente da senha atual"
+              }
+            }""";
+
     private ProblemExamples() {
     }
 }

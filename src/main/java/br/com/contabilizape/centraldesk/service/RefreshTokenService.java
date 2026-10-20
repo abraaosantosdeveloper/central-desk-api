@@ -21,6 +21,7 @@ import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.UUID;
 
 /**
  * Emite, rotaciona e revoga refresh tokens. O valor em claro só existe no cookie do navegador;
@@ -90,6 +91,12 @@ public class RefreshTokenService {
     @Transactional
     public void revoke(String rawToken) {
         repository.findByTokenHash(hash(rawToken)).ifPresent(token -> token.revoke(now()));
+    }
+
+    /** Encerra todas as sessões do usuário (troca de senha). */
+    @Transactional
+    public void revokeAll(UUID userId) {
+        repository.revokeAllActiveByUserId(userId, now());
     }
 
     public Duration ttl() {

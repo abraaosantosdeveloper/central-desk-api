@@ -2,8 +2,12 @@ package br.com.contabilizape.centraldesk.service;
 
 import br.com.contabilizape.centraldesk.dto.CurrentUserResponse;
 import br.com.contabilizape.centraldesk.dto.LoginRequest;
+import br.com.contabilizape.centraldesk.dto.PasswordChangeRequest;
 import br.com.contabilizape.centraldesk.exception.AccountNotActiveException;
+import br.com.contabilizape.centraldesk.exception.CurrentPasswordMismatchException;
 import br.com.contabilizape.centraldesk.exception.InvalidCredentialsException;
+import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
+import br.com.contabilizape.centraldesk.exception.NewPasswordSameAsCurrentException;
 import br.com.contabilizape.centraldesk.model.Department;
 import br.com.contabilizape.centraldesk.model.User;
 import br.com.contabilizape.centraldesk.model.UserStatus;
@@ -174,6 +178,69 @@ class AuthServiceTest {
         verifyNoInteractions(refreshTokenService);
     }
 
+
+    // ---------- troca de senha (PATCH /users/me/password) ----------
+
+    @Test
+    void changePasswordStoresNewHashRevokesEverySessionAndOpensANewOne() {
+        User maria = user(GENERAL_ID, UserStatus.ACTIVE);
+        CurrentUserResponse current = currentUser(List.of());
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(maria));
+        when(passwordEncoder.matches(PASSWORD, "hash-da-maria")).thenReturn(true);
+        when(passwordEncoder.matches("novaSenha456", "hash-da-maria")).thenReturn(false);
+        when(passwordEncoder.encode("novaSenha456")).thenReturn("hash-novo");
+        when(refreshTokenService.issue(maria)).thenReturn("refresh-novo");
+        when(tokenService.issueAccessToken(USER_ID, EMAIL, List.of())).thenReturn("jwt-novo");
+        when(userService.getCurrentUser(USER_ID, List.of())).thenReturn(current);
+
+        AuthenticatedSession session = authService.changePassword(USER_ID, new PasswordChangeRequest(PASSWORD, "novaSenha456"));
+
+        assertThat(maria.getPasswordHash()).isEqualTo("hash-novo");
+        verify(refreshTokenService).revokeAll(USER_ID);
+        assertThat(session.refreshToken()).isEqualTo("refresh-novo");
+        assertThat(session.accessToken()).isEqualTo("jwt-novo");
+    }
+
+    @Test
+    void changePasswordWithWrongCurrentPasswordIsRejected() {
+        User maria = user(GENERAL_ID, UserStatus.ACTIVE);
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(maria));
+        when(passwordEncoder.matches("errada123", "hash-da-maria")).thenReturn(false);
+
+        assertThatThrownBy(() -> authService.changePassword(USER_ID, new PasswordChangeRequest("errada123", "novaSenha456")))
+                .isInstanceOf(CurrentPasswordMismatchException.class);
+        assertThat(maria.getPasswordHash()).isEqualTo("hash-da-maria");
+        verify(refreshTokenService, never()).revokeAll(any());
+    }
+
+    @Test
+    void changePasswordToTheSamePasswordIsRejected() {
+        User maria = user(GENERAL_ID, UserStatus.ACTIVE);
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(maria));
+        when(passwordEncoder.matches(PASSWORD, "hash-da-maria")).thenReturn(true);
+
+        assertThatThrownBy(() -> authService.changePassword(USER_ID, new PasswordChangeRequest(PASSWORD, PASSWORD)))
+                .isInstanceOf(NewPasswordSameAsCurrentException.class);
+        verify(refreshTokenService, never()).revokeAll(any());
+    }
+
+    @Test
+    void changePasswordOfMissingUserIsInvalidSession() {
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.changePassword(USER_ID, new PasswordChangeRequest(PASSWORD, "novaSenha456")))
+                .isInstanceOf(InvalidSessionException.class);
+    }
+
+    @Test
+    void changePasswordOfDeactivatedUserIsRejected() {
+        User deactivated = user(GENERAL_ID, UserStatus.DEACTIVATED);
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(deactivated));
+
+        assertThatThrownBy(() -> authService.changePassword(USER_ID, new PasswordChangeRequest(PASSWORD, "novaSenha456")))
+                .isInstanceOf(AccountNotActiveException.class);
+        verify(refreshTokenService, never()).revokeAll(any());
+    }
     // ---------- auxiliares ----------
 
     private void loginReturnsRolesFor(User user, boolean isAdmin, List<String> expectedRoles) {

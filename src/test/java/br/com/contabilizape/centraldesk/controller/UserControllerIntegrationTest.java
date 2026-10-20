@@ -12,7 +12,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -27,12 +29,14 @@ import java.util.regex.Pattern;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.empty;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * GET /users/me: só responde com um access token válido no cookie.
+ * /users/me: dados do usuário logado, edição do nome e troca de senha. Só responde com um access token válido no cookie.
  */
 @IntegrationTest
 class UserControllerIntegrationTest {
@@ -119,6 +123,122 @@ class UserControllerIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
+    // ---------- PUT /users/me ----------
+
+    @Test
+    void updateProfileChangesOnlyTheName() throws Exception {
+        register(GENERAL_ID);
+
+        mockMvc.perform(put("/users/me").cookie(loginCookie()).contentType(MediaType.APPLICATION_JSON).content("""
+                        { "fullName": "Maria Souza", "email": "outra@contabilizape.com.br", "cpf": "11144477735" }
+                        """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fullName").value("Maria Souza"))
+                .andExpect(jsonPath("$.email").value(EMAIL))
+                .andExpect(jsonPath("$.departmentName").value("Geral"));
+
+        assertThat(jdbc.queryForObject("SELECT full_name FROM users WHERE email = ?", String.class, EMAIL))
+                .isEqualTo("Maria Souza");
+        assertThat(jdbc.queryForObject("SELECT cpf FROM users WHERE email = ?", String.class, EMAIL))
+                .isEqualTo("52998224725");
+    }
+
+    @Test
+    void updateProfileWithBlankOrTooLongNameIsBadRequest() throws Exception {
+        register(GENERAL_ID);
+        Cookie session = loginCookie();
+
+        for (String name : List.of("   ", "a".repeat(151))) {
+            mockMvc.perform(put("/users/me").cookie(session).contentType(MediaType.APPLICATION_JSON)
+                            .content("{ \"fullName\": \"%s\" }".formatted(name)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.errors.fullName").exists());
+        }
+    }
+
+    @Test
+    void updateProfileWithoutCookieIsUnauthorized() throws Exception {
+        mockMvc.perform(put("/users/me").contentType(MediaType.APPLICATION_JSON).content("{ \"fullName\": \"Maria\" }"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void updateProfileOfDeactivatedAccountIsForbidden() throws Exception {
+        register(GENERAL_ID);
+        Cookie session = loginCookie();
+        jdbc.update("UPDATE users SET status = 'DEACTIVATED' WHERE email = ?", EMAIL);
+
+        mockMvc.perform(put("/users/me").cookie(session).contentType(MediaType.APPLICATION_JSON)
+                        .content("{ \"fullName\": \"Maria\" }"))
+                .andExpect(status().isForbidden());
+    }
+
+    // ---------- PATCH /users/me/password ----------
+
+    @Test
+    void changePasswordRenewsTheCurrentSessionAndEndsTheOthers() throws Exception {
+        register(GENERAL_ID);
+        String otherSessionRefresh = refreshToken(login(PASSWORD));
+
+        MockHttpServletResponse response = mockMvc.perform(patch("/users/me/password").cookie(loginCookie())
+                        .contentType(MediaType.APPLICATION_JSON).content(passwordChange(PASSWORD, "novaSenha456")))
+                .andExpect(status().isNoContent())
+                .andReturn().getResponse();
+
+        // A sessão atual recebe cookies novos e continua renovando
+        assertThat(response.getHeaders(HttpHeaders.SET_COOKIE))
+                .anyMatch(cookie -> cookie.startsWith("access_token=") && !cookie.startsWith("access_token=;"));
+        mockMvc.perform(post("/auth/refresh").cookie(new Cookie("refresh_token", refreshToken(response))))
+                .andExpect(status().isOk());
+
+        // A outra sessão não renova mais
+        mockMvc.perform(post("/auth/refresh").cookie(new Cookie("refresh_token", otherSessionRefresh)))
+                .andExpect(status().isUnauthorized());
+
+        // Só a senha nova entra
+        loginExpecting(PASSWORD, 401);
+        loginExpecting("novaSenha456", 200);
+    }
+
+    @Test
+    void changePasswordWithWrongCurrentPasswordIsBadRequest() throws Exception {
+        register(GENERAL_ID);
+
+        mockMvc.perform(patch("/users/me/password").cookie(loginCookie()).contentType(MediaType.APPLICATION_JSON)
+                        .content(passwordChange("senhaErrada99", "novaSenha456")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.currentPassword").exists());
+        loginExpecting(PASSWORD, 200);
+    }
+
+    @Test
+    void changePasswordToTheSamePasswordIsBadRequest() throws Exception {
+        register(GENERAL_ID);
+
+        mockMvc.perform(patch("/users/me/password").cookie(loginCookie()).contentType(MediaType.APPLICATION_JSON)
+                        .content(passwordChange(PASSWORD, PASSWORD)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.newPassword").exists());
+    }
+
+    @Test
+    void changePasswordToAWeakPasswordIsBadRequest() throws Exception {
+        register(GENERAL_ID);
+
+        mockMvc.perform(patch("/users/me/password").cookie(loginCookie()).contentType(MediaType.APPLICATION_JSON)
+                        .content(passwordChange(PASSWORD, "semnumero")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.newPassword").exists());
+        loginExpecting(PASSWORD, 200);
+    }
+
+    @Test
+    void changePasswordWithoutCookieIsUnauthorized() throws Exception {
+        mockMvc.perform(patch("/users/me/password").contentType(MediaType.APPLICATION_JSON)
+                        .content(passwordChange(PASSWORD, "novaSenha456")))
+                .andExpect(status().isUnauthorized());
+    }
+
     // ---------- auxiliares ----------
 
     private UUID register(String departmentId) throws Exception {
@@ -131,15 +251,38 @@ class UserControllerIntegrationTest {
     }
 
     private Cookie loginCookie() throws Exception {
-        String setCookie = mockMvc.perform(post("/auth/login").contentType(MediaType.APPLICATION_JSON).content("""
-                        { "email": "%s", "password": "%s" }
-                        """.formatted(EMAIL, PASSWORD)))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getHeader(HttpHeaders.SET_COOKIE);
+        String setCookie = login(PASSWORD).getHeader(HttpHeaders.SET_COOKIE);
         assertThat(setCookie).isNotNull();
         Matcher matcher = TOKEN_IN_COOKIE.matcher(setCookie);
         assertThat(matcher.find()).isTrue();
         return new Cookie("access_token", matcher.group(1));
+    }
+
+    private MockHttpServletResponse login(String password) throws Exception {
+        return loginExpecting(password, 200).andReturn().getResponse();
+    }
+
+    private ResultActions loginExpecting(String password, int expectedStatus) throws Exception {
+        return mockMvc.perform(post("/auth/login").contentType(MediaType.APPLICATION_JSON).content("""
+                        { "email": "%s", "password": "%s" }
+                        """.formatted(EMAIL, password)))
+                .andExpect(status().is(expectedStatus));
+    }
+
+    private static String refreshToken(MockHttpServletResponse response) {
+        return response.getHeaders(HttpHeaders.SET_COOKIE).stream()
+                .filter(cookie -> cookie.startsWith("refresh_token="))
+                .findFirst().map(UserControllerIntegrationTest::cookieValue).orElseThrow();
+    }
+
+    private static String cookieValue(String setCookie) {
+        return setCookie.substring(setCookie.indexOf('=') + 1, setCookie.indexOf(';'));
+    }
+
+    private static String passwordChange(String currentPassword, String newPassword) {
+        return """
+                { "currentPassword": "%s", "newPassword": "%s" }
+                """.formatted(currentPassword, newPassword);
     }
 
     // Token montado fora da API, para simular chave errada ou token vencido

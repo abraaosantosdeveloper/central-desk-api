@@ -96,4 +96,18 @@ public class User {
     public OffsetDateTime getCreatedAt(){
         return this.createdAt;
     }
+
+    /** Edição do próprio perfil: só o nome muda. */
+    public void rename(String fullName) {
+        this.fullName = fullName;
+    }
+
+    /** Recebe o hash já calculado; a entidade não conhece o algoritmo. */
+    public void changePasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
+
+    public boolean isActive() {
+        return this.status == UserStatus.ACTIVE;
+    }
 }

@@ -245,3 +245,22 @@ Modelo de entrada:
   - `ApiDocsIntegrationTest`: o teste de chamados passou a conferir também o `PUT`.
 - Total esperado na execução 13: **182 testes**.
 
+
+### Mudanças entre a execução 12 e a 14
+
+- (A execução 13, da SCRUM-146, foi registrada pelo desenvolvedor fora deste arquivo: 182 testes esperados.)
+- Edição dos dados do usuário (SCRUM-147): `PUT /users/me` (só o nome) e `PATCH /users/me/password` (204 com cookies novos; todas as sessões revogadas).
+- `@StrongPassword` (anotação composta) passa a ser usada no cadastro e na troca de senha; `InvalidFieldException` vira 400 com `errors.<campo>`.
+- Novos testes (25):
+  - `UserServiceTest` (+3): renomeia, usuário apagado, conta desativada;
+  - `AuthServiceTest` (+5): troca com sucesso, senha atual errada, senha igual, usuário apagado, conta desativada;
+  - `RefreshTokenServiceTest` (+1): revogar todas as sessões;
+  - `PasswordChangeRequestValidationTest` (6, novo);
+  - `UserControllerIntegrationTest` (+9): PUT 200/400/401/403 (campos extras ignorados); PATCH 204 + outra sessão não renova + login só com a nova, 400 senha atual, 400 igual, 400 fraca, 401;
+  - `ApiDocsIntegrationTest` (+1).
+
+## Execução 14 — 2026-10-20 — suíte completa (SCRUM-147)
+
+- **Comando:** `.\mvnw clean test` (Docker ligado)
+- **Resultado:** 207 testes, 0 falhas, 0 erros. ✅
+- **Antes (TDD):** a execução direcionada das classes acima falhou pelo motivo esperado (rotas 404/405 e `UnsupportedOperationException` nos stubs). Um teste meu falhou com `UnfinishedStubbing` (mock criado dentro do `thenReturn`); corrigido no próprio teste.

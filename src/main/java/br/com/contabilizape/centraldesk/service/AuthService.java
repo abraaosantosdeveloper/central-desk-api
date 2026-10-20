@@ -1,9 +1,12 @@
 package br.com.contabilizape.centraldesk.service;
 
 import br.com.contabilizape.centraldesk.dto.LoginRequest;
+import br.com.contabilizape.centraldesk.dto.PasswordChangeRequest;
 import br.com.contabilizape.centraldesk.exception.AccountNotActiveException;
+import br.com.contabilizape.centraldesk.exception.CurrentPasswordMismatchException;
 import br.com.contabilizape.centraldesk.exception.InvalidCredentialsException;
 import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
+import br.com.contabilizape.centraldesk.exception.NewPasswordSameAsCurrentException;
 import br.com.contabilizape.centraldesk.model.User;
 import br.com.contabilizape.centraldesk.model.UserStatus;
 import br.com.contabilizape.centraldesk.repository.AdminRepository;
@@ -79,6 +82,29 @@ public class AuthService {
         if (rawRefreshToken != null && !rawRefreshToken.isBlank()) {
             refreshTokenService.revoke(rawRefreshToken);
         }
+    }
+
+    /**
+     * Troca a senha do usuário logado e encerra todas as sessões dele. Como o cookie do refresh token
+     * só vai para /auth, a sessão atual não é identificável aqui: ela é reaberta com tokens novos,
+     * devolvidos para o controller gravar nos cookies.
+     */
+    @Transactional
+    public AuthenticatedSession changePassword(UUID userId, PasswordChangeRequest request) {
+        User user = userRepository.findById(userId).orElseThrow(InvalidSessionException::new);
+        if (!user.isActive()) {
+            throw new AccountNotActiveException();
+        }
+        if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
+            throw new CurrentPasswordMismatchException();
+        }
+        if (passwordEncoder.matches(request.newPassword(), user.getPasswordHash())) {
+            throw new NewPasswordSameAsCurrentException();
+        }
+
+        user.changePasswordHash(passwordEncoder.encode(request.newPassword()));
+        refreshTokenService.revokeAll(user.getId());
+        return openSession(user, refreshTokenService.issue(user));
     }
 
     private AuthenticatedSession openSession(User user, String rawRefreshToken) {

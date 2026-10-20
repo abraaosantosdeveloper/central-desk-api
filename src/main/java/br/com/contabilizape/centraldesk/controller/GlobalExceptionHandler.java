@@ -6,6 +6,7 @@ import br.com.contabilizape.centraldesk.exception.CpfAlreadyRegisteredException;
 import br.com.contabilizape.centraldesk.exception.DepartmentNotFoundException;
 import br.com.contabilizape.centraldesk.exception.EmailAlreadyRegisteredException;
 import br.com.contabilizape.centraldesk.exception.InvalidCredentialsException;
+import br.com.contabilizape.centraldesk.exception.InvalidFieldException;
 import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
 import br.com.contabilizape.centraldesk.exception.PriorityNotFoundException;
 import br.com.contabilizape.centraldesk.exception.TicketEditForbiddenException;
@@ -73,6 +74,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(AccountNotActiveException.class)
     public ProblemDetail handleAccountNotActive(AccountNotActiveException exception) {
         return problem(HttpStatus.FORBIDDEN, "Conta inativa", exception.getMessage());
+    }
+
+    @ExceptionHandler(InvalidFieldException.class)
+    public ProblemDetail handleInvalidField(InvalidFieldException exception) {
+        ProblemDetail problem = problem(HttpStatus.BAD_REQUEST, "Dados inválidos", "Verifique os campos e tente novamente.");
+        problem.setProperty("errors", Map.of(exception.getField(), exception.getMessage()));
+        return problem;
     }
 
     @Override

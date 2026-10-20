@@ -164,6 +164,13 @@ class RefreshTokenServiceTest {
         assertThat(revoked.getRevokedAt()).isEqualTo(firstRevocation);
     }
 
+    @Test
+    void revokeAllEndsEverySessionOfTheUser() {
+        service.revokeAll(USER_ID);
+
+        verify(repository).revokeAllActiveByUserId(USER_ID, NOW_UTC);
+    }
+
     private static User user(UserStatus status) {
         User user = new User("Maria da Silva", "52998224725", "maria.silva@contabilizape.com.br", "hash",
                 mock(Department.class));

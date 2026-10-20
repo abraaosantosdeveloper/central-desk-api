@@ -511,7 +511,7 @@ src/main/java/br/com/contabilizape/centraldesk/
 │                    RefreshTokenCookie, CookieBearerTokenResolver, Roles
 ├── service/         UserService, DepartmentService, AuthService (+ AuthenticatedSession, Emails),
 │                    RefreshTokenService (+ RotatedRefreshToken), TicketService, TicketCatalogService
-└── validation/      @Cpf + CpfValidator, @CorporateEmail + CorporateEmailValidator
+└── validation/      @Cpf + CpfValidator, @CorporateEmail + CorporateEmailValidator, @StrongPassword (regras de senha)
 ```
 
 Previsto para notificações e avaliações: `model/` ganha `Notification`, `NotificationType` (com a categoria) e `NotificationCategory`, além de `TicketRating`; `repository/` ganha `NotificationRepository` e `TicketRatingRepository`; `service/` ganha `NotificationService` e `TicketRatingService`; `controller/` ganha `NotificationController` (doc em `NotificationApi`) e o endpoint de avaliação no `TicketController`.
@@ -529,15 +529,16 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 ├── controller/AuthLoginIntegrationTest        POST /auth/login: cookie, 401, 403, cookie vencido ignorado (8)
 ├── controller/AuthLogoutIntegrationTest       POST /auth/logout: apaga os dois cookies com ou sem sessão (3)
 ├── controller/AuthRefreshIntegrationTest      rotação, reuso, vencido, conta inativa, logout revoga (11)
-├── controller/UserControllerIntegrationTest   GET /users/me: sessão válida, sem cookie, chave errada, vencido (7)
+├── controller/UserControllerIntegrationTest   /users/me: GET (7), PUT nome (4), PATCH senha (5)
 ├── controller/TicketControllerIntegrationTest abertura, edição, categorias e prioridades (14)
-├── docs/ApiDocsIntegrationTest                OpenAPI e Swagger UI ligados (10 casos)
+├── docs/ApiDocsIntegrationTest                OpenAPI e Swagger UI ligados (11 casos)
 ├── docs/ApiDocsDisabledIntegrationTest        sem API_DOCS_ENABLED: 404 (2 casos)
 ├── dto/UserCreateRequestValidationTest        regras do DTO (Bean Validation)
+├── dto/PasswordChangeRequestValidationTest    senha atual obrigatória e  na nova (6)
 ├── service/UserServiceTest                    regras de negócio (JUnit 5 + Mockito, sem banco)
 ├── service/DepartmentServiceTest              listagem ordenada (Mockito, 2 casos)
-├── service/AuthServiceTest                    login, permissões, renovação e logout (Mockito, 11 casos)
-├── service/RefreshTokenServiceTest            emissão, hash, rotação, reuso, revogação (Mockito, 10)
+├── service/AuthServiceTest                    login, permissões, renovação, logout e troca de senha (Mockito, 16 casos)
+├── service/RefreshTokenServiceTest            emissão, hash, rotação, reuso, revogação, revogar todas (Mockito, 11)
 ├── service/TicketServiceTest                  abertura e edição: solicitante, status, categoria, conta (Mockito, 10)
 ├── security/JwtConfigTest                     tamanho e formato da chave (3)
 ├── security/TokenServiceTest                  claims, validade, chave e emissor errados (5)

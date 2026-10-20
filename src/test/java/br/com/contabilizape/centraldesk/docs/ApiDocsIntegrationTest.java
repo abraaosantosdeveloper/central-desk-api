@@ -116,6 +116,26 @@ class ApiDocsIntegrationTest {
     }
 
     @Test
+    void documentsProfileEditAndPasswordChange() throws Exception {
+        String put = "$.paths['/users/me'].put";
+        String patch = "$.paths['/users/me/password'].patch";
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(put + ".responses['200']").exists())
+                .andExpect(jsonPath(put + ".responses['400']").exists())
+                .andExpect(jsonPath(put + ".responses['401']").exists())
+                .andExpect(jsonPath(put + ".responses['403']").exists())
+                .andExpect(jsonPath(put + ".security[0].cookieAuth").isArray())
+                .andExpect(jsonPath(patch + ".responses['204'].headers['Set-Cookie']").exists())
+                .andExpect(jsonPath(patch + ".responses['400']").exists())
+                .andExpect(jsonPath(patch + ".responses['401']").exists())
+                .andExpect(jsonPath(patch + ".responses['403']").exists())
+                .andExpect(jsonPath(patch + ".security[0].cookieAuth").isArray())
+                .andExpect(jsonPath("$.components.schemas.PasswordChangeRequest.properties.currentPassword.writeOnly").value(true))
+                .andExpect(jsonPath("$.components.schemas.PasswordChangeRequest.properties.newPassword.writeOnly").value(true));
+    }
+
+    @Test
     void passwordIsWriteOnlyAndNeverPartOfTheResponse() throws Exception {
         mockMvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk())

@@ -2,6 +2,7 @@ package br.com.contabilizape.centraldesk.service;
 
 import br.com.contabilizape.centraldesk.dto.CurrentUserResponse;
 import br.com.contabilizape.centraldesk.dto.UserCreateRequest;
+import br.com.contabilizape.centraldesk.dto.UserProfileUpdateRequest;
 import br.com.contabilizape.centraldesk.dto.UserResponse;
 import br.com.contabilizape.centraldesk.exception.AccountNotActiveException;
 import br.com.contabilizape.centraldesk.exception.CpfAlreadyRegisteredException;
@@ -12,7 +13,6 @@ import br.com.contabilizape.centraldesk.model.Department;
 import br.com.contabilizape.centraldesk.model.DepartmentRequest;
 import br.com.contabilizape.centraldesk.model.DepartmentRequestStatus;
 import br.com.contabilizape.centraldesk.model.User;
-import br.com.contabilizape.centraldesk.model.UserStatus;
 import br.com.contabilizape.centraldesk.notification.DepartmentRequestCreatedEvent;
 import br.com.contabilizape.centraldesk.repository.DepartmentRepository;
 import br.com.contabilizape.centraldesk.repository.DepartmentRequestRepository;
@@ -84,12 +84,29 @@ public class UserService {
      */
     @Transactional(readOnly = true)
     public CurrentUserResponse getCurrentUser(UUID userId, List<String> roles) {
+        return toCurrentUser(findActiveUser(userId), roles);
+    }
+
+    /** Edição do próprio perfil: só o nome. CPF, e-mail, departamento e permissões não mudam aqui. */
+    @Transactional
+    public CurrentUserResponse updateProfile(UUID userId, UserProfileUpdateRequest request, List<String> roles) {
+        User user = findActiveUser(userId);
+        user.rename(request.fullName().trim());
+        return toCurrentUser(user, roles);
+    }
+
+    /** Usuário do token: apagado → sessão inválida (401); conta não ativa → 403. */
+    private User findActiveUser(UUID userId) {
         User user = userRepository.findById(userId).orElseThrow(InvalidSessionException::new);
-        if (user.getStatus() != UserStatus.ACTIVE) {
+        if (!user.isActive()) {
             throw new AccountNotActiveException();
         }
+        return user;
+    }
+
+    private CurrentUserResponse toCurrentUser(User user, List<String> roles) {
         boolean approvalPending =
-                departmentRequestRepository.existsByUserIdAndStatus(userId, DepartmentRequestStatus.PENDING);
+                departmentRequestRepository.existsByUserIdAndStatus(user.getId(), DepartmentRequestStatus.PENDING);
         return CurrentUserResponse.from(user, approvalPending, roles);
     }
 

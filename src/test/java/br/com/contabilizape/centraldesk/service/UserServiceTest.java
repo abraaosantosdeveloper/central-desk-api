@@ -2,6 +2,7 @@ package br.com.contabilizape.centraldesk.service;
 
 import br.com.contabilizape.centraldesk.dto.CurrentUserResponse;
 import br.com.contabilizape.centraldesk.dto.UserCreateRequest;
+import br.com.contabilizape.centraldesk.dto.UserProfileUpdateRequest;
 import br.com.contabilizape.centraldesk.dto.UserResponse;
 import br.com.contabilizape.centraldesk.exception.AccountNotActiveException;
 import br.com.contabilizape.centraldesk.exception.CpfAlreadyRegisteredException;
@@ -230,6 +231,42 @@ class UserServiceTest {
                 .isInstanceOf(AccountNotActiveException.class);
     }
 
+
+    // ---------- edição do perfil (PUT /users/me) ----------
+
+    @Test
+    void updateProfileRenamesTheUserAndReturnsCurrentUser() {
+        UUID id = UUID.randomUUID();
+        User maria = existingUser(id, general, UserStatus.ACTIVE);
+        when(userRepository.findById(id)).thenReturn(Optional.of(maria));
+
+        CurrentUserResponse current = userService.updateProfile(id, new UserProfileUpdateRequest("  Maria Souza  "), List.of());
+
+        assertThat(maria.getFullName()).isEqualTo("Maria Souza");
+        assertThat(current.fullName()).isEqualTo("Maria Souza");
+        assertThat(maria.getEmail()).isEqualTo("maria.silva@contabilizape.com.br");
+        assertThat(maria.getCpf()).isEqualTo("52998224725");
+    }
+
+    @Test
+    void updateProfileOfMissingUserIsInvalidSession() {
+        UUID id = UUID.randomUUID();
+        when(userRepository.findById(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userService.updateProfile(id, new UserProfileUpdateRequest("Maria"), List.of()))
+                .isInstanceOf(InvalidSessionException.class);
+    }
+
+    @Test
+    void updateProfileOfDeactivatedUserIsRejected() {
+        UUID id = UUID.randomUUID();
+        User maria = existingUser(id, general, UserStatus.DEACTIVATED);
+        when(userRepository.findById(id)).thenReturn(Optional.of(maria));
+
+        assertThatThrownBy(() -> userService.updateProfile(id, new UserProfileUpdateRequest("Outro Nome"), List.of()))
+                .isInstanceOf(AccountNotActiveException.class);
+        assertThat(maria.getFullName()).isEqualTo("Maria da Silva");
+    }
     // ---------- auxiliares ----------
 
     private static UserCreateRequest request(String email, UUID departmentId) {
