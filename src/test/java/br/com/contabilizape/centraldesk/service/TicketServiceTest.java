@@ -21,6 +21,7 @@ import br.com.contabilizape.centraldesk.repository.CategoryRepository;
 import br.com.contabilizape.centraldesk.repository.PriorityRepository;
 import br.com.contabilizape.centraldesk.repository.TicketRepository;
 import br.com.contabilizape.centraldesk.repository.UserRepository;
+import br.com.contabilizape.centraldesk.security.Roles;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,6 +31,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.quality.Strictness;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -208,7 +210,85 @@ class TicketServiceTest {
         return new TicketUpdateRequest("Novo título", "Nova descrição", CATEGORY_ID, MEDIUM);
     }
 
+    // ---------- detalhes ----------
+
+    private static final UUID OTHER_ID = UUID.fromString("7a1d9e2b-3c4f-4a5b-8c6d-9e0f1a2b3c4d");
+
+    @Test
+    void requesterSeesOwnTicket() {
+        User maria = requester(UserStatus.ACTIVE);
+        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, maria);
+        when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(maria));
+        when(ticketRepository.findById(TICKET_ID)).thenReturn(Optional.of(ticket));
+
+        TicketResponse response = ticketService.findById(TICKET_ID, REQUESTER_ID, List.of());
+
+        assertThat(response.title()).isEqualTo("Impressora");
+        assertThat(response.description()).isEqualTo("Sem papel");
+    }
+
+    @Test
+    void ticketHandlerSeesAnyTicket() {
+        viewerSeesTicketOfAnotherUser(List.of(Roles.TICKET_HANDLER));
+    }
+
+    @Test
+    void adminSeesAnyTicket() {
+        viewerSeesTicketOfAnotherUser(List.of(Roles.ADMIN));
+    }
+
+    @Test
+    void anotherCollaboratorGetsNotFound() {
+        User other = user(OTHER_ID, UserStatus.ACTIVE);
+        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, requester(UserStatus.ACTIVE));
+        when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(other));
+        when(ticketRepository.findById(TICKET_ID)).thenReturn(Optional.of(ticket));
+
+        // 404 e não 403: quem não pode ver não descobre que o chamado existe
+        assertThatThrownBy(() -> ticketService.findById(TICKET_ID, OTHER_ID, List.of()))
+                .isInstanceOf(TicketNotFoundException.class);
+    }
+
+    @Test
+    void unknownTicketDetailsAreNotFound() {
+        User maria = requester(UserStatus.ACTIVE);
+        when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(maria));
+        when(ticketRepository.findById(TICKET_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> ticketService.findById(TICKET_ID, REQUESTER_ID, List.of()))
+                .isInstanceOf(TicketNotFoundException.class);
+    }
+
+    @Test
+    void deactivatedUserCannotSeeTickets() {
+        User maria = requester(UserStatus.DEACTIVATED);
+        when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(maria));
+
+        assertThatThrownBy(() -> ticketService.findById(TICKET_ID, REQUESTER_ID, List.of()))
+                .isInstanceOf(AccountNotActiveException.class);
+        verify(ticketRepository, never()).findById(any());
+    }
+
+    private void viewerSeesTicketOfAnotherUser(List<String> roles) {
+        User viewer = user(OTHER_ID, UserStatus.ACTIVE);
+        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, requester(UserStatus.ACTIVE));
+        when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(viewer));
+        when(ticketRepository.findById(TICKET_ID)).thenReturn(Optional.of(ticket));
+
+        TicketResponse response = ticketService.findById(TICKET_ID, OTHER_ID, roles);
+
+        assertThat(response.requesterId()).isEqualTo(REQUESTER_ID);
+    }
+
     // ---------- auxiliares ----------
+
+    private static User user(UUID id, UserStatus status) {
+        User user = new User("João Souza", "11144477735", "joao.souza@contabilizape.com.br", "hash",
+                mock(Department.class));
+        ReflectionTestUtils.setField(user, "id", id);
+        ReflectionTestUtils.setField(user, "status", status);
+        return user;
+    }
 
     private static TicketCreateRequest request(String title, UUID categoryId, Short priorityId) {
         return new TicketCreateRequest(title, "A impressora mostra erro de papel.", categoryId, priorityId);

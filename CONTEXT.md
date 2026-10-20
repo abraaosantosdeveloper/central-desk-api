@@ -433,6 +433,7 @@ Ninguém é notificado de uma ação que ele mesmo fez (o `actor` nunca é o des
 | PATCH | `/department-requests/{id}/approve` | aprovar pedido (admin) | previsto |
 | PATCH | `/department-requests/{id}/reject` | recusar pedido (admin) | previsto |
 | POST | `/tickets` | abrir chamado (logado): solicitante = usuário do token, nasce `OPEN` | **implementado** |
+| GET | `/tickets/{id}` | detalhes do chamado: solicitante, `TICKET_HANDLER` e admin; demais → 404 (SCRUM-161) | **implementado** |
 | PUT | `/tickets/{id}` | editar chamado: só o solicitante e só enquanto `OPEN` (403 / 409 / 404) | **implementado** |
 | GET | `/categories` | categorias do formulário de chamado, por nome (logado) | **implementado** |
 | GET | `/priorities` | prioridades, da menos à mais urgente (logado) | **implementado** |
@@ -534,7 +535,7 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 ├── controller/AuthLogoutIntegrationTest       POST /auth/logout: apaga os dois cookies com ou sem sessão (3)
 ├── controller/AuthRefreshIntegrationTest      rotação, reuso, vencido, conta inativa, logout revoga (11)
 ├── controller/UserControllerIntegrationTest   /users/me: GET (7), PUT nome (4), PATCH senha (5)
-├── controller/TicketControllerIntegrationTest abertura, edição, categorias e prioridades (14)
+├── controller/TicketControllerIntegrationTest abertura, detalhes, edição, categorias e prioridades (20)
 ├── controller/AccountAnonymizationIntegrationTest  DELETE /users/me e PATCH /users/{id}/anonymize (10)
 ├── docs/ApiDocsIntegrationTest                OpenAPI e Swagger UI ligados (12 casos)
 ├── docs/ApiDocsDisabledIntegrationTest        sem API_DOCS_ENABLED: 404 (2 casos)
@@ -545,7 +546,7 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 ├── service/AccountAnonymizationServiceTest   anonimização: dados, sessões, fila, notificações, último admin (Mockito, 10)
 ├── service/AuthServiceTest                    login, permissões, renovação, logout e troca de senha (Mockito, 16 casos)
 ├── service/RefreshTokenServiceTest            emissão, hash, rotação, reuso, revogação, revogar todas (Mockito, 11)
-├── service/TicketServiceTest                  abertura e edição: solicitante, status, categoria, conta (Mockito, 10)
+├── service/TicketServiceTest                  abertura, detalhes e edição: solicitante, visibilidade, status, categoria, conta (Mockito, 16)
 ├── security/JwtConfigTest                     tamanho e formato da chave (3)
 ├── security/TokenServiceTest                  claims, validade, chave e emissor errados (5)
 ├── security/CookieBearerTokenResolverTest     leitura do cookie e rotas públicas (5)
@@ -627,6 +628,7 @@ Requisitos complementares (README): RF08 categorização, RF09 urgência, RF10 s
 **Implementação da RF02 (SCRUM-147, 20/10):** como o cookie `refresh_token` tem `Path=/auth`, ele não chega em `/users/me/password`. Em vez de mudar o `Path`, a troca de senha revoga **todas** as sessões e devolve, no próprio 204, cookies novos (`access_token` e `refresh_token`) para a sessão atual. As regras de senha ficaram na anotação composta `@StrongPassword` (pacote `validation/`), usada no cadastro e na troca. Erros de negócio ligados a um campo estendem `InvalidFieldException` e saem como 400 com `errors.<campo>`, no mesmo formato do Bean Validation.
 
 **Implementação da RF04 (SCRUM-159, 20/10):** dispara pelos dois caminhos — o próprio usuário (`DELETE /users/me`, confirmando a senha; errada → 400 em `errors.password`) e o admin (`PATCH /users/{id}/anonymize`, só com a conta `DEACTIVATED`, senão 409; regra de rota `hasAuthority(ROLE_ADMIN)` no `SecurityConfig`). Na mesma transação: dados pessoais anonimizados (`User.anonymize`), todos os refresh tokens revogados, chamados `IN_PROGRESS` do usuário voltam a `OPEN` sem responsável (`Ticket.returnToQueue`; os `CLOSED` guardam o histórico), notificações apagadas (via `NotificationCleanupRepository`, até a entidade existir) e o registro em `admins` removido — recusado com 409 se for o último admin ativo.
+**Implementação da RF12 (SCRUM-161, 20/10):** `GET /tickets/{id}` usa as permissões do token (como o `/users/me`) e decide a visibilidade em `TicketService.canView` (base para comentários e ações). Quem não pode ver recebe 404, não 403. O `TicketResponse` ganhou `assigneeName`, `assignedAt`, `closedById`, `closedByName`, `closedAt` e `updatedAt`; as listagens (SCRUM-160) usarão um resumo sem a descrição.
 
 **Notificações e avaliações (incluídas em 20/10), em fatias que acompanham o roteiro:**
 

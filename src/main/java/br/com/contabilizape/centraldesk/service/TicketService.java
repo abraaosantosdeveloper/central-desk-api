@@ -19,9 +19,11 @@ import br.com.contabilizape.centraldesk.repository.CategoryRepository;
 import br.com.contabilizape.centraldesk.repository.PriorityRepository;
 import br.com.contabilizape.centraldesk.repository.TicketRepository;
 import br.com.contabilizape.centraldesk.repository.UserRepository;
+import br.com.contabilizape.centraldesk.security.Roles;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -74,6 +76,25 @@ public class TicketService {
                 findCategory(request.categoryId()), findPriority(request.priorityId()));
         ticketRepository.flush(); // grava agora e atualiza o updated_at
         return TicketResponse.from(ticket);
+    }
+
+    /**
+     * Detalhes do chamado. Veem: o solicitante, a Inovação (TICKET_HANDLER) e os administradores.
+     * Para os demais, 404: quem não pode ver não descobre que o chamado existe.
+     */
+    @Transactional(readOnly = true)
+    public TicketResponse findById(UUID ticketId, UUID userId, List<String> roles) {
+        findActiveRequester(userId);
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .filter(found -> canView(found, userId, roles))
+                .orElseThrow(() -> new TicketNotFoundException(ticketId));
+        return TicketResponse.from(ticket);
+    }
+
+    private static boolean canView(Ticket ticket, UUID userId, List<String> roles) {
+        return ticket.getRequester().getId().equals(userId)
+                || roles.contains(Roles.TICKET_HANDLER)
+                || roles.contains(Roles.ADMIN);
     }
 
     private Category findCategory(UUID categoryId) {

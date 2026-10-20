@@ -110,6 +110,15 @@ public final class ProblemExamples {
               "instance": "/tickets"
             }""";
 
+    public static final String TICKET_NOT_FOUND = """
+            {
+              "type": "about:blank",
+              "title": "Chamado não encontrado",
+              "status": 404,
+              "detail": "Chamado não encontrado: 0f8b2c1e-6d3a-4f5e-9b7c-1a2b3c4d5e6f",
+              "instance": "/tickets/0f8b2c1e-6d3a-4f5e-9b7c-1a2b3c4d5e6f"
+            }""";
+
     public static final String TICKET_EDIT_FORBIDDEN = """
             {
               "type": "about:blank",

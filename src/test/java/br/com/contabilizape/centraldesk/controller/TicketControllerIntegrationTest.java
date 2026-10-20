@@ -3,6 +3,7 @@ package br.com.contabilizape.centraldesk.controller;
 import br.com.contabilizape.centraldesk.DatabaseCleanup;
 import br.com.contabilizape.centraldesk.IntegrationTest;
 import jakarta.servlet.http.Cookie;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,7 +36,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class TicketControllerIntegrationTest {
 
     private static final String GENERAL_ID = "3094ed3f-42ab-4bc0-9d8d-f6eb08891016";
+    private static final String INNOVATION_ID = "e9790f1f-41df-4369-bfe7-1be4be535561";
     private static final String EMAIL = "maria.silva@contabilizape.com.br";
+    private static final String HANDLER = "carlos.inovacao@contabilizape.com.br";
+    private static final String ADMIN = "ana.admin@contabilizape.com.br";
     private static final String PASSWORD = "senhaForte123";
     private static final Pattern TOKEN_IN_COOKIE = Pattern.compile("access_token=([^;]+)");
 
@@ -66,6 +70,13 @@ class TicketControllerIntegrationTest {
         assertThat(matcher.find()).isTrue();
         session = new Cookie("access_token", matcher.group(1));
         hardwareId = jdbc.queryForObject("SELECT id FROM categories WHERE label = 'Hardware'", String.class);
+    }
+
+    // A limpeza padrão preserva administradores; o criado aqui sai ao final
+    @AfterEach
+    void removeTestAdmin() {
+        jdbc.update("DELETE FROM admins WHERE user_id IN (SELECT id FROM users WHERE email = ?)", ADMIN);
+        DatabaseCleanup.removeNonAdminUsers(jdbc);
     }
 
     // ---------- abertura ----------
@@ -129,6 +140,63 @@ class TicketControllerIntegrationTest {
         mockMvc.perform(openTicket(body("Título", hardwareId, "9")).cookie(session))
                 .andExpect(status().isBadRequest());
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM tickets", Integer.class)).isZero();
+    }
+
+    // ---------- detalhes ----------
+
+    @Test
+    void requesterSeesTicketDetails() throws Exception {
+        UUID ticketId = openTicketAndGetId();
+
+        mockMvc.perform(get("/tickets/" + ticketId).cookie(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(ticketId.toString()))
+                .andExpect(jsonPath("$.title").value("Impressora parada"))
+                .andExpect(jsonPath("$.description").value("A impressora do 2º andar mostra erro de papel."))
+                .andExpect(jsonPath("$.status").value("OPEN"))
+                .andExpect(jsonPath("$.requesterName").value("Maria da Silva"))
+                .andExpect(jsonPath("$.assigneeId").doesNotExist())
+                .andExpect(jsonPath("$.closedAt").doesNotExist());
+    }
+
+    @Test
+    void ticketHandlerSeesAnyTicket() throws Exception {
+        UUID ticketId = openTicketAndGetId();
+
+        mockMvc.perform(get("/tickets/" + ticketId).cookie(registerHandlerAndLogin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.requesterName").value("Maria da Silva"));
+    }
+
+    @Test
+    void adminSeesAnyTicket() throws Exception {
+        UUID ticketId = openTicketAndGetId();
+
+        mockMvc.perform(get("/tickets/" + ticketId).cookie(registerAdminAndLogin()))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void anotherCollaboratorGetsNotFound() throws Exception {
+        UUID ticketId = openTicketAndGetId();
+        Cookie joao = registerAndLogin("joao.souza@contabilizape.com.br", "11144477735");
+
+        mockMvc.perform(get("/tickets/" + ticketId).cookie(joao))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void unknownTicketDetailsAreNotFound() throws Exception {
+        mockMvc.perform(get("/tickets/" + UUID.randomUUID()).cookie(session))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void ticketDetailsWithoutSessionIsUnauthorized() throws Exception {
+        UUID ticketId = openTicketAndGetId();
+
+        mockMvc.perform(get("/tickets/" + ticketId))
+                .andExpect(status().isUnauthorized());
     }
 
     // ---------- edição ----------
@@ -231,11 +299,33 @@ class TicketControllerIntegrationTest {
     }
 
     private Cookie registerAndLogin(String email, String cpf) throws Exception {
+        register(email, cpf);
+        return login(email);
+    }
+
+    // Quem pede a Inovação no cadastro espera aprovação; aqui o usuário é movido direto, como se aprovado
+    private Cookie registerHandlerAndLogin() throws Exception {
+        UUID id = register(HANDLER, "11144477735");
+        jdbc.update("UPDATE users SET department_id = ? WHERE id = ?", UUID.fromString(INNOVATION_ID), id);
+        return login(HANDLER);
+    }
+
+    private Cookie registerAdminAndLogin() throws Exception {
+        UUID id = register(ADMIN, "39053344705");
+        jdbc.update("INSERT INTO admins (user_id) VALUES (?)", id);
+        return login(ADMIN);
+    }
+
+    private UUID register(String email, String cpf) throws Exception {
         mockMvc.perform(post("/auth/register").contentType(MediaType.APPLICATION_JSON).content("""
                         { "fullName": "João Souza", "cpf": "%s", "email": "%s",
                           "password": "%s", "departmentId": "%s" }
                         """.formatted(cpf, email, PASSWORD, GENERAL_ID)))
                 .andExpect(status().isCreated());
+        return jdbc.queryForObject("SELECT id FROM users WHERE email = ?", UUID.class, email);
+    }
+
+    private Cookie login(String email) throws Exception {
         String setCookie = mockMvc.perform(post("/auth/login").contentType(MediaType.APPLICATION_JSON).content("""
                         { "email": "%s", "password": "%s" }
                         """.formatted(email, PASSWORD)))

@@ -279,3 +279,15 @@ Modelo de entrada:
 - **Comando:** `.\mvnw clean test` (Docker ligado)
 - **Resultado:** 228 testes, 0 falhas, 0 erros. ✅
 - **Antes (TDD):** as duas classes novas falharam pelo motivo esperado (rotas 404/405 e `UnsupportedOperationException` no service).
+
+### Mudanças entre a execução 15 e a 16
+
+- Detalhes do chamado (SCRUM-161): `GET /tickets/{id}`; `TicketResponse` com responsável, encerramento e `updatedAt`.
+- Novos testes (12): `TicketServiceTest` (+6: solicitante, handler, admin, outro colaborador → 404, inexistente, conta desativada); `TicketControllerIntegrationTest` (+6: 200 solicitante/handler/admin, 404 outro, 404 inexistente, 401). `ApiDocsIntegrationTest`: o teste de chamados confere também o `GET`.
+
+## Execução 16 — 2026-10-20 — suíte completa (SCRUM-161)
+
+- **Comando:** `.\mvnw clean test` (Docker ligado)
+- **Antes (TDD):** execução direcionada falhou pelo motivo esperado (405 e `UnsupportedOperationException`).
+- **Primeira execução completa:** falhou na compilação — `unknownTicketIsNotFound()` já existia em `TicketServiceTest` e `TicketControllerIntegrationTest` (a execução direcionada anterior tinha usado classes compiladas antigas). **Correção:** os testes novos foram renomeados para `unknownTicketDetailsAreNotFound`.
+- **Resultado:** 240 testes, 0 falhas, 0 erros. ✅

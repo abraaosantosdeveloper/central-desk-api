@@ -54,6 +54,28 @@ public interface TicketApi {
     ResponseEntity<TicketResponse> open(@Parameter(hidden = true) Jwt jwt, TicketCreateRequest request);
 
     @Operation(
+            summary = "Detalhes de um chamado",
+            description = """
+                    Chamado completo, com descrição, responsável e encerramento. Veem: **quem abriu**, \
+                    a Inovação (`TICKET_HANDLER`) e os administradores. Para os demais a resposta é 404, \
+                    para não revelar que o chamado existe.""",
+            security = @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH))
+    @ApiResponse(responseCode = "200", description = "Chamado.",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = TicketResponse.class)))
+    @ApiResponse(responseCode = "401", description = "Sem sessão.", content = @Content)
+    @ApiResponse(
+            responseCode = "403",
+            description = "A conta foi desativada depois do login.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    @ApiResponse(
+            responseCode = "404",
+            description = "Chamado inexistente, ou que o usuário não pode ver.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE,
+                    schema = @Schema(implementation = ProblemDetail.class),
+                    examples = @ExampleObject(name = "Chamado não encontrado", value = ProblemExamples.TICKET_NOT_FOUND)))
+    TicketResponse findById(@Parameter(hidden = true) Jwt jwt, UUID id);
+
+    @Operation(
             summary = "Edita um chamado",
             description = """
                     Troca título, descrição, categoria e prioridade (todos reenviados). Só **quem abriu** \
