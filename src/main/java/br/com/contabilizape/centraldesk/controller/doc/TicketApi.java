@@ -1,7 +1,9 @@
 package br.com.contabilizape.centraldesk.controller.doc;
 
 import br.com.contabilizape.centraldesk.config.OpenApiConfig;
+import br.com.contabilizape.centraldesk.dto.AssigneeResponse;
 import br.com.contabilizape.centraldesk.dto.PageResponse;
+import br.com.contabilizape.centraldesk.dto.ReassignRequest;
 import br.com.contabilizape.centraldesk.dto.TicketCreateRequest;
 import br.com.contabilizape.centraldesk.dto.TicketFilter;
 import br.com.contabilizape.centraldesk.dto.TicketResponse;
@@ -10,6 +12,7 @@ import br.com.contabilizape.centraldesk.dto.TicketUpdateRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.headers.Header;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -22,6 +25,7 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.oauth2.jwt.Jwt;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -145,6 +149,40 @@ public interface TicketApi {
                     schema = @Schema(implementation = ProblemDetail.class),
                     examples = @ExampleObject(name = "Já assumido", value = ProblemExamples.INVALID_TICKET_TRANSITION)))
     TicketResponse assign(@Parameter(hidden = true) Jwt jwt, UUID id);
+
+    @Operation(
+            summary = "Lista quem pode atender chamados",
+            description = """
+                    Só Inovação e administradores. Contas ativas da Inovação e administradores, por nome, \
+                    com a quantidade de chamados em atendimento de cada um. Usada na tela de reatribuir.""",
+            security = @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH))
+    @ApiResponse(responseCode = "200", description = "Pessoas que podem atender.",
+            content = @Content(mediaType = "application/json",
+                    array = @ArraySchema(schema = @Schema(implementation = AssigneeResponse.class))))
+    @ApiResponse(responseCode = "401", description = "Sem sessão.", content = @Content)
+    @ApiResponse(responseCode = "403", description = "Quem chamou não é da Inovação nem administrador.", content = @Content)
+    List<AssigneeResponse> assignees();
+
+    @Operation(
+            summary = "Reatribui o chamado",
+            description = """
+                    O responsável atual passa o chamado a um colega, ou um administrador redistribui. Chamado na \
+                    fila passa a `IN_PROGRESS` com o novo responsável; em atendimento, só o responsável muda e o \
+                    `assignedAt` original é mantido. O destino precisa ser conta ativa da Inovação ou admin, e \
+                    não pode ser quem abriu o chamado.""",
+            security = @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH))
+    @ApiResponse(responseCode = "200", description = "Chamado reatribuído.",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = TicketResponse.class)))
+    @ApiResponse(responseCode = "400", description = "`assigneeId` ausente ou pessoa que não pode atender este chamado.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    @ApiResponse(responseCode = "401", description = "Sem sessão.", content = @Content)
+    @ApiResponse(responseCode = "403", description = "Quem chamou não é o responsável nem administrador.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    @ApiResponse(responseCode = "404", description = "Chamado inexistente.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    @ApiResponse(responseCode = "409", description = "Chamado encerrado ou a pessoa já é a responsável.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    TicketResponse reassign(@Parameter(hidden = true) Jwt jwt, UUID id, ReassignRequest request);
 
     @Operation(
             summary = "Encerra um chamado",

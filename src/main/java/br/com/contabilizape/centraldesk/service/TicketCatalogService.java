@@ -26,7 +26,7 @@ public class TicketCatalogService {
 
     @Transactional(readOnly = true)
     public List<CategoryResponse> listCategories() {
-        return categoryRepository.findAll(Sort.by("label")).stream().map(CategoryResponse::from).toList();
+        return categoryRepository.findByArchivedAtIsNullOrderByLabel().stream().map(CategoryResponse::from).toList();
     }
 
     @Transactional(readOnly = true)

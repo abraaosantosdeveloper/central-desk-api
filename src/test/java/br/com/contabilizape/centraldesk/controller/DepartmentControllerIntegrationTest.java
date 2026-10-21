@@ -32,28 +32,27 @@ class DepartmentControllerIntegrationTest {
 
     @AfterEach
     void removeExtraDepartments() {
-        jdbc.update("DELETE FROM departments WHERE id NOT IN (?::uuid, ?::uuid)", GENERAL_ID, INNOVATION_ID);
+        jdbc.update("DELETE FROM departments WHERE name LIKE '%(teste)'");
     }
 
     @Test
     void listsSeedDepartmentsWithoutAuthentication() throws Exception {
         mockMvc.perform(get("/departments"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(2)))
-                .andExpect(jsonPath("$[0].id").value(GENERAL_ID))
-                .andExpect(jsonPath("$[0].name").value("Geral"))
-                .andExpect(jsonPath("$[1].id").value(INNOVATION_ID))
-                .andExpect(jsonPath("$[1].name").value("Inovação"));
+                .andExpect(jsonPath("$", hasSize(10)))
+                .andExpect(jsonPath("$[?(@.name == 'Geral')].id").value(GENERAL_ID))
+                .andExpect(jsonPath("$[?(@.name == 'Inovação')].id").value(INNOVATION_ID));
     }
 
     @Test
     void ordersDepartmentsByName() throws Exception {
-        jdbc.update("INSERT INTO departments (name) VALUES ('Recursos Humanos'), ('Financeiro')");
+        jdbc.update("INSERT INTO departments (name) VALUES ('Zeladoria (teste)')");
 
         mockMvc.perform(get("/departments"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[*].name").value(
-                        org.hamcrest.Matchers.contains("Financeiro", "Geral", "Inovação", "Recursos Humanos")));
+                        org.hamcrest.Matchers.contains("Administrativo", "Comercial", "Contábil", "Departamento Pessoal",
+                                "Financeiro", "Fiscal", "Geral", "Inovação", "Recursos Humanos", "Societário", "Zeladoria (teste)")));
     }
 
     @Test

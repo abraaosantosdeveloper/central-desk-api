@@ -240,6 +240,23 @@ class ApiDocsIntegrationTest {
     }
 
     @Test
+    void documentsAdminManagementAndReassignment() throws Exception {
+        var docs = mockMvc.perform(get("/v3/api-docs")).andExpect(status().isOk());
+        String[] operations = {
+                "$.paths['/categories'].post", "$.paths['/categories/{id}'].patch", "$.paths['/categories/{id}'].delete",
+                "$.paths['/categories/usage'].get", "$.paths['/users/{id}/department'].patch",
+                "$.paths['/users/{id}/admin'].put", "$.paths['/users/{id}/admin'].delete",
+                "$.paths['/tickets/assignees'].get", "$.paths['/tickets/{id}/reassign'].patch"
+        };
+        for (String operation : operations) {
+            docs.andExpect(jsonPath(operation + ".responses['403']").exists())
+                    .andExpect(jsonPath(operation + ".security[0].cookieAuth").isArray());
+        }
+        docs.andExpect(jsonPath("$.paths['/tickets/{id}/reassign'].patch.responses['409']").exists())
+                .andExpect(jsonPath("$.paths['/categories'].post.responses['409']").exists());
+    }
+
+    @Test
     void passwordIsWriteOnlyAndNeverPartOfTheResponse() throws Exception {
         mockMvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk())

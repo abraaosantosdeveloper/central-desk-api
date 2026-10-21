@@ -359,3 +359,19 @@ Modelo de entrada:
 - **Comando:** `.\mvnw clean test` (Docker ligado)
 - **Antes (TDD):** a execução direcionada falhou pelo motivo esperado (`UnsupportedOperationException` nos stubs dos dois services; 8 dos 10 testes de integração). Os testes de domínio e a anonimização refatorada já passaram nessa rodada.
 - **Resultado:** 366 testes, 0 falhas, 0 erros. ✅
+
+### Mudanças entre a execução 22 e a 23
+
+- Categorias (SCRUM-167): `POST`/`PATCH`/`DELETE /categories`, `GET /categories/usage`; V13 (`archived_at`); `GET /categories` só ativas; categoria arquivada recusada em chamado novo.
+- Filtros (SCRUM-168): `q`, `departmentId` e `orderBy` (`RECENT`/`PRIORITY`) nas listas de chamados; `role` e `departmentId` em `GET /users`.
+- Admins (SCRUM-169): `PUT`/`DELETE /users/{id}/admin`.
+- Departamentos (SCRUM-170): V14 com os departamentos da empresa; `PATCH /users/{id}/department`.
+- Comentários (SCRUM-172): só solicitante e responsável comentam (403 para os demais).
+- Reatribuir (SCRUM-173): `GET /tickets/assignees` e `PATCH /tickets/{id}/reassign`.
+- Novos testes (35): `CategoryServiceTest` (7), `CategoryIntegrationTest` (5), `AdminManagementIntegrationTest` (8), `TicketManagementIntegrationTest` (10), `TicketTest` (+3), `TicketServiceTest` (+1), `ApiDocsIntegrationTest` (+1). Ajustados: `CommentIntegrationTest` (o atendente que não é o responsável passou a receber 403), `DepartmentControllerIntegrationTest` (10 departamentos na base) e `TicketServiceTest` (categoria real em vez de mock, por causa do `isActive`).
+
+## Execução 23 — 2026-10-21 — suíte completa (SCRUM-167 a 173)
+
+- **Comando:** `./mvnw clean test` (Docker ligado)
+- **Antes (TDD):** os testes novos não compilavam (classes inexistentes); depois, falhas esperadas: `TicketServiceTest` com o mock de `Category` (`isActive` falso), `DepartmentControllerIntegrationTest` contando 2 departamentos, `CommentIntegrationTest.handlerCanCommentOnAnyTicket` (regra antiga) e a busca por número (`uuid ~~ text` no PostgreSQL). **Correções:** categoria real no teste, testes de departamento atualizados, teste de comentário invertido para a nova regra e `text(id)` na busca.
+- **Resultado:** 401 testes, 0 falhas, 0 erros. ✅

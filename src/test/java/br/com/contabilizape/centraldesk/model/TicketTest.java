@@ -128,6 +128,38 @@ class TicketTest {
         assertThat(ticket.getClosedBy()).isSameAs(firstCloser);
     }
 
+    @Test
+    void reassigningAnOpenTicketStartsTheServiceWithTheNewAssignee() {
+        Ticket ticket = ticket(TicketStatus.OPEN);
+        User colleague = mock(User.class);
+
+        ticket.reassign(colleague, NOW);
+
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+        assertThat(ticket.getAssignee()).isSameAs(colleague);
+        assertThat(ticket.getAssignedAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    void reassigningInProgressKeepsTheOriginalAssignedAt() {
+        Ticket ticket = ticket(TicketStatus.OPEN);
+        ticket.assign(mock(User.class), NOW);
+        User colleague = mock(User.class);
+
+        ticket.reassign(colleague, NOW.plusHours(3));
+
+        assertThat(ticket.getAssignee()).isSameAs(colleague);
+        assertThat(ticket.getAssignedAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    void closedTicketCannotBeReassigned() {
+        Ticket ticket = ticket(TicketStatus.CLOSED);
+
+        assertThatThrownBy(() -> ticket.reassign(mock(User.class), NOW))
+                .isInstanceOf(InvalidTicketTransitionException.class);
+    }
+
     private static Ticket ticket(TicketStatus status) {
         Ticket ticket = new Ticket("Impressora", "Sem papel", mock(Category.class), mock(Priority.class), mock(User.class));
         ReflectionTestUtils.setField(ticket, "status", status);

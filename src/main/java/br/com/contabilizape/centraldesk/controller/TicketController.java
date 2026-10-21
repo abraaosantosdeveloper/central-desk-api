@@ -1,13 +1,16 @@
 package br.com.contabilizape.centraldesk.controller;
 
 import br.com.contabilizape.centraldesk.controller.doc.TicketApi;
+import br.com.contabilizape.centraldesk.dto.AssigneeResponse;
 import br.com.contabilizape.centraldesk.dto.PageResponse;
+import br.com.contabilizape.centraldesk.dto.ReassignRequest;
 import br.com.contabilizape.centraldesk.dto.TicketCreateRequest;
 import br.com.contabilizape.centraldesk.dto.TicketFilter;
 import br.com.contabilizape.centraldesk.dto.TicketResponse;
 import br.com.contabilizape.centraldesk.dto.TicketSummaryResponse;
 import br.com.contabilizape.centraldesk.dto.TicketUpdateRequest;
 import br.com.contabilizape.centraldesk.security.TokenService;
+import br.com.contabilizape.centraldesk.service.TicketReassignmentService;
 import br.com.contabilizape.centraldesk.service.TicketService;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Pageable;
@@ -34,8 +37,10 @@ import java.util.UUID;
 public class TicketController implements TicketApi {
 
     private final TicketService ticketService;
+    private final TicketReassignmentService reassignmentService;
 
-    public TicketController(TicketService ticketService) {
+    public TicketController(TicketService ticketService, TicketReassignmentService reassignmentService) {
+        this.reassignmentService = reassignmentService;
         this.ticketService = ticketService;
     }
 
@@ -77,6 +82,22 @@ public class TicketController implements TicketApi {
     @PatchMapping("/{id}/assign")
     public TicketResponse assign(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {
         return ticketService.assign(id, UUID.fromString(jwt.getSubject()));
+    }
+
+    /** Só Inovação e administradores (regra no SecurityConfig). */
+    @Override
+    @GetMapping("/assignees")
+    public List<AssigneeResponse> assignees() {
+        return reassignmentService.assignees();
+    }
+
+    /** Rota de Inovação e admins; dentro dela, só o responsável atual ou um admin (regra no serviço). */
+    @Override
+    @PatchMapping("/{id}/reassign")
+    public TicketResponse reassign(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id,
+                                   @RequestBody @Valid ReassignRequest request) {
+        List<String> roles = Objects.requireNonNullElse(jwt.getClaimAsStringList(TokenService.ROLES_CLAIM), List.of());
+        return reassignmentService.reassign(id, UUID.fromString(jwt.getSubject()), roles, request.assigneeId());
     }
 
     /** Solicitante, Inovação e administradores (regra no TicketService). Sem corpo: avaliação é outro endpoint. */

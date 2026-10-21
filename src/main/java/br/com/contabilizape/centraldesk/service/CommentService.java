@@ -4,6 +4,7 @@ import br.com.contabilizape.centraldesk.dto.CommentCreateRequest;
 import br.com.contabilizape.centraldesk.dto.CommentResponse;
 import br.com.contabilizape.centraldesk.exception.AccountNotActiveException;
 import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
+import br.com.contabilizape.centraldesk.exception.CommentForbiddenException;
 import br.com.contabilizape.centraldesk.exception.TicketClosedForCommentsException;
 import br.com.contabilizape.centraldesk.exception.TicketNotFoundException;
 import br.com.contabilizape.centraldesk.model.Comment;
@@ -47,6 +48,11 @@ public class CommentService {
     public CommentResponse create(UUID ticketId, UUID userId, List<String> roles, CommentCreateRequest request) {
         User author = findActiveUser(userId);
         Ticket ticket = findVisibleTicket(ticketId, userId, roles);
+        boolean participant = ticket.getRequester().getId().equals(userId)
+                || (ticket.getAssignee() != null && ticket.getAssignee().getId().equals(userId));
+        if (!participant) {
+            throw new CommentForbiddenException();
+        }
         if (ticket.getStatus() == TicketStatus.CLOSED) {
             throw new TicketClosedForCommentsException();
         }

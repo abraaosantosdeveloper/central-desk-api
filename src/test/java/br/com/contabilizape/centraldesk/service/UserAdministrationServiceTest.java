@@ -14,6 +14,7 @@ import br.com.contabilizape.centraldesk.model.TicketStatus;
 import br.com.contabilizape.centraldesk.model.User;
 import br.com.contabilizape.centraldesk.model.UserStatus;
 import br.com.contabilizape.centraldesk.repository.AdminRepository;
+import br.com.contabilizape.centraldesk.repository.DepartmentRepository;
 import br.com.contabilizape.centraldesk.repository.DepartmentRequestRepository;
 import br.com.contabilizape.centraldesk.repository.TicketRepository;
 import br.com.contabilizape.centraldesk.repository.UserRepository;
@@ -56,6 +57,7 @@ class UserAdministrationServiceTest {
     @Mock private AdminRepository adminRepository;
     @Mock private DepartmentRequestRepository departmentRequestRepository;
     @Mock private TicketRepository ticketRepository;
+    @Mock private DepartmentRepository departmentRepository;
     @Mock private RefreshTokenService refreshTokenService;
 
     private UserAdministrationService service;
@@ -68,6 +70,7 @@ class UserAdministrationServiceTest {
         AccountOffboarding offboarding = new AccountOffboarding(userRepository, adminRepository, ticketRepository,
                 refreshTokenService);
         service = new UserAdministrationService(userRepository, adminRepository, departmentRequestRepository,
+                departmentRepository, ticketRepository,
                 offboarding, Clock.fixed(NOW, ZoneOffset.UTC), INNOVATION_ID);
     }
 

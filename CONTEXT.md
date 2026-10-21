@@ -164,6 +164,8 @@ Formato obrigatório: `V<n>__<descricao>.sql` — **`V` maiúsculo** e dois unde
 | `V10__seed_categories.sql` | categorias iniciais dos chamados (Hardware, Software, Acesso e contas, Rede e internet, Sistemas internos, Outros) |
 | `V11__create_ticket_ratings.sql` | avaliações do atendimento (`ticket_ratings`). **Escrita em 20/10, ainda não aplicada** |
 | `V12__create_notifications.sql` | notificações do painel (`notifications`). **Escrita em 20/10, ainda não aplicada** |
+| `V13__archive_categories.sql` | `categories.archived_at`: remover categoria arquiva, sem apagar (SCRUM-167) |
+| `V14__seed_company_departments.sql` | demais departamentos da empresa (Administrativo, Comercial, Contábil, Departamento Pessoal, Financeiro, Fiscal, Recursos Humanos, Societário) (SCRUM-170) |
 
 Conferido em 20/10: a V11 e a V12 não conflitam com as anteriores (numeração, nomes de tabelas, índices e constraints livres; todas as FKs apontam para tabelas já existentes). Até serem aplicadas, ainda podem ser ajustadas.
 
@@ -427,24 +429,33 @@ Ninguém é notificado de uma ação que ele mesmo fez (o `actor` nunca é o des
 | PATCH | `/users/me/password` | troca de senha: exige a atual, revoga todas as sessões e reabre a atual com cookies novos (204) (SCRUM-157) | **implementado** |
 | DELETE | `/users/me` | encerramento da própria conta: confirma a senha, anonimiza e apaga os cookies (204); último admin → 409 (SCRUM-159) | **implementado** |
 | PATCH | `/users/{id}/anonymize` | anonimização pelo admin, só de conta `DEACTIVATED` (404 / 409) (SCRUM-159) | **implementado** |
-| GET | `/users` | lista de contas (admin): ordem por nome, paginada, filtros `status` e `search`; sem `status`, as anonimizadas ficam de fora (SCRUM-165) | **implementado** |
+| GET | `/users` | lista de contas (admin): ordem por nome, paginada, filtros `status`, `search`, `role` (`ADMIN`/`HANDLER`/`COLLABORATOR`) e `departmentId` (SCRUM-168); sem `status`, as anonimizadas ficam de fora (SCRUM-165) | **implementado** |
 | GET | `/users/{id}` | consulta de uma conta (admin), com `admin`, `ticketHandler` e `departmentApprovalPending` (SCRUM-165) | **implementado** |
 | PATCH | `/users/{id}/deactivate` | desativação (admin): bloqueia o login na hora, revoga as sessões e devolve os chamados à fila; própria conta ou último admin → 409 (SCRUM-165) | **implementado** |
 | PATCH | `/users/{id}/reactivate` | reativação (admin): só conta `DEACTIVATED` (SCRUM-165) | **implementado** |
+| PATCH | `/users/{id}/department` | trocar o departamento (admin), corpo `{ departmentId }`: só conta ativa e sem pedido pendente (409); departamento inexistente → 400; para a Inovação vale como aprovação; quem sai da Inovação devolve os chamados em atendimento à fila (SCRUM-170) | **implementado** |
+| PUT | `/users/{id}/admin` | conceder admin: só conta ativa; já admin → 409; grava quem concedeu (SCRUM-169) | **implementado** |
+| DELETE | `/users/{id}/admin` | remover admin: própria conta, conta que não é admin ou último admin ativo → 409 (SCRUM-169) | **implementado** |
 | GET | `/department-requests` | fila de pedidos pendentes (admin), do mais antigo para o mais novo (SCRUM-165) | **implementado** |
 | PATCH | `/department-requests/{id}/approve` | aprovar pedido (admin): quem pediu vai para a Inovação e ganha `TICKET_HANDLER` na próxima renovação; já analisado → 409 (SCRUM-165) | **implementado** |
 | PATCH | `/department-requests/{id}/reject` | recusar pedido (admin): quem pediu continua no Geral; já analisado → 409 (SCRUM-165) | **implementado** |
 | POST | `/tickets` | abrir chamado (logado): solicitante = usuário do token, nasce `OPEN` | **implementado** |
-| GET | `/tickets/mine` | chamados abertos pelo usuário: paginado, mais recentes primeiro, filtros `status`/`categoryId`/`priorityId`, resumo sem descrição (SCRUM-160) | **implementado** |
+| GET | `/tickets/mine` | chamados abertos pelo usuário: paginado, filtros `status`/`categoryId`/`priorityId`/`q` (título ou `#número`)/`departmentId` (de quem abriu) e `orderBy` (`RECENT` padrão ou `PRIORITY`: mais urgente e, no empate, mais antigo) — os mesmos valem para `/queue` e `/assigned` (SCRUM-168); resumo sem descrição (SCRUM-160) | **implementado** |
 | GET | `/tickets/queue` | fila da Inovação: `OPEN` sem responsável; só `TICKET_HANDLER` e admin (SCRUM-160) | **implementado** |
 | GET | `/tickets/assigned` | chamados sob responsabilidade do usuário; só `TICKET_HANDLER` e admin (SCRUM-160) | **implementado** |
 | GET | `/tickets/{id}` | detalhes do chamado: solicitante, `TICKET_HANDLER` e admin; demais → 404 (SCRUM-161) | **implementado** |
 | PUT | `/tickets/{id}` | editar chamado: só o solicitante e só enquanto `OPEN` (403 / 409 / 404) | **implementado** |
-| GET | `/categories` | categorias do formulário de chamado, por nome (logado) | **implementado** |
+| GET | `/categories` | categorias **ativas** do formulário de chamado, por nome (logado) | **implementado** |
+| POST | `/categories` | criar categoria (admin), `{ label, color: #RRGGBB }`; nome repetido (sem diferenciar maiúsculas) → 409 (SCRUM-167) | **implementado** |
+| PATCH | `/categories/{id}` | editar nome e cor (admin); inexistente ou arquivada → 404; nome repetido → 409 (SCRUM-167) | **implementado** |
+| DELETE | `/categories/{id}` | remover (admin): arquiva; some do formulário, chamados antigos mantêm a categoria; chamado novo com ela → 400 (204) (SCRUM-167) | **implementado** |
+| GET | `/categories/usage` | quantidade de chamados por categoria ativa (admin) (SCRUM-167) | **implementado** |
 | GET | `/priorities` | prioridades, da menos à mais urgente (logado) | **implementado** |
 | PATCH | `/tickets/{id}/assign` | assumir chamado: `OPEN` → `IN_PROGRESS`, responsável = usuário logado; só `TICKET_HANDLER` e admin (403 / 404 / 409) (SCRUM-162) | **implementado** |
 | PATCH | `/tickets/{id}/close` | encerrar chamado: `OPEN`/`IN_PROGRESS` → `CLOSED`, preenche `closed_by_id`/`closed_at`; solicitante, `TICKET_HANDLER` e admin; demais → 404; já encerrado → 409; sem corpo (SCRUM-163) | **implementado** |
-| POST | `/tickets/{id}/comments` | comentar: quem vê o chamado; conteúdo gravado cifrado; `CLOSED` → 409; dispara `comment.created` no SSE (SCRUM-164) | **implementado** |
+| GET | `/tickets/assignees` | quem pode atender (Inovação e admins ativos), por nome, com `inProgress`; só `TICKET_HANDLER` e admin (SCRUM-173) | **implementado** |
+| PATCH | `/tickets/{id}/reassign` | reatribuir, corpo `{ assigneeId }`: responsável atual ou admin (403); destino ativo da Inovação ou admin e não o solicitante (400); mesma pessoa ou `CLOSED` → 409; na fila vira `IN_PROGRESS`; em atendimento mantém o `assignedAt` (SCRUM-173) | **implementado** |
+| POST | `/tickets/{id}/comments` | comentar: **só o solicitante e o responsável atual** (demais → 403, mesmo vendo o chamado) (SCRUM-172); conteúdo gravado cifrado; `CLOSED` → 409; dispara `comment.created` no SSE (SCRUM-164) | **implementado** |
 | GET | `/tickets/{id}/comments` | conversa do chamado, do mais antigo para o mais novo, já decifrada; funciona com o chamado encerrado (SCRUM-164) | **implementado** |
 | GET | `/events/stream` | stream SSE do usuário logado (`text/event-stream`): eventos `connected`, `comment.created` e `ticket.created` (SCRUM-164) | **implementado** |
 | POST | `/tickets/{id}/rating` | avaliar o atendimento: só o solicitante, chamado `CLOSED` com responsável, uma vez (201 / 403 / 404 / 409) | previsto |
@@ -692,6 +703,15 @@ Requisitos complementares (README): RF08 categorização, RF09 urgência, RF10 s
 - [ ] Decidir se haverá status separado entre *Concluído* (técnico resolveu) e *Encerrado* (solicitante confirmou). Se sim: novo status `RESOLVED` e coluna `resolved_at`. **Adiado em 20/10**: a avaliação foi desenhada sobre `CLOSED`.
 - [ ] Decidir se o painel terá uma fila ordenada por prioridade; se sim, criar o índice `(status, priority_id DESC, created_at)`.
 - [ ] Incluir `department_requests`, `ticket_ratings` e `notifications` nos diagramas e alinhar a documentação ABNT com os nomes finais do banco.
+
+**Gestão do admin, filtros e reatribuição (SCRUM-167 a 173, 21/10):**
+- **Categorias (167):** remover **arquiva** (`archived_at`, V13) em vez de apagar, porque os chamados antigos precisam continuar mostrando a categoria. Chamado novo com categoria arquivada → 400; na edição, o chamado pode manter a que já tem. `CategoryDoesNotExistException` (404) vale para a rota da própria categoria; `CategoryNotFoundException` (400) continua para o campo do formulário.
+- **Filtros (168):** `q`, `departmentId` e `orderBy` nas três listas de chamados; `role` e `departmentId` em `GET /users`. O parâmetro chama `orderBy` (e não `sort`) para não brigar com o `sort` do `Pageable`. Fecha a DEC-002 (SCRUM-41).
+- **Admins (169):** `PUT`/`DELETE /users/{id}/admin`. Ninguém remove o próprio acesso, então sempre sobra quem fez a remoção; a checagem de último admin ativo (`AccountOffboarding`) continua valendo.
+- **Departamentos (170):** o usuário não troca o próprio departamento (pede a um admin); o admin usa `PATCH /users/{id}/department`. Com pedido de Inovação pendente, o pedido é decidido antes (409). O cadastro passa a listar todos os departamentos (V14).
+- **Comentários (172):** ver o chamado (Inovação e admins) não dá direito a comentar: só o solicitante e o responsável atual. Na fila, só o solicitante.
+- **Reatribuir (173):** `TicketReassignmentService` separado do `TicketService`; `Ticket.reassign` assume em nome da pessoa (fila) ou só troca o responsável mantendo o `assignedAt`.
+- **Painel de métricas:** documentado no Jira como histórias, sem implementação nesta rodada.
 
 ## 13. Princípios de desenvolvimento
 

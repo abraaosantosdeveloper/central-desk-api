@@ -19,7 +19,7 @@ import java.util.List;
 @Tag(name = "Chamados")
 public interface TicketCatalogApi {
 
-    @Operation(summary = "Lista as categorias de chamado", description = "Ordenadas por nome.",
+    @Operation(summary = "Lista as categorias de chamado", description = "Somente as ativas, ordenadas por nome.",
             security = @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH))
     @ApiResponse(responseCode = "200", description = "Categorias.",
             content = @Content(mediaType = "application/json",

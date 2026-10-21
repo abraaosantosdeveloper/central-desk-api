@@ -8,11 +8,12 @@ import org.springframework.data.jpa.domain.Specification;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 /**
  * Critérios das listagens de chamados. Cada painel tem o seu recorte; os filtros opcionais
- * (status, categoria, prioridade) são somados a ele.
+ * (status, categoria, prioridade, busca e departamento de quem abriu) são somados a ele.
  */
 final class TicketSpecifications {
 
@@ -44,6 +45,17 @@ final class TicketSpecifications {
             }
             if (filter.priorityId() != null) {
                 predicates.add(cb.equal(ticket.get("priority").get("id"), filter.priorityId()));
+            }
+            if (filter.departmentId() != null) {
+                predicates.add(cb.equal(ticket.get("requester").get("department").get("id"), filter.departmentId()));
+            }
+            if (filter.q() != null && !filter.q().isBlank()) {
+                String term = filter.q().trim().toLowerCase(Locale.ROOT);
+                // O número exibido é o início do UUID (#1A2B3C4D)
+                String number = term.startsWith("#") ? term.substring(1) : term;
+                predicates.add(cb.or(
+                        cb.like(cb.lower(ticket.get("title")), "%" + term + "%"),
+                        cb.like(cb.function("text", String.class, ticket.get("id")), number + "%")));
             }
             return cb.and(predicates.toArray(Predicate[]::new));
         };

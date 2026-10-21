@@ -100,7 +100,7 @@ public class TicketService {
     @Transactional
     public TicketResponse open(UUID requesterId, TicketCreateRequest request) {
         User requester = findActiveRequester(requesterId);
-        Category category = findCategory(request.categoryId());
+        Category category = findCategory(request.categoryId(), null);
         Priority priority = findPriority(request.priorityId());
 
         Ticket ticket = new Ticket(request.title().trim(), request.description().trim(), category, priority, requester);
@@ -124,7 +124,7 @@ public class TicketService {
         }
 
         ticket.edit(request.title().trim(), request.description().trim(),
-                findCategory(request.categoryId()), findPriority(request.priorityId()));
+                findCategory(request.categoryId(), ticket.getCategory()), findPriority(request.priorityId()));
         ticketRepository.flush(); // grava agora e atualiza o updated_at
         return TicketResponse.from(ticket);
     }
@@ -145,6 +145,8 @@ public class TicketService {
     public static final int MAX_PAGE_SIZE = 100;
 
     private static final Sort NEWEST_FIRST = Sort.by(Sort.Direction.DESC, "createdAt");
+    // Prioridade 4 (Crítica) primeiro; no empate, quem espera há mais tempo
+    private static final Sort MOST_URGENT_FIRST = Sort.by(Sort.Order.desc("priority.id"), Sort.Order.asc("createdAt"));
 
     /** Painel do colaborador: os chamados que ele abriu. */
     @Transactional(readOnly = true)
@@ -167,15 +169,19 @@ public class TicketService {
         return list(TicketSpecifications.assignedTo(userId), filter, pageable);
     }
 
-    // A ordem é sempre "mais recentes primeiro"; a ordenação pedida pelo cliente é ignorada
+    // A ordem vem de orderBy (padrão: mais recentes primeiro); o "sort" livre do Pageable é ignorado
     private PageResponse<TicketSummaryResponse> list(Specification<Ticket> scope, TicketFilter filter, Pageable pageable) {
-        Pageable page = PageRequest.of(pageable.getPageNumber(), Math.min(pageable.getPageSize(), MAX_PAGE_SIZE), NEWEST_FIRST);
+        Sort order = filter.orderBy() == TicketFilter.TicketOrder.PRIORITY ? MOST_URGENT_FIRST : NEWEST_FIRST;
+        Pageable page = PageRequest.of(pageable.getPageNumber(), Math.min(pageable.getPageSize(), MAX_PAGE_SIZE), order);
         Specification<Ticket> spec = Specification.allOf(scope, TicketSpecifications.matching(filter));
         return PageResponse.from(ticketRepository.findAll(spec, page), TicketSummaryResponse::from);
     }
 
-    private Category findCategory(UUID categoryId) {
-        return categoryRepository.findById(categoryId).orElseThrow(() -> new CategoryNotFoundException(categoryId));
+    // Categoria arquivada não vale para chamados novos; na edição, o chamado pode manter a que já tem
+    private Category findCategory(UUID categoryId, Category current) {
+        return categoryRepository.findById(categoryId)
+                .filter(category -> category.isActive() || category.equals(current))
+                .orElseThrow(() -> new CategoryNotFoundException(categoryId));
     }
 
     private Priority findPriority(Short priorityId) {

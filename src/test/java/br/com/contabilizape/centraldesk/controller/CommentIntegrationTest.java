@@ -84,11 +84,12 @@ class CommentIntegrationTest {
     }
 
     @Test
-    void handlerCanCommentOnAnyTicket() throws Exception {
+    void handlerWhoIsNotTheAssigneeCannotComment() throws Exception {
         UUID ticket = ticket("OPEN", null);
 
+        // SCRUM-172: ver o chamado não basta; só o solicitante e o responsável comentam
         mockMvc.perform(comment(ticket, "Pode mandar uma foto do erro?").cookie(login(HANDLER)))
-                .andExpect(status().isCreated());
+                .andExpect(status().isForbidden());
     }
 
     @Test

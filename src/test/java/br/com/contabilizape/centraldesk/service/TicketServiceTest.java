@@ -126,6 +126,18 @@ class TicketServiceTest {
     }
 
     @Test
+    void archivedCategoryIsRejectedForNewTickets() {
+        User maria = requester(UserStatus.ACTIVE);
+        Category archived = category();
+        archived.archive(java.time.OffsetDateTime.now());
+        when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(maria));
+        when(categoryRepository.findById(CATEGORY_ID)).thenReturn(Optional.of(archived));
+
+        assertThatThrownBy(() -> ticketService.open(REQUESTER_ID, request("Título", CATEGORY_ID, MEDIUM)))
+                .isInstanceOf(CategoryNotFoundException.class);
+    }
+
+    @Test
     void unknownPriorityIsRejected() {
         User maria = requester(UserStatus.ACTIVE);
         when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(maria));
@@ -306,7 +318,7 @@ class TicketServiceTest {
 
     // ---------- listagens ----------
 
-    private static final TicketFilter NO_FILTER = new TicketFilter(null, null, null);
+    private static final TicketFilter NO_FILTER = new TicketFilter(null, null, null, null, null, null);
 
     @Test
     void myTicketsAreSummarizedNewestFirst() {
@@ -518,10 +530,8 @@ class TicketServiceTest {
     }
 
     private static Category category() {
-        Category category = mock(Category.class, withSettings().strictness(Strictness.LENIENT));
-        when(category.getId()).thenReturn(CATEGORY_ID);
-        when(category.getLabel()).thenReturn("Hardware");
-        when(category.getColor()).thenReturn("#EF4444");
+        Category category = new Category("Hardware", "#EF4444");
+        ReflectionTestUtils.setField(category, "id", CATEGORY_ID);
         return category;
     }
 

@@ -2,6 +2,11 @@ package br.com.contabilizape.centraldesk.controller;
 
 import br.com.contabilizape.centraldesk.exception.AccountNotActiveException;
 import br.com.contabilizape.centraldesk.exception.AccountNotDeactivatedException;
+import br.com.contabilizape.centraldesk.exception.CategoryDoesNotExistException;
+import br.com.contabilizape.centraldesk.exception.CommentForbiddenException;
+import br.com.contabilizape.centraldesk.exception.ReassignConflictException;
+import br.com.contabilizape.centraldesk.exception.ReassignForbiddenException;
+import br.com.contabilizape.centraldesk.exception.CategoryLabelTakenException;
 import br.com.contabilizape.centraldesk.exception.CategoryNotFoundException;
 import br.com.contabilizape.centraldesk.exception.CpfAlreadyRegisteredException;
 import br.com.contabilizape.centraldesk.exception.DepartmentNotFoundException;
@@ -56,12 +61,23 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return problem(HttpStatus.BAD_REQUEST, "Dados inválidos", exception.getMessage());
     }
 
+    @ExceptionHandler(CategoryLabelTakenException.class)
+    public ProblemDetail handleCategoryLabelTaken(CategoryLabelTakenException exception) {
+        return problem(HttpStatus.CONFLICT, "Categoria duplicada", exception.getMessage());
+    }
+
+    @ExceptionHandler(CategoryDoesNotExistException.class)
+    public ProblemDetail handleCategoryDoesNotExist(CategoryDoesNotExistException exception) {
+        return problem(HttpStatus.NOT_FOUND, "Categoria não encontrada", exception.getMessage());
+    }
+
     @ExceptionHandler(TicketNotFoundException.class)
     public ProblemDetail handleTicketNotFound(TicketNotFoundException exception) {
         return problem(HttpStatus.NOT_FOUND, "Chamado não encontrado", exception.getMessage());
     }
 
-    @ExceptionHandler({TicketEditForbiddenException.class, SelfAssignmentException.class})
+    @ExceptionHandler({TicketEditForbiddenException.class, SelfAssignmentException.class, CommentForbiddenException.class,
+            ReassignForbiddenException.class})
     public ProblemDetail handleTicketActionForbidden(RuntimeException exception) {
         return problem(HttpStatus.FORBIDDEN, "Acesso negado", exception.getMessage());
     }
@@ -74,6 +90,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(InvalidTicketTransitionException.class)
     public ProblemDetail handleInvalidTicketTransition(InvalidTicketTransitionException exception) {
         return problem(HttpStatus.CONFLICT, "Transição de status inválida", exception.getMessage());
+    }
+
+    @ExceptionHandler(ReassignConflictException.class)
+    public ProblemDetail handleReassignConflict(ReassignConflictException exception) {
+        return problem(HttpStatus.CONFLICT, "Reatribuição não permitida", exception.getMessage());
     }
 
     @ExceptionHandler(TicketNotEditableException.class)

@@ -91,6 +91,21 @@ public class Ticket {
         this.assignedAt = now;
     }
 
+    /**
+     * Passa o chamado para outra pessoa. Na fila, equivale a assumir em nome dela; em atendimento,
+     * só troca o responsável e mantém o assignedAt (o tempo de atendimento conta desde o início).
+     */
+    public void reassign(User newAssignee, OffsetDateTime now) {
+        if (status == TicketStatus.CLOSED) {
+            throw new InvalidTicketTransitionException(status, TicketStatus.IN_PROGRESS);
+        }
+        if (isOpen()) {
+            assign(newAssignee, now);
+        } else {
+            this.assignee = newAssignee;
+        }
+    }
+
     /** Encerra o chamado (OPEN ou IN_PROGRESS → CLOSED). O responsável é mantido: é ele quem será avaliado. */
     public void close(User closedBy, OffsetDateTime now) {
         moveTo(TicketStatus.CLOSED);
