@@ -27,6 +27,7 @@ import java.lang.annotation.Target;
         "app.bootstrap.admin.email=", "app.bootstrap.admin.password=",
         "API_DOCS_ENABLED=false",
         "app.security.jwt.secret=" + IntegrationTest.JWT_SECRET,
+        "app.security.content-encryption-key=" + IntegrationTest.CONTENT_ENCRYPTION_KEY,
         "app.security.cookie.secure=true"
 })
 @AutoConfigureMockMvc
@@ -35,4 +36,7 @@ public @interface IntegrationTest {
 
     /** Chave dos tokens nos testes (base64 de 33 bytes). A real fica só no .env (JWT_SECRET). */
     String JWT_SECRET = "Y2VudHJhbGRlc2stdGVzdC1zZWNyZXQtMzItYnl0ZXMh";
+
+    /** Chave dos comentários nos testes (base64 de 32 bytes). A real fica só no .env (CONTENT_ENCRYPTION_KEY). */
+    String CONTENT_ENCRYPTION_KEY = "Y2hhdmUtZGUtdGVzdGUtZG9zLWNvbWVudGFyaW9zISE=";
 }

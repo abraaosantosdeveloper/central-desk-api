@@ -97,6 +97,8 @@ O Maven não precisa ser instalado: o projeto usa o Maven Wrapper (`mvnw`).
 
    No Linux, macOS ou WSL: `openssl rand -base64 32`.
 
+   Rode o mesmo comando de novo e coloque o resultado como `CONTENT_ENCRYPTION_KEY=<valor>`: é a chave que cifra os comentários dos chamados (AES-256-GCM). Ela fica **só** no `.env` (em produção, nas variáveis de ambiente do servidor), nunca no banco. Sem ela a aplicação não sobe, e **se ela for perdida os comentários já gravados não podem mais ser lidos**: guarde uma cópia num cofre de senhas.
+
 4. Inicie o back-end, na raiz do projeto:
 
    ```powershell

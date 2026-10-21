@@ -23,11 +23,12 @@ import br.com.contabilizape.centraldesk.repository.CategoryRepository;
 import br.com.contabilizape.centraldesk.repository.PriorityRepository;
 import br.com.contabilizape.centraldesk.repository.TicketRepository;
 import br.com.contabilizape.centraldesk.repository.UserRepository;
-import br.com.contabilizape.centraldesk.security.Roles;
+import br.com.contabilizape.centraldesk.realtime.TicketCreatedEvent;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,17 +44,20 @@ public class TicketService {
     private final UserRepository userRepository;
     private final CategoryRepository categoryRepository;
     private final PriorityRepository priorityRepository;
+    private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
 
     public TicketService(TicketRepository ticketRepository,
                          UserRepository userRepository,
                          CategoryRepository categoryRepository,
                          PriorityRepository priorityRepository,
+                         ApplicationEventPublisher eventPublisher,
                          Clock clock) {
         this.ticketRepository = ticketRepository;
         this.userRepository = userRepository;
         this.categoryRepository = categoryRepository;
         this.priorityRepository = priorityRepository;
+        this.eventPublisher = eventPublisher;
         this.clock = clock;
     }
 
@@ -65,7 +69,7 @@ public class TicketService {
     public TicketResponse close(UUID ticketId, UUID userId, List<String> roles) {
         User closer = findActiveRequester(userId);
         Ticket ticket = ticketRepository.findByIdForUpdate(ticketId)
-                .filter(found -> canView(found, userId, roles))
+                .filter(found -> TicketAccess.canView(found, userId, roles))
                 .orElseThrow(() -> new TicketNotFoundException(ticketId));
         ticket.close(closer, OffsetDateTime.now(clock));
         ticketRepository.flush(); // grava agora e atualiza o updated_at
@@ -101,6 +105,7 @@ public class TicketService {
 
         Ticket ticket = new Ticket(request.title().trim(), request.description().trim(), category, priority, requester);
         ticketRepository.saveAndFlush(ticket); // flush preenche o createdAt antes de montar a resposta
+        eventPublisher.publishEvent(new TicketCreatedEvent(TicketSummaryResponse.from(ticket)));
         return TicketResponse.from(ticket);
     }
 
@@ -132,7 +137,7 @@ public class TicketService {
     public TicketResponse findById(UUID ticketId, UUID userId, List<String> roles) {
         findActiveRequester(userId);
         Ticket ticket = ticketRepository.findById(ticketId)
-                .filter(found -> canView(found, userId, roles))
+                .filter(found -> TicketAccess.canView(found, userId, roles))
                 .orElseThrow(() -> new TicketNotFoundException(ticketId));
         return TicketResponse.from(ticket);
     }
@@ -167,12 +172,6 @@ public class TicketService {
         Pageable page = PageRequest.of(pageable.getPageNumber(), Math.min(pageable.getPageSize(), MAX_PAGE_SIZE), NEWEST_FIRST);
         Specification<Ticket> spec = Specification.allOf(scope, TicketSpecifications.matching(filter));
         return PageResponse.from(ticketRepository.findAll(spec, page), TicketSummaryResponse::from);
-    }
-
-    private static boolean canView(Ticket ticket, UUID userId, List<String> roles) {
-        return ticket.getRequester().getId().equals(userId)
-                || roles.contains(Roles.TICKET_HANDLER)
-                || roles.contains(Roles.ADMIN);
     }
 
     private Category findCategory(UUID categoryId) {

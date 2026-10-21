@@ -201,6 +201,25 @@ class ApiDocsIntegrationTest {
     }
 
     @Test
+    void documentsCommentsAndRealtimeStream() throws Exception {
+        String create = "$.paths['/tickets/{ticketId}/comments'].post";
+        String list = "$.paths['/tickets/{ticketId}/comments'].get";
+        String stream = "$.paths['/events/stream'].get";
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(create + ".responses['201']").exists())
+                .andExpect(jsonPath(create + ".responses['400']").exists())
+                .andExpect(jsonPath(create + ".responses['401']").exists())
+                .andExpect(jsonPath(create + ".responses['404'].content['" + PROBLEM_JSON + "']").exists())
+                .andExpect(jsonPath(create + ".responses['409'].content['" + PROBLEM_JSON + "']").exists())
+                .andExpect(jsonPath(list + ".responses['200']").exists())
+                .andExpect(jsonPath(list + ".responses['404']").exists())
+                .andExpect(jsonPath(stream + ".responses['200'].content['text/event-stream']").exists())
+                .andExpect(jsonPath(stream + ".responses['401']").exists())
+                .andExpect(jsonPath(stream + ".security[0].cookieAuth").isArray());
+    }
+
+    @Test
     void passwordIsWriteOnlyAndNeverPartOfTheResponse() throws Exception {
         mockMvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk())

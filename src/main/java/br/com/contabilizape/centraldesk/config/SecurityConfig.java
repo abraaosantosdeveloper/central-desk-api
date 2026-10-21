@@ -3,6 +3,7 @@ package br.com.contabilizape.centraldesk.config;
 import br.com.contabilizape.centraldesk.security.CookieBearerTokenResolver;
 import br.com.contabilizape.centraldesk.security.Roles;
 import br.com.contabilizape.centraldesk.security.TokenService;
+import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -50,6 +51,8 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
+                // Fim de uma resposta assíncrona (stream SSE): a requisição original já foi autorizada
+                .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                 .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                 .requestMatchers(PATHS.matcher(HttpMethod.PATCH, "/users/*/anonymize")).hasAuthority(Roles.ADMIN)
                 .requestMatchers(PATHS.matcher(HttpMethod.GET, "/tickets/queue"), PATHS.matcher(HttpMethod.GET, "/tickets/assigned"))

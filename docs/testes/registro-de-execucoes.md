@@ -334,3 +334,16 @@ Modelo de entrada:
 
 - **Comando:** `.mvnw clean test` (Docker ligado)
 - **Resultado:** 301 testes, 0 falhas, 0 erros. ✅
+
+### Mudanças entre a execução 20 e a 21
+
+- Comentários com criptografia e stream SSE (SCRUM-164): `POST`/`GET /tickets/{id}/comments`, `GET /events/stream`; `ContentCipher` (AES-256-GCM, chave em `CONTENT_ENCRYPTION_KEY`), `EncryptedStringConverter`, `Comment`, `CommentService`, `SseEmitterRegistry`, `RealtimeEventListener`, eventos `comment.created` e `ticket.created`; `TicketAccess` extraído do `TicketService`.
+- `IntegrationTest` ganhou uma chave de comentários própria (`CONTENT_ENCRYPTION_KEY`), para não depender do `.env`.
+- Novos testes (31): `ContentCipherTest` (11), `CommentServiceTest` (7), `CommentIntegrationTest` (8), `RealtimeIntegrationTest` (4), `ApiDocsIntegrationTest` (+1); `TicketServiceTest` passou a conferir o evento de chamado novo.
+
+## Execução 21 — 2026-10-21 — suíte completa (SCRUM-164)
+
+- **Comando:** `.\mvnw clean test` (Docker ligado)
+- **Antes (TDD):** a execução direcionada falhou pelo motivo esperado (`UnsupportedOperationException` nos stubs da cifra, do service e do stream).
+- **Primeira execução completa:** 332 testes, 1 falha — `ApiDocsIntegrationTest.documentsCommentsAndRealtimeStream` procurava `/tickets/{id}/comments`, mas a rota é documentada como `/tickets/{ticketId}/comments`. **Correção:** o teste passou a usar o nome real da variável.
+- **Resultado:** 332 testes, 0 falhas, 0 erros. ✅

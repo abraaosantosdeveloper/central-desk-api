@@ -222,7 +222,7 @@ Os UUIDs são fixos porque a aplicação os referencia por configuração: assim
 - Valores cadastráveis (categorias, departamentos): tabela própria com FK.
 - **Soft delete**: usuários não são apagados; são desativados e depois anonimizados, para preservar o histórico dos chamados. Por isso as FKs não usam `ON DELETE CASCADE`. **Exceção:** notificações não têm valor histórico e são apagadas fisicamente na anonimização.
 - Índices em todas as FKs usadas em consultas frequentes, além de `(assignee_id, status)` em tickets, `(ticket_id, created_at)` em comments e `(status, created_at)` em department_requests.
-- **Criptografia em repouso com AES-GCM**: comentários e descrições dos chamados ficam cifrados no banco, com a chave no servidor (variável `CONTENT_ENCRYPTION_KEY`), além do HTTPS. O comentário da avaliação (`ticket_ratings.comment`) segue a mesma regra. Consequência aceita: não há busca no conteúdo cifrado. Ainda não implementado (ADR no Jira: SCRUM-52).
+- **Criptografia em repouso com AES-256-GCM, só nos comentários** (decisão de 21/10): o conteúdo de `comments.content` é gravado cifrado; o banco nunca guarda o texto. A chave fica **apenas** na variável de ambiente `CONTENT_ENCRYPTION_KEY` (base64 de 32 bytes), nunca no banco: quem acessar só o banco (dump, backup, pgAdmin) vê apenas a cifra. Descrições dos chamados e comentários das avaliações **não** são cifrados (não são considerados sensíveis; os comentários são cifrados por serem a conversa entre solicitante e atendente). Formato: `v1:` + base64(IV de 12 bytes aleatório por mensagem + cifra + tag de 16 bytes); o prefixo de versão permite trocar a chave no futuro. Consequência aceita: não há busca no conteúdo dos comentários. **Implementado** na SCRUM-164 (ADR no Jira: SCRUM-52).
 
 ### Diagramas
 
@@ -340,7 +340,7 @@ Ninguém é notificado de uma ação que ele mesmo fez (o `actor` nunca é o des
 
 ### Infraestrutura
 
-- **Atualizações em tempo real na interface via SSE** (Server-Sent Events), e não WebSocket: o fluxo é só do servidor para o cliente, com um stream único por usuário. Limite conhecido: funciona com uma única instância da aplicação; pub/sub entre instâncias fica como trabalho futuro (ADR no Jira: SCRUM-51). O painel pode começar consultando a API e ganhar o SSE depois.
+- **Atualizações em tempo real na interface via SSE** (Server-Sent Events), e não WebSocket: o fluxo é só do servidor para o cliente, com um stream único por usuário (`GET /events/stream`), que leva **qualquer evento** do usuário (comentário novo, chamado novo e, depois, os demais). Limite conhecido: funciona com uma única instância da aplicação; pub/sub entre instâncias fica como trabalho futuro (ADR no Jira: SCRUM-51). O painel pode começar consultando a API e ganhar o SSE depois.
 - Canais no MVP: **painel na interface primeiro**; e-mail depois, aproveitando os mesmos eventos (SCRUM-44).
 - E-mail: previsto com `spring-boot-starter-mail` (`JavaMailSender`) via SMTP — Resend com domínio próprio para testes, Mailpit no Docker para desenvolvimento, e SMTP da empresa (`@contabilizape.com.br`) como alvo de produção. Ainda não implementado.
 - Disparadas por **eventos do Spring** (`ApplicationEventPublisher`), ouvidos com `@TransactionalEventListener(phase = AFTER_COMMIT)`: o ouvinte só roda depois que a transação foi gravada, e uma falha no envio não desfaz a operação.
@@ -442,6 +442,9 @@ Ninguém é notificado de uma ação que ele mesmo fez (o `actor` nunca é o des
 | GET | `/priorities` | prioridades, da menos à mais urgente (logado) | **implementado** |
 | PATCH | `/tickets/{id}/assign` | assumir chamado: `OPEN` → `IN_PROGRESS`, responsável = usuário logado; só `TICKET_HANDLER` e admin (403 / 404 / 409) (SCRUM-162) | **implementado** |
 | PATCH | `/tickets/{id}/close` | encerrar chamado: `OPEN`/`IN_PROGRESS` → `CLOSED`, preenche `closed_by_id`/`closed_at`; solicitante, `TICKET_HANDLER` e admin; demais → 404; já encerrado → 409; sem corpo (SCRUM-163) | **implementado** |
+| POST | `/tickets/{id}/comments` | comentar: quem vê o chamado; conteúdo gravado cifrado; `CLOSED` → 409; dispara `comment.created` no SSE (SCRUM-164) | **implementado** |
+| GET | `/tickets/{id}/comments` | conversa do chamado, do mais antigo para o mais novo, já decifrada; funciona com o chamado encerrado (SCRUM-164) | **implementado** |
+| GET | `/events/stream` | stream SSE do usuário logado (`text/event-stream`): eventos `connected`, `comment.created` e `ticket.created` (SCRUM-164) | **implementado** |
 | POST | `/tickets/{id}/rating` | avaliar o atendimento: só o solicitante, chamado `CLOSED` com responsável, uma vez (201 / 403 / 404 / 409) | previsto |
 | GET | `/notifications` | notificações do usuário logado, mais recentes primeiro, paginadas; filtros opcionais `category` e `unread` | previsto |
 | GET | `/notifications/unread-count` | contador de não lidas (para o ícone do painel) | previsto |
@@ -508,17 +511,19 @@ src/main/java/br/com/contabilizape/centraldesk/
 │                    TicketNotEditableException
 ├── bootstrap/       AdminBootstrap (cria o primeiro admin), BootstrapAdminProperties (ADMIN_*)
 ├── model/           User, UserStatus, Department, Admin, DepartmentRequest, DepartmentRequestStatus,
-│                    RefreshToken, Ticket, TicketStatus,
+│                    RefreshToken, Ticket, TicketStatus, Comment, EncryptedStringConverter,
 │                    Category, Priority
 ├── notification/    DepartmentRequestCreatedEvent, DepartmentRequestNotificationListener
+├── realtime/        SseEmitterRegistry (streams SSE em memória), RealtimeEventListener (AFTER_COMMIT → SSE),
+│                    CommentCreatedEvent, TicketCreatedEvent
 ├── repository/      UserRepository, AdminRepository, DepartmentRepository, DepartmentRequestRepository,
-│                    RefreshTokenRepository, TicketRepository, CategoryRepository, PriorityRepository,
+│                    RefreshTokenRepository, TicketRepository, CategoryRepository, PriorityRepository, CommentRepository,
 │                    NotificationCleanupRepository (JdbcTemplate, provisório até a SCRUM-152)
 ├── security/        JwtConfig + JwtProperties (chave, encoder, decoder), TokenService, AccessTokenCookie,
-│                    RefreshTokenCookie, CookieBearerTokenResolver, Roles
+│                    RefreshTokenCookie, CookieBearerTokenResolver, Roles, ContentCipher + ContentEncryptionConfig (AES-256-GCM)
 ├── service/         UserService, DepartmentService, AuthService (+ AuthenticatedSession, Emails),
 │                    RefreshTokenService (+ RotatedRefreshToken), TicketService (+ TicketSpecifications), TicketCatalogService,
-│                    AccountAnonymizationService
+│                    AccountAnonymizationService, CommentService, TicketAccess (quem vê o chamado)
 └── validation/      @Cpf + CpfValidator, @CorporateEmail + CorporateEmailValidator, @StrongPassword (regras de senha)
 ```
 
@@ -542,8 +547,10 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 ├── controller/TicketListIntegrationTest       /tickets/mine, /queue e /assigned: ordem, paginação, filtros, 400, 401, 403 (10)
 ├── controller/TicketAssignIntegrationTest     PATCH /tickets/{id}/assign: handler, admin, fila→atribuídos, próprio chamado, 409, 403, 404, 401 (9)
 ├── controller/TicketCloseIntegrationTest      PATCH /tickets/{id}/close: handler, solicitante, admin, outro → 404, 409, corpo ignorado, 401 (8)
+├── controller/CommentIntegrationTest          comentários: cifra no banco, ordem, handler, 404, 409 com histórico, 400, 401 (8)
+├── controller/RealtimeIntegrationTest         /events/stream: text/event-stream, 401, comment.created e ticket.created só para quem deve (4)
 ├── controller/AccountAnonymizationIntegrationTest  DELETE /users/me e PATCH /users/{id}/anonymize (10)
-├── docs/ApiDocsIntegrationTest                OpenAPI e Swagger UI ligados (15 casos)
+├── docs/ApiDocsIntegrationTest                OpenAPI e Swagger UI ligados (16 casos)
 ├── docs/ApiDocsDisabledIntegrationTest        sem API_DOCS_ENABLED: 404 (2 casos)
 ├── dto/UserCreateRequestValidationTest        regras do DTO (Bean Validation)
 ├── dto/PasswordChangeRequestValidationTest    senha atual obrigatória e  na nova (6)
@@ -553,7 +560,9 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 ├── service/AuthServiceTest                    login, permissões, renovação, logout e troca de senha (Mockito, 16 casos)
 ├── service/RefreshTokenServiceTest            emissão, hash, rotação, reuso, revogação, revogar todas (Mockito, 11)
 ├── service/TicketServiceTest                  abertura, detalhes, edição, listagens, assumir e encerrar (Mockito, 30)
+├── service/CommentServiceTest                 comentar, evento aos participantes, encerrado, 404, conta desativada, leitura (7)
 ├── model/TicketTest                           máquina de estados: transições, assumir, devolver à fila, encerrar (17)
+├── security/ContentCipherTest                 AES-256-GCM: ida e volta, IV aleatório, adulteração, outra chave, versão, chave inválida (11)
 ├── security/JwtConfigTest                     tamanho e formato da chave (3)
 ├── security/TokenServiceTest                  claims, validade, chave e emissor errados (5)
 ├── security/CookieBearerTokenResolverTest     leitura do cookie e rotas públicas (5)
@@ -640,6 +649,7 @@ Requisitos complementares (README): RF08 categorização, RF09 urgência, RF10 s
 **Implementação da RF06 (SCRUM-162, 20/10):** `PATCH /tickets/{id}/assign`, sem corpo, só `TICKET_HANDLER` e admin (regra de rota). **Máquina de estados:** as transições permitidas ficam em `TicketStatus.canTransitionTo` (`OPEN → IN_PROGRESS | CLOSED`, `IN_PROGRESS → OPEN | CLOSED`, `CLOSED` é final) e o único ponto que altera o status é `Ticket.moveTo`, usado por `assign` e `returnToQueue` (e, na SCRUM-163, por `close`); transição inválida → `InvalidTicketTransitionException` → 409 "Transição de status inválida". Para dois atendentes não assumirem o mesmo chamado, o service lê com `findByIdForUpdate` (`PESSIMISTIC_WRITE`, `SELECT ... FOR UPDATE`): o segundo espera, encontra `IN_PROGRESS` e recebe 409. O `TicketService` passou a receber o `Clock` (preenche `assigned_at`).
 **Implementação da RF07 (SCRUM-163, 21/10):** `PATCH /tickets/{id}/close`, sem corpo (a avaliação é outro endpoint, `POST /tickets/{id}/rating`). Podem encerrar as mesmas pessoas que veem o chamado (`TicketService.canView`: solicitante, `TICKET_HANDLER`, admin); para os demais, 404. `Ticket.close` passa por `moveTo` (`OPEN`/`IN_PROGRESS` → `CLOSED`), preenche `closed_by_id` e `closed_at` e **mantém o responsável**, que é quem será avaliado. Já encerrado → 409. Também usa `findByIdForUpdate`.
 **Regra de 21/10 (SCRUM-162):** quem abriu o chamado **não pode assumi-lo** (`SelfAssignmentException` → 403 "Acesso negado"), mesmo sendo da Inovação ou admin. Assim o atendimento é sempre de outra pessoa e a avaliação (V11, `rater_id <> rated_id`) nunca cai nesse caso. Encerrar o próprio chamado continua permitido.
+**Implementação da RF13 (SCRUM-164, 21/10):** `POST` e `GET /tickets/{id}/comments` no `CommentController`; podem comentar e ler as mesmas pessoas que veem o chamado (`TicketAccess.canView`, agora compartilhado com o `TicketService`); chamado `CLOSED` → 409 "Chamado encerrado" na criação (a leitura continua). **Criptografia:** `Comment.content` usa `@Convert(EncryptedStringConverter)`, ponto único que chama o `ContentCipher` (bean criado pelo `ContentEncryptionConfig` a partir de `app.security.content-encryption-key`); a aplicação não sobe sem chave válida. **Tempo real:** `GET /events/stream` devolve um `SseEmitter` registrado no `SseEmitterRegistry` (em memória, com o id e as permissões do token; tempo limite `app.realtime.sse-timeout`, 30 min, e o navegador reconecta sozinho). O `CommentService` publica `CommentCreatedEvent` (solicitante, responsável e autor) e o `TicketService.open` publica `TicketCreatedEvent` (Inovação e admins conectados, com o resumo, sem a descrição); o `RealtimeEventListener` os entrega com `@TransactionalEventListener` (depois do commit). Despachos `ASYNC` liberados no `SecurityConfig` (fim do stream; a requisição original já foi autorizada).
 
 **Notificações e avaliações (incluídas em 20/10), em fatias que acompanham o roteiro:**
 
@@ -666,7 +676,8 @@ Requisitos complementares (README): RF08 categorização, RF09 urgência, RF10 s
 - [ ] Decidir com o coordenador quem vê as avaliações e se haverá prazo para avaliar.
 - [ ] Limpeza periódica de notificações lidas há mais de N dias (junto da limpeza de `refresh_tokens`).
 - [ ] Definir o significado de `validated_at` (hoje nasce nulo).
-- [ ] Criptografia em repouso (AES-GCM) de comentários, descrições e comentários das avaliações.
+- [x] Criptografia em repouso (AES-256-GCM) dos comentários (SCRUM-164). Descrições e avaliações ficam fora, por decisão de 21/10.
+- [ ] SSE: heartbeat periódico (proxies, inclusive o do Railway, podem derrubar conexões ociosas) e pub/sub para mais de uma instância.
 - [x] Swagger (springdoc), documentando também o formato de erro `ProblemDetail` (SCRUM-122).
 - [ ] Avisos da execução 3 dos testes: desligar `spring.jpa.open-in-view`; configurar o Mockito como agente do Surefire (ver `docs/testes/registro-de-execucoes.md`).
 - [ ] Decidir se haverá status separado entre *Concluído* (técnico resolveu) e *Encerrado* (solicitante confirmou). Se sim: novo status `RESOLVED` e coluna `resolved_at`. **Adiado em 20/10**: a avaliação foi desenhada sobre `CLOSED`.

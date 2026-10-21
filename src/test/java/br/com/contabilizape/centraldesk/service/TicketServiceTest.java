@@ -21,6 +21,7 @@ import br.com.contabilizape.centraldesk.model.Priority;
 import br.com.contabilizape.centraldesk.model.Ticket;
 import br.com.contabilizape.centraldesk.model.TicketStatus;
 import br.com.contabilizape.centraldesk.model.User;
+import br.com.contabilizape.centraldesk.realtime.TicketCreatedEvent;
 import br.com.contabilizape.centraldesk.model.UserStatus;
 import br.com.contabilizape.centraldesk.repository.CategoryRepository;
 import br.com.contabilizape.centraldesk.repository.PriorityRepository;
@@ -33,6 +34,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.mockito.quality.Strictness;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -70,6 +72,7 @@ class TicketServiceTest {
     @Mock private UserRepository userRepository;
     @Mock private CategoryRepository categoryRepository;
     @Mock private PriorityRepository priorityRepository;
+    @Mock private ApplicationEventPublisher eventPublisher;
 
     private TicketService ticketService;
 
@@ -80,7 +83,7 @@ class TicketServiceTest {
     @BeforeEach
     void setUp() {
         ticketService = new TicketService(ticketRepository, userRepository, categoryRepository, priorityRepository,
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                eventPublisher, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     @Test
@@ -104,6 +107,11 @@ class TicketServiceTest {
         assertThat(response.category().label()).isEqualTo("Hardware");
         assertThat(response.priority().label()).isEqualTo("Média");
         assertThat(response.assigneeId()).isNull();
+
+        // A Inovação e os admins conectados ficam sabendo na hora (SSE, depois do commit)
+        ArgumentCaptor<TicketCreatedEvent> event = ArgumentCaptor.forClass(TicketCreatedEvent.class);
+        verify(eventPublisher).publishEvent(event.capture());
+        assertThat(event.getValue().ticket().title()).isEqualTo("Impressora parada");
     }
 
     @Test

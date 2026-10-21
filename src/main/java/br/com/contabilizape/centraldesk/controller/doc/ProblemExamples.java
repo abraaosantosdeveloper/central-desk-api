@@ -128,6 +128,15 @@ public final class ProblemExamples {
               "instance": "/tickets/0f8b2c1e-6d3a-4f5e-9b7c-1a2b3c4d5e6f/assign"
             }""";
 
+    public static final String TICKET_CLOSED_FOR_COMMENTS = """
+            {
+              "type": "about:blank",
+              "title": "Chamado encerrado",
+              "status": 409,
+              "detail": "O chamado está encerrado e não recebe novos comentários.",
+              "instance": "/tickets/0f8b2c1e-6d3a-4f5e-9b7c-1a2b3c4d5e6f/comments"
+            }""";
+
     public static final String SELF_ASSIGNMENT = """
             {
               "type": "about:blank",
