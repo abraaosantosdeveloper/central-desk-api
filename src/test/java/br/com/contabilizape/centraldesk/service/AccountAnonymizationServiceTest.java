@@ -62,8 +62,11 @@ class AccountAnonymizationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AccountAnonymizationService(userRepository, adminRepository, ticketRepository,
-                notificationCleanup, refreshTokenService, passwordEncoder, Clock.fixed(NOW, ZoneOffset.UTC));
+        // A parte compartilhada com a desativação é real; as dependências dela são os mocks acima
+        AccountOffboarding offboarding = new AccountOffboarding(userRepository, adminRepository, ticketRepository,
+                refreshTokenService);
+        service = new AccountAnonymizationService(userRepository, adminRepository, notificationCleanup, offboarding,
+                passwordEncoder, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     // ---------- pelo próprio usuário (DELETE /users/me) ----------

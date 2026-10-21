@@ -128,6 +128,24 @@ public final class ProblemExamples {
               "instance": "/tickets/0f8b2c1e-6d3a-4f5e-9b7c-1a2b3c4d5e6f/assign"
             }""";
 
+    public static final String SELF_DEACTIVATION = """
+            {
+              "type": "about:blank",
+              "title": "Operação não permitida",
+              "status": 409,
+              "detail": "Você não pode desativar a sua própria conta.",
+              "instance": "/users/0f8b2c1e-6d3a-4f5e-9b7c-1a2b3c4d5e6f/deactivate"
+            }""";
+
+    public static final String DEPARTMENT_REQUEST_ALREADY_REVIEWED = """
+            {
+              "type": "about:blank",
+              "title": "Operação não permitida",
+              "status": 409,
+              "detail": "Este pedido já foi analisado.",
+              "instance": "/department-requests/0f8b2c1e-6d3a-4f5e-9b7c-1a2b3c4d5e6f/approve"
+            }""";
+
     public static final String TICKET_CLOSED_FOR_COMMENTS = """
             {
               "type": "about:blank",

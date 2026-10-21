@@ -54,7 +54,12 @@ public class SecurityConfig {
                 // Fim de uma resposta assíncrona (stream SSE): a requisição original já foi autorizada
                 .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                 .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
-                .requestMatchers(PATHS.matcher(HttpMethod.PATCH, "/users/*/anonymize")).hasAuthority(Roles.ADMIN)
+                // O próprio perfil vale para qualquer usuário logado; precisa vir antes da regra de /users/**
+                .requestMatchers(PATHS.matcher("/users/me"), PATHS.matcher("/users/me/**")).authenticated()
+                // Painel do administrador: contas (inclui anonimizar) e pedidos de departamento
+                .requestMatchers(PATHS.matcher("/users"), PATHS.matcher("/users/**"),
+                        PATHS.matcher("/department-requests"), PATHS.matcher("/department-requests/**"))
+                    .hasAuthority(Roles.ADMIN)
                 .requestMatchers(PATHS.matcher(HttpMethod.GET, "/tickets/queue"), PATHS.matcher(HttpMethod.GET, "/tickets/assigned"))
                     .hasAnyAuthority(Roles.TICKET_HANDLER, Roles.ADMIN)
                 .requestMatchers(PATHS.matcher(HttpMethod.PATCH, "/tickets/*/assign")).hasAnyAuthority(Roles.TICKET_HANDLER, Roles.ADMIN)

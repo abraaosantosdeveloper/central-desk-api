@@ -347,3 +347,15 @@ Modelo de entrada:
 - **Antes (TDD):** a execução direcionada falhou pelo motivo esperado (`UnsupportedOperationException` nos stubs da cifra, do service e do stream).
 - **Primeira execução completa:** 332 testes, 1 falha — `ApiDocsIntegrationTest.documentsCommentsAndRealtimeStream` procurava `/tickets/{id}/comments`, mas a rota é documentada como `/tickets/{ticketId}/comments`. **Correção:** o teste passou a usar o nome real da variável.
 - **Resultado:** 332 testes, 0 falhas, 0 erros. ✅
+
+### Mudanças entre a execução 21 e a 22
+
+- Painel do administrador (SCRUM-165): `GET /users`, `GET /users/{id}`, `PATCH /users/{id}/deactivate` e `/reactivate`, `GET /department-requests`, `PATCH /department-requests/{id}/approve` e `/reject`; `User.deactivate`/`reactivate`/`moveTo`; `DepartmentRequest.approve`/`reject`; `AccountOffboarding` extraído da anonimização (sessões, fila e último admin).
+- Regras de rota: `/users/me` e `/users/me/**` liberados a qualquer usuário logado antes de `/users/**` e `/department-requests/**`, que são só `ROLE_ADMIN`.
+- Novos testes (34): `UserTest` (5), `DepartmentRequestTest` (3), `UserAdministrationServiceTest` (9), `DepartmentRequestServiceTest` (6), `AdminAccountsIntegrationTest` (10), `ApiDocsIntegrationTest` (+1). `AccountAnonymizationServiceTest` passou a montar o `AccountOffboarding` real com os mesmos mocks (sem mudar as verificações).
+
+## Execução 22 — 2026-10-21 — suíte completa (SCRUM-165)
+
+- **Comando:** `.\mvnw clean test` (Docker ligado)
+- **Antes (TDD):** a execução direcionada falhou pelo motivo esperado (`UnsupportedOperationException` nos stubs dos dois services; 8 dos 10 testes de integração). Os testes de domínio e a anonimização refatorada já passaram nessa rodada.
+- **Resultado:** 366 testes, 0 falhas, 0 erros. ✅

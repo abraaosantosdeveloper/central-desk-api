@@ -1,5 +1,6 @@
 package br.com.contabilizape.centraldesk.model;
 
+import br.com.contabilizape.centraldesk.exception.DepartmentRequestAlreadyReviewedException;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -47,6 +48,27 @@ public class DepartmentRequest {
     public DepartmentRequest(User user, Department department) {
         this.user = user;
         this.department = department;
+    }
+
+    /** O admin aprova: quem pediu passa para o departamento pedido. */
+    public void approve(User reviewer, OffsetDateTime now) {
+        review(DepartmentRequestStatus.APPROVED, reviewer, now);
+        user.moveTo(department);
+    }
+
+    /** O admin recusa: quem pediu continua onde está (no Geral) e pode pedir de novo. */
+    public void reject(User reviewer, OffsetDateTime now) {
+        review(DepartmentRequestStatus.REJECTED, reviewer, now);
+    }
+
+    // A decisão é única; a V9 também exige revisor e data em todo pedido que não está pendente
+    private void review(DepartmentRequestStatus decision, User reviewer, OffsetDateTime now) {
+        if (status != DepartmentRequestStatus.PENDING) {
+            throw new DepartmentRequestAlreadyReviewedException();
+        }
+        this.status = decision;
+        this.reviewedBy = reviewer;
+        this.reviewedAt = now;
     }
 
     public UUID getId() { return id; }

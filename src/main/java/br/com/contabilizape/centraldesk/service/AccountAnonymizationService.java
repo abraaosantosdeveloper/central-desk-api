@@ -3,16 +3,12 @@ package br.com.contabilizape.centraldesk.service;
 import br.com.contabilizape.centraldesk.exception.AccountNotActiveException;
 import br.com.contabilizape.centraldesk.exception.AccountNotDeactivatedException;
 import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
-import br.com.contabilizape.centraldesk.exception.LastAdminException;
 import br.com.contabilizape.centraldesk.exception.PasswordConfirmationMismatchException;
 import br.com.contabilizape.centraldesk.exception.UserNotFoundException;
-import br.com.contabilizape.centraldesk.model.Ticket;
-import br.com.contabilizape.centraldesk.model.TicketStatus;
 import br.com.contabilizape.centraldesk.model.User;
 import br.com.contabilizape.centraldesk.model.UserStatus;
 import br.com.contabilizape.centraldesk.repository.AdminRepository;
 import br.com.contabilizape.centraldesk.repository.NotificationCleanupRepository;
-import br.com.contabilizape.centraldesk.repository.TicketRepository;
 import br.com.contabilizape.centraldesk.repository.UserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -32,20 +28,18 @@ public class AccountAnonymizationService {
 
     private final UserRepository userRepository;
     private final AdminRepository adminRepository;
-    private final TicketRepository ticketRepository;
     private final NotificationCleanupRepository notificationCleanup;
-    private final RefreshTokenService refreshTokenService;
+    private final AccountOffboarding offboarding;
     private final PasswordEncoder passwordEncoder;
     private final Clock clock;
 
     public AccountAnonymizationService(UserRepository userRepository, AdminRepository adminRepository,
-                                       TicketRepository ticketRepository, NotificationCleanupRepository notificationCleanup,
-                                       RefreshTokenService refreshTokenService, PasswordEncoder passwordEncoder, Clock clock) {
+                                       NotificationCleanupRepository notificationCleanup, AccountOffboarding offboarding,
+                                       PasswordEncoder passwordEncoder, Clock clock) {
         this.userRepository = userRepository;
         this.adminRepository = adminRepository;
-        this.ticketRepository = ticketRepository;
         this.notificationCleanup = notificationCleanup;
-        this.refreshTokenService = refreshTokenService;
+        this.offboarding = offboarding;
         this.passwordEncoder = passwordEncoder;
         this.clock = clock;
     }
@@ -75,26 +69,15 @@ public class AccountAnonymizationService {
 
     private void anonymize(User user) {
         UUID userId = user.getId();
-        removeAdminRecord(userId);
+        offboarding.ensureNotLastActiveAdmin(userId);
+        if (adminRepository.existsById(userId)) {
+            adminRepository.deleteById(userId);
+        }
 
         // Hash de um valor aleatório e descartado: ninguém mais entra com esta conta
         user.anonymize(passwordEncoder.encode(UUID.randomUUID().toString()), OffsetDateTime.now(clock));
 
-        refreshTokenService.revokeAll(userId);
-        ticketRepository.findByAssigneeIdAndStatus(userId, TicketStatus.IN_PROGRESS)
-                .forEach(Ticket::returnToQueue);
+        offboarding.release(userId);
         notificationCleanup.deleteByRecipientId(userId);
-    }
-
-    private void removeAdminRecord(UUID userId) {
-        if (!adminRepository.existsById(userId)) {
-            return;
-        }
-        boolean anotherActiveAdmin = userRepository.findAdminsByStatus(UserStatus.ACTIVE).stream()
-                .anyMatch(admin -> !admin.getId().equals(userId));
-        if (!anotherActiveAdmin) {
-            throw new LastAdminException();
-        }
-        adminRepository.deleteById(userId);
     }
 }

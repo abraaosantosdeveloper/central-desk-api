@@ -220,6 +220,26 @@ class ApiDocsIntegrationTest {
     }
 
     @Test
+    void documentsTheAdminPanel() throws Exception {
+        var docs = mockMvc.perform(get("/v3/api-docs")).andExpect(status().isOk());
+        String[] operations = {
+                "$.paths['/users'].get", "$.paths['/users/{id}'].get",
+                "$.paths['/users/{id}/deactivate'].patch", "$.paths['/users/{id}/reactivate'].patch",
+                "$.paths['/department-requests'].get",
+                "$.paths['/department-requests/{id}/approve'].patch", "$.paths['/department-requests/{id}/reject'].patch"
+        };
+        for (String operation : operations) {
+            docs.andExpect(jsonPath(operation + ".responses['200']").exists())
+                    .andExpect(jsonPath(operation + ".responses['401']").exists())
+                    .andExpect(jsonPath(operation + ".responses['403']").exists())
+                    .andExpect(jsonPath(operation + ".security[0].cookieAuth").isArray());
+        }
+        docs.andExpect(jsonPath("$.paths['/users/{id}/deactivate'].patch.responses['409'].content['" + PROBLEM_JSON + "']").exists())
+                .andExpect(jsonPath("$.paths['/department-requests/{id}/approve'].patch.responses['404']").exists())
+                .andExpect(jsonPath("$.components.schemas.AdminUserResponse.properties.cpf").doesNotExist());
+    }
+
+    @Test
     void passwordIsWriteOnlyAndNeverPartOfTheResponse() throws Exception {
         mockMvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk())

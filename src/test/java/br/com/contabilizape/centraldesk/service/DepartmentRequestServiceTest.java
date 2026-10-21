@@ -1,0 +1,150 @@
+package br.com.contabilizape.centraldesk.service;
+
+import br.com.contabilizape.centraldesk.dto.DepartmentRequestResponse;
+import br.com.contabilizape.centraldesk.exception.DepartmentRequestAlreadyReviewedException;
+import br.com.contabilizape.centraldesk.exception.DepartmentRequestNotFoundException;
+import br.com.contabilizape.centraldesk.exception.InvalidAccountStatusException;
+import br.com.contabilizape.centraldesk.model.Department;
+import br.com.contabilizape.centraldesk.model.DepartmentRequest;
+import br.com.contabilizape.centraldesk.model.DepartmentRequestStatus;
+import br.com.contabilizape.centraldesk.model.User;
+import br.com.contabilizape.centraldesk.model.UserStatus;
+import br.com.contabilizape.centraldesk.repository.DepartmentRequestRepository;
+import br.com.contabilizape.centraldesk.repository.UserRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.quality.Strictness;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.withSettings;
+
+@ExtendWith(MockitoExtension.class)
+class DepartmentRequestServiceTest {
+
+    private static final Instant NOW = Instant.parse("2026-10-21T12:00:00Z");
+    private static final UUID REQUEST_ID = UUID.fromString("cccccccc-0000-4000-8000-000000000003");
+    private static final UUID ADMIN_ID = UUID.fromString("aaaaaaaa-0000-4000-8000-000000000001");
+    private static final UUID REQUESTER_ID = UUID.fromString("bbbbbbbb-0000-4000-8000-000000000002");
+
+    @Mock private DepartmentRequestRepository departmentRequestRepository;
+    @Mock private UserRepository userRepository;
+
+    private DepartmentRequestService service;
+
+    private final Department general = department(UUID.randomUUID(), "Geral");
+    private final Department innovation = department(UUID.randomUUID(), "Inovação");
+
+    @BeforeEach
+    void setUp() {
+        service = new DepartmentRequestService(departmentRequestRepository, userRepository, Clock.fixed(NOW, ZoneOffset.UTC));
+    }
+
+    @Test
+    void pendingRequestsAreListedOldestFirst() {
+        DepartmentRequest request = request(user(REQUESTER_ID, UserStatus.ACTIVE));
+        when(departmentRequestRepository.findByStatusOrderByCreatedAtAsc(DepartmentRequestStatus.PENDING))
+                .thenReturn(List.of(request));
+
+        List<DepartmentRequestResponse> pending = service.listPending();
+
+        assertThat(pending).singleElement().satisfies(item -> {
+            assertThat(item.userName()).isEqualTo("Maria da Silva");
+            assertThat(item.departmentName()).isEqualTo("Inovação");
+            assertThat(item.status()).isEqualTo(DepartmentRequestStatus.PENDING);
+        });
+    }
+
+    @Test
+    void approvingMovesTheRequesterToInnovation() {
+        User requester = user(REQUESTER_ID, UserStatus.ACTIVE);
+        User admin = user(ADMIN_ID, UserStatus.ACTIVE);
+        DepartmentRequest request = request(requester);
+        when(departmentRequestRepository.findByIdForUpdate(REQUEST_ID)).thenReturn(Optional.of(request));
+        when(userRepository.findById(ADMIN_ID)).thenReturn(Optional.of(admin));
+
+        DepartmentRequestResponse response = service.approve(REQUEST_ID, ADMIN_ID);
+
+        assertThat(requester.getDepartment()).isSameAs(innovation);
+        assertThat(response.status()).isEqualTo(DepartmentRequestStatus.APPROVED);
+        assertThat(response.reviewedById()).isEqualTo(ADMIN_ID);
+        assertThat(response.reviewedAt()).isEqualTo(NOW.atOffset(ZoneOffset.UTC));
+    }
+
+    @Test
+    void rejectingKeepsTheRequesterInGeneral() {
+        User requester = user(REQUESTER_ID, UserStatus.ACTIVE);
+        DepartmentRequest request = request(requester);
+        when(departmentRequestRepository.findByIdForUpdate(REQUEST_ID)).thenReturn(Optional.of(request));
+        when(userRepository.findById(ADMIN_ID)).thenReturn(Optional.of(user(ADMIN_ID, UserStatus.ACTIVE)));
+
+        DepartmentRequestResponse response = service.reject(REQUEST_ID, ADMIN_ID);
+
+        assertThat(requester.getDepartment()).isSameAs(general);
+        assertThat(response.status()).isEqualTo(DepartmentRequestStatus.REJECTED);
+    }
+
+    @Test
+    void alreadyReviewedRequestIsConflict() {
+        DepartmentRequest request = request(user(REQUESTER_ID, UserStatus.ACTIVE));
+        ReflectionTestUtils.setField(request, "status", DepartmentRequestStatus.APPROVED);
+        when(departmentRequestRepository.findByIdForUpdate(REQUEST_ID)).thenReturn(Optional.of(request));
+        when(userRepository.findById(ADMIN_ID)).thenReturn(Optional.of(user(ADMIN_ID, UserStatus.ACTIVE)));
+
+        assertThatThrownBy(() -> service.reject(REQUEST_ID, ADMIN_ID))
+                .isInstanceOf(DepartmentRequestAlreadyReviewedException.class);
+    }
+
+    @Test
+    void requestOfInactiveAccountCannotBeApproved() {
+        User requester = user(REQUESTER_ID, UserStatus.DEACTIVATED);
+        when(departmentRequestRepository.findByIdForUpdate(REQUEST_ID)).thenReturn(Optional.of(request(requester)));
+        when(userRepository.findById(ADMIN_ID)).thenReturn(Optional.of(user(ADMIN_ID, UserStatus.ACTIVE)));
+
+        assertThatThrownBy(() -> service.approve(REQUEST_ID, ADMIN_ID)).isInstanceOf(InvalidAccountStatusException.class);
+        assertThat(requester.getDepartment()).isSameAs(general);
+    }
+
+    @Test
+    void unknownRequestIsNotFound() {
+        when(departmentRequestRepository.findByIdForUpdate(REQUEST_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.approve(REQUEST_ID, ADMIN_ID))
+                .isInstanceOf(DepartmentRequestNotFoundException.class);
+    }
+
+    // ---------- auxiliares ----------
+
+    private DepartmentRequest request(User requester) {
+        DepartmentRequest request = new DepartmentRequest(requester, innovation);
+        ReflectionTestUtils.setField(request, "id", REQUEST_ID);
+        return request;
+    }
+
+    private User user(UUID id, UserStatus status) {
+        User user = new User("Maria da Silva", "52998224725", "maria.silva@contabilizape.com.br", "hash", general);
+        ReflectionTestUtils.setField(user, "id", id);
+        ReflectionTestUtils.setField(user, "status", status);
+        return user;
+    }
+
+    private static Department department(UUID id, String name) {
+        Department department = mock(Department.class, withSettings().strictness(Strictness.LENIENT));
+        when(department.getId()).thenReturn(id);
+        when(department.getName()).thenReturn(name);
+        return department;
+    }
+}

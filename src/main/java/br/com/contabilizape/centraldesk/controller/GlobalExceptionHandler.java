@@ -5,7 +5,10 @@ import br.com.contabilizape.centraldesk.exception.AccountNotDeactivatedException
 import br.com.contabilizape.centraldesk.exception.CategoryNotFoundException;
 import br.com.contabilizape.centraldesk.exception.CpfAlreadyRegisteredException;
 import br.com.contabilizape.centraldesk.exception.DepartmentNotFoundException;
+import br.com.contabilizape.centraldesk.exception.DepartmentRequestAlreadyReviewedException;
+import br.com.contabilizape.centraldesk.exception.DepartmentRequestNotFoundException;
 import br.com.contabilizape.centraldesk.exception.EmailAlreadyRegisteredException;
+import br.com.contabilizape.centraldesk.exception.InvalidAccountStatusException;
 import br.com.contabilizape.centraldesk.exception.InvalidCredentialsException;
 import br.com.contabilizape.centraldesk.exception.InvalidFieldException;
 import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
@@ -13,6 +16,7 @@ import br.com.contabilizape.centraldesk.exception.InvalidTicketTransitionExcepti
 import br.com.contabilizape.centraldesk.exception.LastAdminException;
 import br.com.contabilizape.centraldesk.exception.PriorityNotFoundException;
 import br.com.contabilizape.centraldesk.exception.SelfAssignmentException;
+import br.com.contabilizape.centraldesk.exception.SelfDeactivationException;
 import br.com.contabilizape.centraldesk.exception.TicketClosedForCommentsException;
 import br.com.contabilizape.centraldesk.exception.TicketEditForbiddenException;
 import br.com.contabilizape.centraldesk.exception.TicketNotEditableException;
@@ -87,12 +91,18 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return problem(HttpStatus.UNAUTHORIZED, "Sessão inválida", exception.getMessage());
     }
 
+    @ExceptionHandler(DepartmentRequestNotFoundException.class)
+    public ProblemDetail handleDepartmentRequestNotFound(DepartmentRequestNotFoundException exception) {
+        return problem(HttpStatus.NOT_FOUND, "Pedido não encontrado", exception.getMessage());
+    }
+
     @ExceptionHandler(UserNotFoundException.class)
     public ProblemDetail handleUserNotFound(UserNotFoundException exception) {
         return problem(HttpStatus.NOT_FOUND, "Usuário não encontrado", exception.getMessage());
     }
 
-    @ExceptionHandler({AccountNotDeactivatedException.class, LastAdminException.class})
+    @ExceptionHandler({AccountNotDeactivatedException.class, LastAdminException.class, SelfDeactivationException.class,
+            InvalidAccountStatusException.class, DepartmentRequestAlreadyReviewedException.class})
     public ProblemDetail handleAccountConflict(RuntimeException exception) {
         return problem(HttpStatus.CONFLICT, "Operação não permitida", exception.getMessage());
     }

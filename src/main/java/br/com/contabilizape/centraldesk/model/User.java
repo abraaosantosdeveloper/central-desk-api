@@ -101,6 +101,33 @@ public class User {
         return this.deletedAt;
     }
 
+    public OffsetDateTime getDeactivatedAt() {
+        return this.deactivatedAt;
+    }
+
+    /** Desativação pelo admin (ex.: desligamento). Bloqueia o login; a conta pode ser reativada. */
+    public void deactivate(OffsetDateTime now) {
+        if (this.status != UserStatus.ACTIVE) {
+            throw new IllegalStateException("Só contas ativas podem ser desativadas; status atual: " + this.status);
+        }
+        this.status = UserStatus.DEACTIVATED;
+        this.deactivatedAt = now;
+    }
+
+    /** Volta a liberar o login. Conta anonimizada não volta: os dados pessoais já foram apagados. */
+    public void reactivate() {
+        if (this.status != UserStatus.DEACTIVATED) {
+            throw new IllegalStateException("Só contas desativadas podem ser reativadas; status atual: " + this.status);
+        }
+        this.status = UserStatus.ACTIVE;
+        this.deactivatedAt = null;
+    }
+
+    /** Troca de departamento (pedido aprovado). As permissões mudam na próxima renovação da sessão. */
+    public void moveTo(Department department) {
+        this.department = department;
+    }
+
     /** Edição do próprio perfil: só o nome muda. */
     public void rename(String fullName) {
         this.fullName = fullName;

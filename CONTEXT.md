@@ -388,7 +388,7 @@ Ninguém é notificado de uma ação que ele mesmo fez (o `actor` nunca é o des
 ### Pendências de sessão
 
 - Limpeza periódica de `refresh_tokens` vencidos ou revogados (tarefa agendada).
-- Desativar uma conta (admin) deve revogar as sessões dela na hora; hoje isso acontece só na próxima renovação.
+- Desativar uma conta (admin) revoga as sessões dela na hora (SCRUM-165); o access token em uso continua válido por até 15 min, mas as rotas conferem o status da conta e respondem 403.
 
 ### `SecurityConfig` atual
 
@@ -427,11 +427,13 @@ Ninguém é notificado de uma ação que ele mesmo fez (o `actor` nunca é o des
 | PATCH | `/users/me/password` | troca de senha: exige a atual, revoga todas as sessões e reabre a atual com cookies novos (204) (SCRUM-157) | **implementado** |
 | DELETE | `/users/me` | encerramento da própria conta: confirma a senha, anonimiza e apaga os cookies (204); último admin → 409 (SCRUM-159) | **implementado** |
 | PATCH | `/users/{id}/anonymize` | anonimização pelo admin, só de conta `DEACTIVATED` (404 / 409) (SCRUM-159) | **implementado** |
-| GET | `/users/{id}` | consulta de outro usuário (admin) | previsto |
-| PATCH | `/users/{id}/deactivate` | desativação de conta (admin) | previsto |
-| GET | `/department-requests` | fila de pedidos pendentes (admin) | previsto |
-| PATCH | `/department-requests/{id}/approve` | aprovar pedido (admin) | previsto |
-| PATCH | `/department-requests/{id}/reject` | recusar pedido (admin) | previsto |
+| GET | `/users` | lista de contas (admin): ordem por nome, paginada, filtros `status` e `search`; sem `status`, as anonimizadas ficam de fora (SCRUM-165) | **implementado** |
+| GET | `/users/{id}` | consulta de uma conta (admin), com `admin`, `ticketHandler` e `departmentApprovalPending` (SCRUM-165) | **implementado** |
+| PATCH | `/users/{id}/deactivate` | desativação (admin): bloqueia o login na hora, revoga as sessões e devolve os chamados à fila; própria conta ou último admin → 409 (SCRUM-165) | **implementado** |
+| PATCH | `/users/{id}/reactivate` | reativação (admin): só conta `DEACTIVATED` (SCRUM-165) | **implementado** |
+| GET | `/department-requests` | fila de pedidos pendentes (admin), do mais antigo para o mais novo (SCRUM-165) | **implementado** |
+| PATCH | `/department-requests/{id}/approve` | aprovar pedido (admin): quem pediu vai para a Inovação e ganha `TICKET_HANDLER` na próxima renovação; já analisado → 409 (SCRUM-165) | **implementado** |
+| PATCH | `/department-requests/{id}/reject` | recusar pedido (admin): quem pediu continua no Geral; já analisado → 409 (SCRUM-165) | **implementado** |
 | POST | `/tickets` | abrir chamado (logado): solicitante = usuário do token, nasce `OPEN` | **implementado** |
 | GET | `/tickets/mine` | chamados abertos pelo usuário: paginado, mais recentes primeiro, filtros `status`/`categoryId`/`priorityId`, resumo sem descrição (SCRUM-160) | **implementado** |
 | GET | `/tickets/queue` | fila da Inovação: `OPEN` sem responsável; só `TICKET_HANDLER` e admin (SCRUM-160) | **implementado** |
@@ -523,7 +525,8 @@ src/main/java/br/com/contabilizape/centraldesk/
 │                    RefreshTokenCookie, CookieBearerTokenResolver, Roles, ContentCipher + ContentEncryptionConfig (AES-256-GCM)
 ├── service/         UserService, DepartmentService, AuthService (+ AuthenticatedSession, Emails),
 │                    RefreshTokenService (+ RotatedRefreshToken), TicketService (+ TicketSpecifications), TicketCatalogService,
-│                    AccountAnonymizationService, CommentService, TicketAccess (quem vê o chamado)
+│                    AccountAnonymizationService, CommentService, TicketAccess (quem vê o chamado),
+│                    UserAdministrationService, DepartmentRequestService, AccountOffboarding (saída de uma conta)
 └── validation/      @Cpf + CpfValidator, @CorporateEmail + CorporateEmailValidator, @StrongPassword (regras de senha)
 ```
 
@@ -548,9 +551,10 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 ├── controller/TicketAssignIntegrationTest     PATCH /tickets/{id}/assign: handler, admin, fila→atribuídos, próprio chamado, 409, 403, 404, 401 (9)
 ├── controller/TicketCloseIntegrationTest      PATCH /tickets/{id}/close: handler, solicitante, admin, outro → 404, 409, corpo ignorado, 401 (8)
 ├── controller/CommentIntegrationTest          comentários: cifra no banco, ordem, handler, 404, 409 com histórico, 400, 401 (8)
+├── controller/AdminAccountsIntegrationTest     painel do admin: listar, filtros, consultar, desativar, reativar, aprovar, recusar, 403 (10)
 ├── controller/RealtimeIntegrationTest         /events/stream: text/event-stream, 401, comment.created e ticket.created só para quem deve (4)
 ├── controller/AccountAnonymizationIntegrationTest  DELETE /users/me e PATCH /users/{id}/anonymize (10)
-├── docs/ApiDocsIntegrationTest                OpenAPI e Swagger UI ligados (16 casos)
+├── docs/ApiDocsIntegrationTest                OpenAPI e Swagger UI ligados (17 casos)
 ├── docs/ApiDocsDisabledIntegrationTest        sem API_DOCS_ENABLED: 404 (2 casos)
 ├── dto/UserCreateRequestValidationTest        regras do DTO (Bean Validation)
 ├── dto/PasswordChangeRequestValidationTest    senha atual obrigatória e  na nova (6)
@@ -561,7 +565,11 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 ├── service/RefreshTokenServiceTest            emissão, hash, rotação, reuso, revogação, revogar todas (Mockito, 11)
 ├── service/TicketServiceTest                  abertura, detalhes, edição, listagens, assumir e encerrar (Mockito, 30)
 ├── service/CommentServiceTest                 comentar, evento aos participantes, encerrado, 404, conta desativada, leitura (7)
+├── service/UserAdministrationServiceTest      desativar (sessões, fila, própria conta, último admin), reativar, consultar (Mockito, 9)
+├── service/DepartmentRequestServiceTest        fila, aprovar, recusar, já analisado, conta inativa, inexistente (Mockito, 6)
 ├── model/TicketTest                           máquina de estados: transições, assumir, devolver à fila, encerrar (17)
+├── model/UserTest                             ciclo da conta: desativar, reativar, anonimizada é final, trocar de departamento (5)
+├── model/DepartmentRequestTest                aprovar move para o departamento, recusar, decisão única (3)
 ├── security/ContentCipherTest                 AES-256-GCM: ida e volta, IV aleatório, adulteração, outra chave, versão, chave inválida (11)
 ├── security/JwtConfigTest                     tamanho e formato da chave (3)
 ├── security/TokenServiceTest                  claims, validade, chave e emissor errados (5)
@@ -634,7 +642,7 @@ Requisitos complementares (README): RF08 categorização, RF09 urgência, RF10 s
 1. ✅ **Edição dos dados do usuário (RF02)** — implementada na branch `feature/SCRUM-147-edicao-dados-usuario` (20/10): `PUT /users/me` (perfil, com DTO restrito: sem senha, e-mail ou permissões) e `PATCH /users/me/password` (exige a senha atual). Fecha a parte de contas.
 2. **Chamados:** listar (os meus e a fila da Inovação), assumir (`PATCH /tickets/{id}/assign`) e encerrar (`PATCH /tickets/{id}/close`), com as regras de transição de status (RF06 e RF07).
 3. **Comentários** nos chamados.
-4. **Gerenciamento de contas (admin):** aprovar e recusar `department_requests`, desativar contas (revogando as sessões na hora) e consultar usuários.
+4. ✅ **Gerenciamento de contas (admin)** — SCRUM-165, 21/10: aprovar e recusar `department_requests`, desativar contas (revogando as sessões na hora) e consultar usuários.
 5. **Segregação por papel:** colaborador, `TICKET_HANDLER` e `ROLE_ADMIN` veem e podem fazer coisas diferentes. No back-end, as camadas de segurança são as regras por rota e por método (`@PreAuthorize`) e as checagens no service. O front-end só esconde as opções, e a API continua barrando sozinha.
 
 **Histórias no Jira (20/10):** RF02 SCRUM-147 (subtarefas 156, 157, 158) · RF04 SCRUM-159 · RF11 SCRUM-160 · RF12 SCRUM-161 · RF06 SCRUM-162 · RF07 SCRUM-163 · RF13 SCRUM-164 · admin SCRUM-165 · RF15 SCRUM-149 (subtarefas 152 a 155) · RF16 SCRUM-150 · DEC-006 SCRUM-151.
@@ -650,6 +658,7 @@ Requisitos complementares (README): RF08 categorização, RF09 urgência, RF10 s
 **Implementação da RF07 (SCRUM-163, 21/10):** `PATCH /tickets/{id}/close`, sem corpo (a avaliação é outro endpoint, `POST /tickets/{id}/rating`). Podem encerrar as mesmas pessoas que veem o chamado (`TicketService.canView`: solicitante, `TICKET_HANDLER`, admin); para os demais, 404. `Ticket.close` passa por `moveTo` (`OPEN`/`IN_PROGRESS` → `CLOSED`), preenche `closed_by_id` e `closed_at` e **mantém o responsável**, que é quem será avaliado. Já encerrado → 409. Também usa `findByIdForUpdate`.
 **Regra de 21/10 (SCRUM-162):** quem abriu o chamado **não pode assumi-lo** (`SelfAssignmentException` → 403 "Acesso negado"), mesmo sendo da Inovação ou admin. Assim o atendimento é sempre de outra pessoa e a avaliação (V11, `rater_id <> rated_id`) nunca cai nesse caso. Encerrar o próprio chamado continua permitido.
 **Implementação da RF13 (SCRUM-164, 21/10):** `POST` e `GET /tickets/{id}/comments` no `CommentController`; podem comentar e ler as mesmas pessoas que veem o chamado (`TicketAccess.canView`, agora compartilhado com o `TicketService`); chamado `CLOSED` → 409 "Chamado encerrado" na criação (a leitura continua). **Criptografia:** `Comment.content` usa `@Convert(EncryptedStringConverter)`, ponto único que chama o `ContentCipher` (bean criado pelo `ContentEncryptionConfig` a partir de `app.security.content-encryption-key`); a aplicação não sobe sem chave válida. **Tempo real:** `GET /events/stream` devolve um `SseEmitter` registrado no `SseEmitterRegistry` (em memória, com o id e as permissões do token; tempo limite `app.realtime.sse-timeout`, 30 min, e o navegador reconecta sozinho). O `CommentService` publica `CommentCreatedEvent` (solicitante, responsável e autor) e o `TicketService.open` publica `TicketCreatedEvent` (Inovação e admins conectados, com o resumo, sem a descrição); o `RealtimeEventListener` os entrega com `@TransactionalEventListener` (depois do commit). Despachos `ASYNC` liberados no `SecurityConfig` (fim do stream; a requisição original já foi autorizada).
+**Implementação do painel do admin (SCRUM-165, 21/10):** `AdminUserController` (`/users`, `/users/{id}`, `/deactivate`, `/reactivate`) e `DepartmentRequestController` (`/department-requests`, `/approve`, `/reject`), todos só `ROLE_ADMIN` por regra de rota; no `SecurityConfig`, `/users/me` e `/users/me/**` vêm **antes** de `/users/**` e continuam abertos a qualquer usuário logado. Ciclo da conta no `User`: `deactivate` (`ACTIVE` → `DEACTIVATED`, preenche `deactivated_at`), `reactivate` (volta a `ACTIVE`; anonimizada não volta) e `moveTo` (troca de departamento). O `AccountOffboarding` reúne o que a desativação e a anonimização têm em comum: revogar as sessões, devolver os chamados `IN_PROGRESS` à fila e recusar a saída do último admin ativo. `DepartmentRequest.approve`/`reject` só valem para `PENDING` (decisão única); aprovar exige a conta de quem pediu ativa. Pedidos e chamados são lidos com trava (`findByIdForUpdate`). A listagem de contas usa `Specification` e `@EntityGraph` (departamento junto) e marca `admin` e `departmentApprovalPending` com duas consultas de ids, não uma por conta. Pendências: notificações de aprovado/recusado (SCRUM-155) e conceder ou remover administrador.
 
 **Notificações e avaliações (incluídas em 20/10), em fatias que acompanham o roteiro:**
 
