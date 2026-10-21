@@ -119,6 +119,21 @@ class TicketAssignIntegrationTest {
     }
 
     @Test
+    void handlerCannotAssignTicketHeOpened() throws Exception {
+        UUID category = jdbc.queryForObject("SELECT id FROM categories LIMIT 1", UUID.class);
+        UUID ticket = jdbc.queryForObject("""
+                INSERT INTO tickets (title, description, status, category_id, priority_id, requester_id)
+                VALUES ('Meu notebook', 'Não liga', 'OPEN', ?, 2, ?) RETURNING id
+                """, UUID.class, category, handler);
+
+        // Quem abriu não atende o próprio chamado (e não poderia avaliar a si mesmo depois)
+        mockMvc.perform(patch("/tickets/" + ticket + "/assign").cookie(login(HANDLER)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.detail").value("Quem abriu o chamado não pode assumi-lo."));
+        assertThat(jdbc.queryForObject("SELECT status FROM tickets WHERE id = ?", String.class, ticket)).isEqualTo("OPEN");
+    }
+
+    @Test
     void collaboratorCannotAssign() throws Exception {
         UUID ticket = ticket("OPEN", null);
 

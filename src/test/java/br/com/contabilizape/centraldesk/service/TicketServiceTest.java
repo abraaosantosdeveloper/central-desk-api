@@ -11,6 +11,7 @@ import br.com.contabilizape.centraldesk.exception.CategoryNotFoundException;
 import br.com.contabilizape.centraldesk.exception.InvalidTicketTransitionException;
 import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
 import br.com.contabilizape.centraldesk.exception.PriorityNotFoundException;
+import br.com.contabilizape.centraldesk.exception.SelfAssignmentException;
 import br.com.contabilizape.centraldesk.exception.TicketEditForbiddenException;
 import br.com.contabilizape.centraldesk.exception.TicketNotEditableException;
 import br.com.contabilizape.centraldesk.exception.TicketNotFoundException;
@@ -388,6 +389,19 @@ class TicketServiceTest {
 
         assertThatThrownBy(() -> ticketService.assign(TICKET_ID, OTHER_ID))
                 .isInstanceOf(InvalidTicketTransitionException.class);
+    }
+
+    @Test
+    void requesterCannotAssignOwnTicket() {
+        User handler = user(OTHER_ID, UserStatus.ACTIVE);
+        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, handler);
+        when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(handler));
+        when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> ticketService.assign(TICKET_ID, OTHER_ID))
+                .isInstanceOf(SelfAssignmentException.class);
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.OPEN);
+        assertThat(ticket.getAssignee()).isNull();
     }
 
     @Test

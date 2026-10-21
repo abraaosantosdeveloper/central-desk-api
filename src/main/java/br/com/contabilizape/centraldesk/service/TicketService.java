@@ -10,6 +10,7 @@ import br.com.contabilizape.centraldesk.exception.AccountNotActiveException;
 import br.com.contabilizape.centraldesk.exception.CategoryNotFoundException;
 import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
 import br.com.contabilizape.centraldesk.exception.PriorityNotFoundException;
+import br.com.contabilizape.centraldesk.exception.SelfAssignmentException;
 import br.com.contabilizape.centraldesk.exception.TicketEditForbiddenException;
 import br.com.contabilizape.centraldesk.exception.TicketNotEditableException;
 import br.com.contabilizape.centraldesk.exception.TicketNotFoundException;
@@ -81,6 +82,9 @@ public class TicketService {
         User assignee = findActiveRequester(userId);
         Ticket ticket = ticketRepository.findByIdForUpdate(ticketId)
                 .orElseThrow(() -> new TicketNotFoundException(ticketId));
+        if (ticket.getRequester().getId().equals(userId)) {
+            throw new SelfAssignmentException();
+        }
         ticket.assign(assignee, OffsetDateTime.now(clock));
         ticketRepository.flush(); // grava agora e atualiza o updated_at
         return TicketResponse.from(ticket);

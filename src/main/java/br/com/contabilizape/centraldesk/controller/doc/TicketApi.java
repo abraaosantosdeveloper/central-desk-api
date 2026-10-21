@@ -127,8 +127,11 @@ public interface TicketApi {
     @ApiResponse(responseCode = "401", description = "Sem sessão.", content = @Content)
     @ApiResponse(
             responseCode = "403",
-            description = "Quem chamou não é da Inovação nem administrador (sem corpo), ou a conta foi desativada.",
-            content = @Content)
+            description = "Quem chamou não é da Inovação nem administrador (sem corpo), a conta foi desativada, "
+                    + "ou quem chamou é o próprio solicitante: quem abriu o chamado não pode assumi-lo.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE,
+                    schema = @Schema(implementation = ProblemDetail.class),
+                    examples = @ExampleObject(name = "Próprio solicitante", value = ProblemExamples.SELF_ASSIGNMENT)))
     @ApiResponse(
             responseCode = "404",
             description = "Chamado inexistente.",

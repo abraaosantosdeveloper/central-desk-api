@@ -540,7 +540,7 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 ├── controller/UserControllerIntegrationTest   /users/me: GET (7), PUT nome (4), PATCH senha (5)
 ├── controller/TicketControllerIntegrationTest abertura, detalhes, edição, categorias e prioridades (20)
 ├── controller/TicketListIntegrationTest       /tickets/mine, /queue e /assigned: ordem, paginação, filtros, 400, 401, 403 (10)
-├── controller/TicketAssignIntegrationTest     PATCH /tickets/{id}/assign: handler, admin, fila→atribuídos, 409, 403, 404, 401 (8)
+├── controller/TicketAssignIntegrationTest     PATCH /tickets/{id}/assign: handler, admin, fila→atribuídos, próprio chamado, 409, 403, 404, 401 (9)
 ├── controller/TicketCloseIntegrationTest      PATCH /tickets/{id}/close: handler, solicitante, admin, outro → 404, 409, corpo ignorado, 401 (8)
 ├── controller/AccountAnonymizationIntegrationTest  DELETE /users/me e PATCH /users/{id}/anonymize (10)
 ├── docs/ApiDocsIntegrationTest                OpenAPI e Swagger UI ligados (15 casos)
@@ -552,7 +552,7 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 ├── service/AccountAnonymizationServiceTest   anonimização: dados, sessões, fila, notificações, último admin (Mockito, 10)
 ├── service/AuthServiceTest                    login, permissões, renovação, logout e troca de senha (Mockito, 16 casos)
 ├── service/RefreshTokenServiceTest            emissão, hash, rotação, reuso, revogação, revogar todas (Mockito, 11)
-├── service/TicketServiceTest                  abertura, detalhes, edição, listagens, assumir e encerrar (Mockito, 29)
+├── service/TicketServiceTest                  abertura, detalhes, edição, listagens, assumir e encerrar (Mockito, 30)
 ├── model/TicketTest                           máquina de estados: transições, assumir, devolver à fila, encerrar (17)
 ├── security/JwtConfigTest                     tamanho e formato da chave (3)
 ├── security/TokenServiceTest                  claims, validade, chave e emissor errados (5)
@@ -639,6 +639,7 @@ Requisitos complementares (README): RF08 categorização, RF09 urgência, RF10 s
 **Implementação da RF11 (SCRUM-160, 20/10):** `GET /tickets/mine` (qualquer usuário ativo), `/tickets/queue` (`OPEN` sem responsável) e `/tickets/assigned` (responsável = usuário logado, inclusive encerrados); fila e atribuídos só para `TICKET_HANDLER` e admin, por regra de rota no `SecurityConfig`. Resposta em `PageResponse<TicketSummaryResponse>` (`content`, `page`, `size`, `totalElements`, `totalPages`), formato próprio para não serializar o `PageImpl`. Ordem fixa por `created_at` decrescente (a ordenação enviada pelo cliente é ignorada); `size` padrão 20, máximo 100. Filtros por `Specification` (`TicketSpecifications`); o `findAll` paginado tem `@EntityGraph` para não fazer uma consulta por chamado.
 **Implementação da RF06 (SCRUM-162, 20/10):** `PATCH /tickets/{id}/assign`, sem corpo, só `TICKET_HANDLER` e admin (regra de rota). **Máquina de estados:** as transições permitidas ficam em `TicketStatus.canTransitionTo` (`OPEN → IN_PROGRESS | CLOSED`, `IN_PROGRESS → OPEN | CLOSED`, `CLOSED` é final) e o único ponto que altera o status é `Ticket.moveTo`, usado por `assign` e `returnToQueue` (e, na SCRUM-163, por `close`); transição inválida → `InvalidTicketTransitionException` → 409 "Transição de status inválida". Para dois atendentes não assumirem o mesmo chamado, o service lê com `findByIdForUpdate` (`PESSIMISTIC_WRITE`, `SELECT ... FOR UPDATE`): o segundo espera, encontra `IN_PROGRESS` e recebe 409. O `TicketService` passou a receber o `Clock` (preenche `assigned_at`).
 **Implementação da RF07 (SCRUM-163, 21/10):** `PATCH /tickets/{id}/close`, sem corpo (a avaliação é outro endpoint, `POST /tickets/{id}/rating`). Podem encerrar as mesmas pessoas que veem o chamado (`TicketService.canView`: solicitante, `TICKET_HANDLER`, admin); para os demais, 404. `Ticket.close` passa por `moveTo` (`OPEN`/`IN_PROGRESS` → `CLOSED`), preenche `closed_by_id` e `closed_at` e **mantém o responsável**, que é quem será avaliado. Já encerrado → 409. Também usa `findByIdForUpdate`.
+**Regra de 21/10 (SCRUM-162):** quem abriu o chamado **não pode assumi-lo** (`SelfAssignmentException` → 403 "Acesso negado"), mesmo sendo da Inovação ou admin. Assim o atendimento é sempre de outra pessoa e a avaliação (V11, `rater_id <> rated_id`) nunca cai nesse caso. Encerrar o próprio chamado continua permitido.
 
 **Notificações e avaliações (incluídas em 20/10), em fatias que acompanham o roteiro:**
 

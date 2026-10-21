@@ -325,3 +325,12 @@ Modelo de entrada:
 - **Comando:** `.\mvnw clean test` (Docker ligado)
 - **Antes (TDD):** a execução direcionada falhou pelo motivo esperado (rota inexistente → 404; `UnsupportedOperationException` nos stubs).
 - **Resultado:** 299 testes, 0 falhas, 0 erros. ✅
+
+### Mudança após a execução 19 (mesma branch)
+
+- Regra decidida em 21/10: o solicitante não pode assumir o próprio chamado (`SelfAssignmentException` → 403). Testes: `TicketServiceTest` (+1) e `TicketAssignIntegrationTest` (+1); antes da implementação, o de integração recebia 200 (vermelho esperado).
+
+## Execução 20 — 2026-10-21 — suíte completa (SCRUM-163 + regra da SCRUM-162)
+
+- **Comando:** `.mvnw clean test` (Docker ligado)
+- **Resultado:** 301 testes, 0 falhas, 0 erros. ✅
