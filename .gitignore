@@ -35,3 +35,7 @@ build/
 ## Environment ##
 
 .env
+
+## Claude ##
+
+.claude

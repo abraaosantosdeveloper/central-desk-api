@@ -400,6 +400,79 @@ class TicketServiceTest {
         verify(ticketRepository, never()).findByIdForUpdate(any());
     }
 
+    // ---------- encerrar ----------
+
+    @Test
+    void requesterClosesOwnTicket() {
+        User maria = requester(UserStatus.ACTIVE);
+        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, maria);
+        when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(maria));
+        when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
+
+        TicketResponse response = ticketService.close(TICKET_ID, REQUESTER_ID, List.of());
+
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.CLOSED);
+        assertThat(ticket.getClosedBy()).isSameAs(maria);
+        assertThat(ticket.getClosedAt()).isEqualTo(NOW.atOffset(ZoneOffset.UTC));
+        assertThat(response.closedById()).isEqualTo(REQUESTER_ID);
+    }
+
+    @Test
+    void ticketHandlerClosesAnyTicket() {
+        closesTicketOfAnotherUserWith(List.of(Roles.TICKET_HANDLER));
+    }
+
+    @Test
+    void adminClosesAnyTicket() {
+        closesTicketOfAnotherUserWith(List.of(Roles.ADMIN));
+    }
+
+    @Test
+    void anotherCollaboratorCannotCloseAndGetsNotFound() {
+        User other = user(OTHER_ID, UserStatus.ACTIVE);
+        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, requester(UserStatus.ACTIVE));
+        when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(other));
+        when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> ticketService.close(TICKET_ID, OTHER_ID, List.of()))
+                .isInstanceOf(TicketNotFoundException.class);
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.OPEN);
+    }
+
+    @Test
+    void closingClosedTicketIsInvalidTransition() {
+        User maria = requester(UserStatus.ACTIVE);
+        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, maria);
+        ReflectionTestUtils.setField(ticket, "status", TicketStatus.CLOSED);
+        when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(maria));
+        when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> ticketService.close(TICKET_ID, REQUESTER_ID, List.of()))
+                .isInstanceOf(InvalidTicketTransitionException.class);
+    }
+
+    @Test
+    void deactivatedUserCannotClose() {
+        User maria = requester(UserStatus.DEACTIVATED);
+        when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(maria));
+
+        assertThatThrownBy(() -> ticketService.close(TICKET_ID, REQUESTER_ID, List.of()))
+                .isInstanceOf(AccountNotActiveException.class);
+        verify(ticketRepository, never()).findByIdForUpdate(any());
+    }
+
+    private void closesTicketOfAnotherUserWith(List<String> roles) {
+        User closer = user(OTHER_ID, UserStatus.ACTIVE);
+        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, requester(UserStatus.ACTIVE));
+        when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(closer));
+        when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
+
+        ticketService.close(TICKET_ID, OTHER_ID, roles);
+
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.CLOSED);
+        assertThat(ticket.getClosedBy()).isSameAs(closer);
+    }
+
     // ---------- auxiliares ----------
 
     private static User user(UUID id, UserStatus status) {

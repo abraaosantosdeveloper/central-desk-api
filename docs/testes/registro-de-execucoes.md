@@ -314,3 +314,14 @@ Modelo de entrada:
 - **Antes (TDD):** a execução direcionada falhou pelo motivo esperado (rota inexistente → 404; `UnsupportedOperationException` nos stubs).
 - **Primeira tentativa da suíte completa:** interrompida manualmente (sem resultado); rodada de novo em seguida.
 - **Resultado:** 281 testes, 0 falhas, 0 erros. ✅
+
+### Mudanças entre a execução 18 e a 19
+
+- Encerrar chamado (SCRUM-163): `PATCH /tickets/{id}/close`; `Ticket.close` pela máquina de estados; permissão igual à de visualização (`canView`).
+- Novos testes (18): `TicketTest` (+3: encerra com quem e quando, OPEN sem responsável, já encerrado); `TicketServiceTest` (+6: solicitante, handler, admin, outro → 404, já encerrado, conta desativada); `TicketCloseIntegrationTest` (8, novo); `ApiDocsIntegrationTest` (+1).
+
+## Execução 19 — 2026-10-21 — suíte completa (SCRUM-163)
+
+- **Comando:** `.\mvnw clean test` (Docker ligado)
+- **Antes (TDD):** a execução direcionada falhou pelo motivo esperado (rota inexistente → 404; `UnsupportedOperationException` nos stubs).
+- **Resultado:** 299 testes, 0 falhas, 0 erros. ✅

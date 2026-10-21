@@ -57,6 +57,21 @@ public class TicketService {
     }
 
     /**
+     * Encerra o chamado. Podem: o solicitante, a Inovação e os administradores (as mesmas pessoas que o veem).
+     * Os demais recebem 404, como em GET /tickets/{id}.
+     */
+    @Transactional
+    public TicketResponse close(UUID ticketId, UUID userId, List<String> roles) {
+        User closer = findActiveRequester(userId);
+        Ticket ticket = ticketRepository.findByIdForUpdate(ticketId)
+                .filter(found -> canView(found, userId, roles))
+                .orElseThrow(() -> new TicketNotFoundException(ticketId));
+        ticket.close(closer, OffsetDateTime.now(clock));
+        ticketRepository.flush(); // grava agora e atualiza o updated_at
+        return TicketResponse.from(ticket);
+    }
+
+    /**
      * O usuário logado (Inovação ou admin, regra no SecurityConfig) assume o chamado: OPEN → IN_PROGRESS.
      * A linha fica travada até o fim da transação; se duas pessoas assumirem ao mesmo tempo,
      * a segunda encontra IN_PROGRESS e recebe 409.

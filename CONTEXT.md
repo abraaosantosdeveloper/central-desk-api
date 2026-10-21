@@ -441,7 +441,7 @@ Ninguém é notificado de uma ação que ele mesmo fez (o `actor` nunca é o des
 | GET | `/categories` | categorias do formulário de chamado, por nome (logado) | **implementado** |
 | GET | `/priorities` | prioridades, da menos à mais urgente (logado) | **implementado** |
 | PATCH | `/tickets/{id}/assign` | assumir chamado: `OPEN` → `IN_PROGRESS`, responsável = usuário logado; só `TICKET_HANDLER` e admin (403 / 404 / 409) (SCRUM-162) | **implementado** |
-| PATCH | `/tickets/{id}/close` | encerrar chamado | previsto |
+| PATCH | `/tickets/{id}/close` | encerrar chamado: `OPEN`/`IN_PROGRESS` → `CLOSED`, preenche `closed_by_id`/`closed_at`; solicitante, `TICKET_HANDLER` e admin; demais → 404; já encerrado → 409; sem corpo (SCRUM-163) | **implementado** |
 | POST | `/tickets/{id}/rating` | avaliar o atendimento: só o solicitante, chamado `CLOSED` com responsável, uma vez (201 / 403 / 404 / 409) | previsto |
 | GET | `/notifications` | notificações do usuário logado, mais recentes primeiro, paginadas; filtros opcionais `category` e `unread` | previsto |
 | GET | `/notifications/unread-count` | contador de não lidas (para o ícone do painel) | previsto |
@@ -541,8 +541,9 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 ├── controller/TicketControllerIntegrationTest abertura, detalhes, edição, categorias e prioridades (20)
 ├── controller/TicketListIntegrationTest       /tickets/mine, /queue e /assigned: ordem, paginação, filtros, 400, 401, 403 (10)
 ├── controller/TicketAssignIntegrationTest     PATCH /tickets/{id}/assign: handler, admin, fila→atribuídos, 409, 403, 404, 401 (8)
+├── controller/TicketCloseIntegrationTest      PATCH /tickets/{id}/close: handler, solicitante, admin, outro → 404, 409, corpo ignorado, 401 (8)
 ├── controller/AccountAnonymizationIntegrationTest  DELETE /users/me e PATCH /users/{id}/anonymize (10)
-├── docs/ApiDocsIntegrationTest                OpenAPI e Swagger UI ligados (14 casos)
+├── docs/ApiDocsIntegrationTest                OpenAPI e Swagger UI ligados (15 casos)
 ├── docs/ApiDocsDisabledIntegrationTest        sem API_DOCS_ENABLED: 404 (2 casos)
 ├── dto/UserCreateRequestValidationTest        regras do DTO (Bean Validation)
 ├── dto/PasswordChangeRequestValidationTest    senha atual obrigatória e  na nova (6)
@@ -551,8 +552,8 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 ├── service/AccountAnonymizationServiceTest   anonimização: dados, sessões, fila, notificações, último admin (Mockito, 10)
 ├── service/AuthServiceTest                    login, permissões, renovação, logout e troca de senha (Mockito, 16 casos)
 ├── service/RefreshTokenServiceTest            emissão, hash, rotação, reuso, revogação, revogar todas (Mockito, 11)
-├── service/TicketServiceTest                  abertura, detalhes, edição, listagens e assumir: visibilidade, paginação, conta (Mockito, 23)
-├── model/TicketTest                           máquina de estados: tabela de transições, assumir, devolver à fila (14)
+├── service/TicketServiceTest                  abertura, detalhes, edição, listagens, assumir e encerrar (Mockito, 29)
+├── model/TicketTest                           máquina de estados: transições, assumir, devolver à fila, encerrar (17)
 ├── security/JwtConfigTest                     tamanho e formato da chave (3)
 ├── security/TokenServiceTest                  claims, validade, chave e emissor errados (5)
 ├── security/CookieBearerTokenResolverTest     leitura do cookie e rotas públicas (5)
@@ -637,6 +638,7 @@ Requisitos complementares (README): RF08 categorização, RF09 urgência, RF10 s
 **Implementação da RF12 (SCRUM-161, 20/10):** `GET /tickets/{id}` usa as permissões do token (como o `/users/me`) e decide a visibilidade em `TicketService.canView` (base para comentários e ações). Quem não pode ver recebe 404, não 403. O `TicketResponse` ganhou `assigneeName`, `assignedAt`, `closedById`, `closedByName`, `closedAt` e `updatedAt`; as listagens (SCRUM-160) usarão um resumo sem a descrição.
 **Implementação da RF11 (SCRUM-160, 20/10):** `GET /tickets/mine` (qualquer usuário ativo), `/tickets/queue` (`OPEN` sem responsável) e `/tickets/assigned` (responsável = usuário logado, inclusive encerrados); fila e atribuídos só para `TICKET_HANDLER` e admin, por regra de rota no `SecurityConfig`. Resposta em `PageResponse<TicketSummaryResponse>` (`content`, `page`, `size`, `totalElements`, `totalPages`), formato próprio para não serializar o `PageImpl`. Ordem fixa por `created_at` decrescente (a ordenação enviada pelo cliente é ignorada); `size` padrão 20, máximo 100. Filtros por `Specification` (`TicketSpecifications`); o `findAll` paginado tem `@EntityGraph` para não fazer uma consulta por chamado.
 **Implementação da RF06 (SCRUM-162, 20/10):** `PATCH /tickets/{id}/assign`, sem corpo, só `TICKET_HANDLER` e admin (regra de rota). **Máquina de estados:** as transições permitidas ficam em `TicketStatus.canTransitionTo` (`OPEN → IN_PROGRESS | CLOSED`, `IN_PROGRESS → OPEN | CLOSED`, `CLOSED` é final) e o único ponto que altera o status é `Ticket.moveTo`, usado por `assign` e `returnToQueue` (e, na SCRUM-163, por `close`); transição inválida → `InvalidTicketTransitionException` → 409 "Transição de status inválida". Para dois atendentes não assumirem o mesmo chamado, o service lê com `findByIdForUpdate` (`PESSIMISTIC_WRITE`, `SELECT ... FOR UPDATE`): o segundo espera, encontra `IN_PROGRESS` e recebe 409. O `TicketService` passou a receber o `Clock` (preenche `assigned_at`).
+**Implementação da RF07 (SCRUM-163, 21/10):** `PATCH /tickets/{id}/close`, sem corpo (a avaliação é outro endpoint, `POST /tickets/{id}/rating`). Podem encerrar as mesmas pessoas que veem o chamado (`TicketService.canView`: solicitante, `TICKET_HANDLER`, admin); para os demais, 404. `Ticket.close` passa por `moveTo` (`OPEN`/`IN_PROGRESS` → `CLOSED`), preenche `closed_by_id` e `closed_at` e **mantém o responsável**, que é quem será avaliado. Já encerrado → 409. Também usa `findByIdForUpdate`.
 
 **Notificações e avaliações (incluídas em 20/10), em fatias que acompanham o roteiro:**
 

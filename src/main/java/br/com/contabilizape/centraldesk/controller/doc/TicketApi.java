@@ -144,6 +144,35 @@ public interface TicketApi {
     TicketResponse assign(@Parameter(hidden = true) Jwt jwt, UUID id);
 
     @Operation(
+            summary = "Encerra um chamado",
+            description = """
+                    Leva o chamado de `OPEN` ou `IN_PROGRESS` para `CLOSED` e registra quem encerrou e quando. \
+                    Podem encerrar: **quem abriu**, a Inovação (`TICKET_HANDLER`) e administradores. Para os \
+                    demais a resposta é 404, como em `GET /tickets/{id}`. Sem corpo: a avaliação do atendimento \
+                    é feita depois, em `POST /tickets/{id}/rating`.""",
+            security = @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH))
+    @ApiResponse(responseCode = "200", description = "Chamado encerrado.",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = TicketResponse.class)))
+    @ApiResponse(responseCode = "401", description = "Sem sessão.", content = @Content)
+    @ApiResponse(
+            responseCode = "403",
+            description = "A conta foi desativada depois do login.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    @ApiResponse(
+            responseCode = "404",
+            description = "Chamado inexistente, ou que o usuário não pode ver.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE,
+                    schema = @Schema(implementation = ProblemDetail.class),
+                    examples = @ExampleObject(name = "Chamado não encontrado", value = ProblemExamples.TICKET_NOT_FOUND)))
+    @ApiResponse(
+            responseCode = "409",
+            description = "O chamado já está encerrado.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE,
+                    schema = @Schema(implementation = ProblemDetail.class),
+                    examples = @ExampleObject(name = "Já encerrado", value = ProblemExamples.TICKET_ALREADY_CLOSED)))
+    TicketResponse close(@Parameter(hidden = true) Jwt jwt, UUID id);
+
+    @Operation(
             summary = "Detalhes de um chamado",
             description = """
                     Chamado completo, com descrição, responsável e encerramento. Veem: **quem abriu**, \

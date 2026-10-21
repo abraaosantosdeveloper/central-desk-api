@@ -91,6 +91,13 @@ public class Ticket {
         this.assignedAt = now;
     }
 
+    /** Encerra o chamado (OPEN ou IN_PROGRESS → CLOSED). O responsável é mantido: é ele quem será avaliado. */
+    public void close(User closedBy, OffsetDateTime now) {
+        moveTo(TicketStatus.CLOSED);
+        this.closedBy = closedBy;
+        this.closedAt = now;
+    }
+
     /** Devolve à fila um chamado em atendimento (o responsável saiu: conta desativada ou anonimizada). */
     public void returnToQueue() {
         moveTo(TicketStatus.OPEN);

@@ -79,6 +79,14 @@ public class TicketController implements TicketApi {
         return ticketService.assign(id, UUID.fromString(jwt.getSubject()));
     }
 
+    /** Solicitante, Inovação e administradores (regra no TicketService). Sem corpo: avaliação é outro endpoint. */
+    @Override
+    @PatchMapping("/{id}/close")
+    public TicketResponse close(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {
+        List<String> roles = Objects.requireNonNullElse(jwt.getClaimAsStringList(TokenService.ROLES_CLAIM), List.of());
+        return ticketService.close(id, UUID.fromString(jwt.getSubject()), roles);
+    }
+
     @Override
     @GetMapping("/{id}")
     public TicketResponse findById(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {

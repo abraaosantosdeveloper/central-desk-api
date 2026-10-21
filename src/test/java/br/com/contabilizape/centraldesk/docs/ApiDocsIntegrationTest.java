@@ -187,6 +187,20 @@ class ApiDocsIntegrationTest {
     }
 
     @Test
+    void documentsTicketClosing() throws Exception {
+        String close = "$.paths['/tickets/{id}/close'].patch";
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(close + ".responses['200']").exists())
+                .andExpect(jsonPath(close + ".responses['401']").exists())
+                .andExpect(jsonPath(close + ".responses['403']").exists())
+                .andExpect(jsonPath(close + ".responses['404'].content['" + PROBLEM_JSON + "']").exists())
+                .andExpect(jsonPath(close + ".responses['409'].content['" + PROBLEM_JSON + "']").exists())
+                .andExpect(jsonPath(close + ".requestBody").doesNotExist())
+                .andExpect(jsonPath(close + ".security[0].cookieAuth").isArray());
+    }
+
+    @Test
     void passwordIsWriteOnlyAndNeverPartOfTheResponse() throws Exception {
         mockMvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk())

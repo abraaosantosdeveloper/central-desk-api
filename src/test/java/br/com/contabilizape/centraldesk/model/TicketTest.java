@@ -93,6 +93,41 @@ class TicketTest {
         assertThatThrownBy(ticket::returnToQueue).isInstanceOf(InvalidTicketTransitionException.class);
     }
 
+    // ---------- encerrar ----------
+
+    @Test
+    void closingRecordsWhoClosedAndWhen() {
+        Ticket ticket = ticket(TicketStatus.IN_PROGRESS);
+        User closer = mock(User.class);
+
+        ticket.close(closer, NOW);
+
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.CLOSED);
+        assertThat(ticket.getClosedBy()).isSameAs(closer);
+        assertThat(ticket.getClosedAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    void openTicketCanBeClosedWithoutAssignee() {
+        Ticket ticket = ticket(TicketStatus.OPEN);
+
+        ticket.close(mock(User.class), NOW);
+
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.CLOSED);
+        assertThat(ticket.getAssignee()).isNull();
+    }
+
+    @Test
+    void closedTicketCannotBeClosedAgain() {
+        Ticket ticket = ticket(TicketStatus.CLOSED);
+        User firstCloser = mock(User.class);
+        ReflectionTestUtils.setField(ticket, "closedBy", firstCloser);
+
+        assertThatThrownBy(() -> ticket.close(mock(User.class), NOW))
+                .isInstanceOf(InvalidTicketTransitionException.class);
+        assertThat(ticket.getClosedBy()).isSameAs(firstCloser);
+    }
+
     private static Ticket ticket(TicketStatus status) {
         Ticket ticket = new Ticket("Impressora", "Sem papel", mock(Category.class), mock(Priority.class), mock(User.class));
         ReflectionTestUtils.setField(ticket, "status", status);

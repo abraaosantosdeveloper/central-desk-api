@@ -128,6 +128,15 @@ public final class ProblemExamples {
               "instance": "/tickets/0f8b2c1e-6d3a-4f5e-9b7c-1a2b3c4d5e6f/assign"
             }""";
 
+    public static final String TICKET_ALREADY_CLOSED = """
+            {
+              "type": "about:blank",
+              "title": "Transição de status inválida",
+              "status": 409,
+              "detail": "O chamado está CLOSED e não pode passar para CLOSED.",
+              "instance": "/tickets/0f8b2c1e-6d3a-4f5e-9b7c-1a2b3c4d5e6f/close"
+            }""";
+
     public static final String TICKET_EDIT_FORBIDDEN = """
             {
               "type": "about:blank",
