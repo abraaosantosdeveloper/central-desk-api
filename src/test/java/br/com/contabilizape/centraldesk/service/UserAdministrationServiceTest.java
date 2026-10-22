@@ -198,7 +198,7 @@ class UserAdministrationServiceTest {
         assertThat(target.getEmail()).isEqualTo("maria.souza@contabilizape.com.br");
         assertThat(response.cpf()).isEqualTo("11144477735");
         assertThat(response.email()).isEqualTo("maria.souza@contabilizape.com.br");
-        verify(refreshTokenService).revokeAll(TARGET_ID);
+        verify(refreshTokenService).endAllSessions(target);
     }
 
     @Test
@@ -212,7 +212,7 @@ class UserAdministrationServiceTest {
         assertThat(target.getFullName()).isEqualTo("Maria S.");
         verify(userRepository, never()).existsByCpf(any());
         verify(userRepository, never()).existsByEmail(any());
-        verify(refreshTokenService, never()).revokeAll(any());
+        verify(refreshTokenService, never()).endAllSessions(any());
     }
 
     @Test
@@ -225,7 +225,7 @@ class UserAdministrationServiceTest {
         service.update(ADMIN_ID, request("Ana Souza", "52998224725", "ana.souza@contabilizape.com.br", INNOVATION_ID), ADMIN_ID);
 
         assertThat(self.getEmail()).isEqualTo("ana.souza@contabilizape.com.br");
-        verify(refreshTokenService, never()).revokeAll(any());
+        verify(refreshTokenService, never()).endAllSessions(any());
     }
 
     @Test
@@ -252,7 +252,7 @@ class UserAdministrationServiceTest {
                 request("Maria da Silva", "52998224725", "joao.souza@contabilizape.com.br", GENERAL_ID), ADMIN_ID))
                 .isInstanceOf(EmailAlreadyRegisteredException.class);
         assertThat(target.getEmail()).isEqualTo("maria.silva@contabilizape.com.br");
-        verify(refreshTokenService, never()).revokeAll(any());
+        verify(refreshTokenService, never()).endAllSessions(any());
     }
 
     @Test

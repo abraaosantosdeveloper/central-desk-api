@@ -77,8 +77,10 @@ public interface UserApi {
                     Exige a senha atual. A nova segue as regras do cadastro (8 a 72 caracteres, com letra e número) \
                     e precisa ser diferente da atual.
 
-                    Ao trocar, **todas as sessões** do usuário são encerradas (os outros dispositivos não renovam mais) \
-                    e esta sessão recebe cookies novos na própria resposta, continuando logada.""",
+                    Ao trocar, **todas as sessões** do usuário são encerradas na hora: os outros dispositivos não \
+                    renovam mais e o access token deles passa a receber 401 (as abas abertas recebem \
+                    `session.ended` no stream em tempo real). Esta sessão recebe cookies novos na própria resposta \
+                    e continua logada.""",
             security = @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH))
     @ApiResponse(
             responseCode = "204",

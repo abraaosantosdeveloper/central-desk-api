@@ -6,6 +6,7 @@ import br.com.contabilizape.centraldesk.model.Department;
 import br.com.contabilizape.centraldesk.model.RefreshToken;
 import br.com.contabilizape.centraldesk.model.User;
 import br.com.contabilizape.centraldesk.model.UserStatus;
+import br.com.contabilizape.centraldesk.realtime.SessionsEndedEvent;
 import br.com.contabilizape.centraldesk.repository.RefreshTokenRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,6 +14,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Clock;
@@ -41,12 +43,13 @@ class RefreshTokenServiceTest {
     private static final String RAW = "token-do-navegador";
 
     @Mock private RefreshTokenRepository repository;
+    @Mock private ApplicationEventPublisher events;
 
     private RefreshTokenService service;
 
     @BeforeEach
     void setUp() {
-        service = new RefreshTokenService(repository, Clock.fixed(NOW, ZoneOffset.UTC), TTL);
+        service = new RefreshTokenService(repository, Clock.fixed(NOW, ZoneOffset.UTC), TTL, events);
     }
 
     // ---------- emissão ----------
@@ -169,6 +172,17 @@ class RefreshTokenServiceTest {
         service.revokeAll(USER_ID);
 
         verify(repository).revokeAllActiveByUserId(USER_ID, NOW_UTC);
+    }
+
+    @Test
+    void endAllSessionsAlsoCutsTheAccessTokensAndWarnsTheOpenStreams() {
+        User maria = user(UserStatus.ACTIVE);
+
+        service.endAllSessions(maria);
+
+        verify(repository).revokeAllActiveByUserId(USER_ID, NOW_UTC);
+        assertThat(maria.getSessionsValidFrom()).isEqualTo(NOW_UTC);
+        verify(events).publishEvent(new SessionsEndedEvent(USER_ID));
     }
 
     private static User user(UserStatus status) {

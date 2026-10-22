@@ -103,7 +103,8 @@ public class AuthService {
         }
 
         user.changePasswordHash(passwordEncoder.encode(request.newPassword()));
-        refreshTokenService.revokeAll(user.getId());
+        // As outras sessões caem na hora; a atual é reaberta logo abaixo com tokens novos
+        refreshTokenService.endAllSessions(user);
         return openSession(user, refreshTokenService.issue(user));
     }
 

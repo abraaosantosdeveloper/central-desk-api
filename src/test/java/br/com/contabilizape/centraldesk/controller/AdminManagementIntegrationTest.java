@@ -178,7 +178,7 @@ class AdminManagementIntegrationTest {
     @Test
     void adminCorrectsTheDataOfAnAccount() throws Exception {
         UUID maria = register(MARIA, "52998224725", "Maria da Silva", GENERAL_ID);
-        login(MARIA);
+        Cookie mariaSession = login(MARIA);
         UUID finance = departmentId("Financeiro");
 
         mockMvc.perform(get("/users/" + maria).cookie(adminSession))
@@ -206,6 +206,15 @@ class AdminManagementIntegrationTest {
         // A listagem continua sem o CPF
         mockMvc.perform(get("/users").param("search", "Maria Souza").cookie(adminSession))
                 .andExpect(jsonPath("$.content[0].cpf").doesNotExist());
+
+        // O access token que ela já tinha deixa de valer na hora. O corte foi gravado pela edição; aqui ele
+        // é adiantado para o teste não depender de o login e a edição caírem em segundos diferentes.
+        assertThat(jdbc.queryForObject("SELECT sessions_valid_from IS NOT NULL FROM users WHERE id = ?",
+                Boolean.class, maria)).isTrue();
+        jdbc.update("UPDATE users SET sessions_valid_from = now() + interval '1 minute' WHERE id = ?", maria);
+        mockMvc.perform(get("/users/me").cookie(mariaSession)).andExpect(status().isUnauthorized());
+        // A sessão de quem editou não é afetada
+        mockMvc.perform(get("/users/me").cookie(adminSession)).andExpect(status().isOk());
     }
 
     @Test

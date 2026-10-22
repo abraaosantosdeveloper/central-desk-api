@@ -125,7 +125,7 @@ public class UserAdministrationService {
         user.changeCpf(cpf);
         user.changeEmail(email);
         if (emailChanged && !userId.equals(adminId)) {
-            offboarding.endSessions(userId);
+            offboarding.endSessions(user);
         }
         return AdminUserDetailResponse.from(toResponse(user), user.getCpf());
     }

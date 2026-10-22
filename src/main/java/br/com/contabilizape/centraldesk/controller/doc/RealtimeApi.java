@@ -35,7 +35,10 @@ public interface RealtimeApi {
                     - `comment.created`: comentário novo num chamado em que o usuário é solicitante, responsável \
                     ou autor (`data` = comentário);
                     - `ticket.created`: chamado aberto; só para a Inovação e administradores (`data` = resumo, \
-                    sem a descrição).
+                    sem a descrição);
+                    - `session.ended`: as sessões do usuário foram encerradas (senha trocada, e-mail de login \
+                    trocado pelo admin). A conexão é fechada logo depois; a tela deve conferir a sessão \
+                    (`GET /users/me`), que responde 401 nos dispositivos que perderam o acesso.
 
                     Limite conhecido: funciona com uma única instância da aplicação.""",
             security = @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH))

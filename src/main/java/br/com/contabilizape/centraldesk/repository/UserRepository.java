@@ -13,6 +13,7 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -23,6 +24,10 @@ public interface UserRepository extends JpaRepository<User, UUID>, JpaSpecificat
     Optional<User> findByEmail(String email);
 
     boolean existsByCpf(String cpf);
+
+    /** Corte de sessões do usuário (lido a cada requisição autenticada); vazio quando não há corte. */
+    @Query("select u.sessionsValidFrom from User u where u.id = :id")
+    Optional<OffsetDateTime> findSessionsValidFrom(@Param("id") UUID id);
 
     @Query("select a.user from Admin a where a.user.status = :status")
     List<User> findAdminsByStatus(@Param("status") UserStatus status);

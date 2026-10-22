@@ -4,6 +4,7 @@ import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
@@ -47,7 +48,20 @@ public class JwtConfig {
         return new NimbusJwtEncoder(new ImmutableSecret<>(jwtSigningKey));
     }
 
+    /**
+     * Decoder usado nas requisições: além de assinatura, validade e emissor, recusa tokens emitidos
+     * antes do corte de sessões do usuário (SCRUM-176).
+     */
     @Bean
+    public JwtDecoder accessTokenDecoder(SecretKey jwtSigningKey, JwtProperties properties,
+                                         SessionCutoffValidator sessionCutoff) {
+        NimbusJwtDecoder decoder = (NimbusJwtDecoder) jwtDecoder(jwtSigningKey, properties);
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                JwtValidators.createDefaultWithIssuer(properties.issuer()), sessionCutoff));
+        return decoder;
+    }
+
+    /** Só a parte criptográfica (assinatura, validade e emissor), sem consultar o banco. */
     public JwtDecoder jwtDecoder(SecretKey jwtSigningKey, JwtProperties properties) {
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtSigningKey)
                 .macAlgorithm(MacAlgorithm.HS256)

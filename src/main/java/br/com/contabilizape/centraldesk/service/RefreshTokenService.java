@@ -5,10 +5,12 @@ import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
 import br.com.contabilizape.centraldesk.model.RefreshToken;
 import br.com.contabilizape.centraldesk.model.User;
 import br.com.contabilizape.centraldesk.model.UserStatus;
+import br.com.contabilizape.centraldesk.realtime.SessionsEndedEvent;
 import br.com.contabilizape.centraldesk.repository.RefreshTokenRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,14 +38,17 @@ public class RefreshTokenService {
     private final RefreshTokenRepository repository;
     private final Clock clock;
     private final Duration ttl;
+    private final ApplicationEventPublisher events;
     private final SecureRandom random = new SecureRandom();
 
     public RefreshTokenService(RefreshTokenRepository repository,
                                Clock clock,
-                               @Value("${app.security.refresh-token.ttl}") Duration ttl) {
+                               @Value("${app.security.refresh-token.ttl}") Duration ttl,
+                               ApplicationEventPublisher events) {
         this.repository = repository;
         this.clock = clock;
         this.ttl = ttl;
+        this.events = events;
     }
 
     /** Cria uma sessão nova e devolve o token em claro (vai só para o cookie). */
@@ -97,6 +102,19 @@ public class RefreshTokenService {
     @Transactional
     public void revokeAll(UUID userId) {
         repository.revokeAllActiveByUserId(userId, now());
+    }
+
+    /**
+     * Encerra todas as sessões NA HORA (troca de senha, e-mail de login trocado pelo admin): além dos
+     * refresh tokens, grava o corte que faz os access tokens em uso serem recusados e avisa os streams
+     * em tempo real abertos (depois do commit). Tokens emitidos a seguir, na mesma transação, valem.
+     */
+    @Transactional
+    public void endAllSessions(User user) {
+        OffsetDateTime now = now();
+        user.endSessions(now);
+        repository.revokeAllActiveByUserId(user.getId(), now);
+        events.publishEvent(new SessionsEndedEvent(user.getId()));
     }
 
     public Duration ttl() {

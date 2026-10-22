@@ -67,7 +67,8 @@ public interface AdminUserApi {
                     Só administradores, e só para contas ativas (inclusive a do próprio administrador). Corrige \
                     nome, CPF, e-mail e departamento de uma vez; mande todos os campos, mesmo os que não mudaram. \
                     CPF e e-mail continuam únicos no sistema. O e-mail é o login: se o de outra pessoa mudar, as \
-                    sessões dela são encerradas. O departamento segue as regras da troca isolada: com pedido de \
+                    sessões dela são encerradas na hora (o access token em uso passa a receber 401 e as abas \
+                    abertas recebem `session.ended` no stream em tempo real). O departamento segue as regras da troca isolada: com pedido de \
                     entrada na Inovação pendente ele não muda, administradores ficam na Inovação e quem sai da \
                     Inovação devolve à fila os chamados em atendimento.""",
             security = @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH))

@@ -75,6 +75,16 @@ class UserTest {
         assertThat(user.getEmail()).isEqualTo("maria.souza@contabilizape.com.br");
     }
 
+    @Test
+    void endingSessionsRecordsTheCutoffTruncatedToTheSecond() {
+        User user = user(UserStatus.ACTIVE);
+
+        user.endSessions(NOW.plusNanos(750_000_000));
+
+        // O "iat" do JWT não tem fração de segundo: o corte também não pode ter
+        assertThat(user.getSessionsValidFrom()).isEqualTo(NOW);
+    }
+
     private static User user(UserStatus status) {
         User user = new User("Maria da Silva", "52998224725", "maria.silva@contabilizape.com.br", "hash",
                 mock(Department.class));

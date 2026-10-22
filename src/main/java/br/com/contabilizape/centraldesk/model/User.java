@@ -7,6 +7,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 @Entity
@@ -55,6 +56,10 @@ public class User {
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
 
+    /** Corte de sessões: access tokens emitidos antes disso são recusados (SessionCutoffValidator). */
+    @Column(name = "sessions_valid_from")
+    private OffsetDateTime sessionsValidFrom;
+
     protected User() {}
     
     public User(String fullName, String cpf, String email, String passwordHash, Department department){
@@ -101,6 +106,10 @@ public class User {
         return this.deletedAt;
     }
 
+    public OffsetDateTime getSessionsValidFrom() {
+        return sessionsValidFrom;
+    }
+
     public OffsetDateTime getDeactivatedAt() {
         return this.deactivatedAt;
     }
@@ -141,6 +150,14 @@ public class User {
     /** Correção feita pelo administrador. O e-mail é o login; chega já normalizado (minúsculas, sem espaços). */
     public void changeEmail(String email) {
         this.email = email;
+    }
+
+    /**
+     * Encerra na hora as sessões abertas: os access tokens emitidos antes deste segundo deixam de valer.
+     * Truncado no segundo porque o "iat" do JWT não tem fração; os tokens emitidos a partir daqui valem.
+     */
+    public void endSessions(OffsetDateTime now) {
+        this.sessionsValidFrom = now.truncatedTo(ChronoUnit.SECONDS);
     }
 
     /** Recebe o hash já calculado; a entidade não conhece o algoritmo. */

@@ -59,6 +59,18 @@ public class SseEmitterRegistry {
         sendTo(subscription -> subscription.roles().stream().anyMatch(roles::contains), eventName, data);
     }
 
+    /** Fecha os streams dos usuários (ex.: sessões encerradas); o navegador reconecta e é reautenticado. */
+    public void closeUsers(Collection<UUID> userIds) {
+        subscriptions.stream().filter(subscription -> userIds.contains(subscription.userId())).forEach(subscription -> {
+            subscriptions.remove(subscription);
+            try {
+                subscription.emitter().complete();
+            } catch (IllegalStateException e) {
+                log.debug("Conexão SSE do usuário {} já estava encerrada", subscription.userId());
+            }
+        });
+    }
+
     private void sendTo(Predicate<Subscription> recipient, String eventName, Object data) {
         subscriptions.stream().filter(recipient).forEach(subscription -> send(subscription, eventName, data));
     }

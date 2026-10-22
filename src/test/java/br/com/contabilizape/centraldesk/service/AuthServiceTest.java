@@ -196,7 +196,7 @@ class AuthServiceTest {
         AuthenticatedSession session = authService.changePassword(USER_ID, new PasswordChangeRequest(PASSWORD, "novaSenha456"));
 
         assertThat(maria.getPasswordHash()).isEqualTo("hash-novo");
-        verify(refreshTokenService).revokeAll(USER_ID);
+        verify(refreshTokenService).endAllSessions(maria);
         assertThat(session.refreshToken()).isEqualTo("refresh-novo");
         assertThat(session.accessToken()).isEqualTo("jwt-novo");
     }
@@ -210,7 +210,7 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.changePassword(USER_ID, new PasswordChangeRequest("errada123", "novaSenha456")))
                 .isInstanceOf(CurrentPasswordMismatchException.class);
         assertThat(maria.getPasswordHash()).isEqualTo("hash-da-maria");
-        verify(refreshTokenService, never()).revokeAll(any());
+        verify(refreshTokenService, never()).endAllSessions(any());
     }
 
     @Test
@@ -221,7 +221,7 @@ class AuthServiceTest {
 
         assertThatThrownBy(() -> authService.changePassword(USER_ID, new PasswordChangeRequest(PASSWORD, PASSWORD)))
                 .isInstanceOf(NewPasswordSameAsCurrentException.class);
-        verify(refreshTokenService, never()).revokeAll(any());
+        verify(refreshTokenService, never()).endAllSessions(any());
     }
 
     @Test
@@ -239,7 +239,7 @@ class AuthServiceTest {
 
         assertThatThrownBy(() -> authService.changePassword(USER_ID, new PasswordChangeRequest(PASSWORD, "novaSenha456")))
                 .isInstanceOf(AccountNotActiveException.class);
-        verify(refreshTokenService, never()).revokeAll(any());
+        verify(refreshTokenService, never()).endAllSessions(any());
     }
     // ---------- auxiliares ----------
 

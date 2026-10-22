@@ -190,6 +190,12 @@ class UserControllerIntegrationTest {
                 .anyMatch(cookie -> cookie.startsWith("access_token=") && !cookie.startsWith("access_token=;"));
         mockMvc.perform(post("/auth/refresh").cookie(new Cookie("refresh_token", refreshToken(response))))
                 .andExpect(status().isOk());
+        // O access token novo vale (foi emitido depois do corte de sessões gravado na troca)
+        String newAccess = response.getHeaders(HttpHeaders.SET_COOKIE).stream()
+                .filter(cookie -> cookie.startsWith("access_token=")).findFirst().orElseThrow();
+        mockMvc.perform(get("/users/me")
+                        .cookie(new Cookie("access_token", newAccess.substring(newAccess.indexOf('=') + 1, newAccess.indexOf(';')))))
+                .andExpect(status().isOk());
 
         // A outra sessão não renova mais
         mockMvc.perform(post("/auth/refresh").cookie(new Cookie("refresh_token", otherSessionRefresh)))

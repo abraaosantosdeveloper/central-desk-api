@@ -4,7 +4,9 @@ import br.com.contabilizape.centraldesk.security.Roles;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Leva os eventos de domínio para os streams SSE. Roda depois do commit: ninguém recebe
@@ -15,6 +17,7 @@ public class RealtimeEventListener {
 
     public static final String COMMENT_CREATED = "comment.created";
     public static final String TICKET_CREATED = "ticket.created";
+    public static final String SESSION_ENDED = "session.ended";
 
     private final SseEmitterRegistry registry;
 
@@ -25,6 +28,14 @@ public class RealtimeEventListener {
     @TransactionalEventListener
     public void onCommentCreated(CommentCreatedEvent event) {
         registry.sendToUsers(event.recipientIds(), COMMENT_CREATED, event.comment());
+    }
+
+    /** Avisa as abas abertas da pessoa e fecha os streams; o token antigo não reabre a conexão. */
+    @TransactionalEventListener
+    public void onSessionsEnded(SessionsEndedEvent event) {
+        Set<UUID> user = Set.of(event.userId());
+        registry.sendToUsers(user, SESSION_ENDED, Map.of("reason", "SESSIONS_ENDED"));
+        registry.closeUsers(user);
     }
 
     @TransactionalEventListener

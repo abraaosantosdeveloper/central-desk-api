@@ -3,6 +3,7 @@ package br.com.contabilizape.centraldesk.service;
 import br.com.contabilizape.centraldesk.exception.LastAdminException;
 import br.com.contabilizape.centraldesk.model.Ticket;
 import br.com.contabilizape.centraldesk.model.TicketStatus;
+import br.com.contabilizape.centraldesk.model.User;
 import br.com.contabilizape.centraldesk.model.UserStatus;
 import br.com.contabilizape.centraldesk.repository.AdminRepository;
 import br.com.contabilizape.centraldesk.repository.TicketRepository;
@@ -44,9 +45,9 @@ class AccountOffboarding {
         }
     }
 
-    /** Só derruba as sessões (ex.: o e-mail de login mudou). */
-    void endSessions(UUID userId) {
-        refreshTokenService.revokeAll(userId);
+    /** Só derruba as sessões, na hora (ex.: o e-mail de login mudou). */
+    void endSessions(User user) {
+        refreshTokenService.endAllSessions(user);
     }
 
     /** Derruba as sessões e devolve à fila os chamados que estavam com a pessoa. */
