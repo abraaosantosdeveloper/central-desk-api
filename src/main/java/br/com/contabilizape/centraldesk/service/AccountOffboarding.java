@@ -44,6 +44,11 @@ class AccountOffboarding {
         }
     }
 
+    /** Só derruba as sessões (ex.: o e-mail de login mudou). */
+    void endSessions(UUID userId) {
+        refreshTokenService.revokeAll(userId);
+    }
+
     /** Derruba as sessões e devolve à fila os chamados que estavam com a pessoa. */
     void release(UUID userId) {
         refreshTokenService.revokeAll(userId);

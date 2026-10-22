@@ -26,8 +26,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Administração de contas: conceder e remover admin (SCRUM-169), trocar o departamento (SCRUM-170)
- * e filtrar a listagem por perfil e departamento (SCRUM-168).
+ * Administração de contas: conceder e remover admin (SCRUM-169), trocar o departamento (SCRUM-170),
+ * filtrar a listagem por perfil e departamento (SCRUM-168) e corrigir os dados de uma conta (SCRUM-176).
  */
 @IntegrationTest
 class AdminManagementIntegrationTest {
@@ -131,6 +131,7 @@ class AdminManagementIntegrationTest {
     @Test
     void adminGrantsAndRevokesAdminAccess() throws Exception {
         UUID maria = register(MARIA, "52998224725", "Maria da Silva", GENERAL_ID);
+        jdbc.update("UPDATE users SET department_id = ?::uuid WHERE id = ?", INNOVATION_ID, maria);
 
         mockMvc.perform(put("/users/" + maria + "/admin").cookie(adminSession))
                 .andExpect(status().isOk())
@@ -156,6 +157,9 @@ class AdminManagementIntegrationTest {
 
         // Só contas ativas viram admin
         mockMvc.perform(put("/users/" + joao + "/admin").cookie(adminSession)).andExpect(status().isConflict());
+        // ...e só as da Inovação (SCRUM-176)
+        UUID maria = register(MARIA, "52998224725", "Maria da Silva", GENERAL_ID);
+        mockMvc.perform(put("/users/" + maria + "/admin").cookie(adminSession)).andExpect(status().isConflict());
         // Ninguém remove o próprio acesso (e assim o último admin nunca sai)
         mockMvc.perform(delete("/users/" + admin + "/admin").cookie(adminSession)).andExpect(status().isConflict());
         mockMvc.perform(put("/users/" + UUID.randomUUID() + "/admin").cookie(adminSession)).andExpect(status().isNotFound());
@@ -167,6 +171,88 @@ class AdminManagementIntegrationTest {
         Cookie mariaSession = login(MARIA);
 
         mockMvc.perform(put("/users/" + maria + "/admin").cookie(mariaSession)).andExpect(status().isForbidden());
+    }
+
+    // ---------- SCRUM-176: corrigir os dados de uma conta ----------
+
+    @Test
+    void adminCorrectsTheDataOfAnAccount() throws Exception {
+        UUID maria = register(MARIA, "52998224725", "Maria da Silva", GENERAL_ID);
+        login(MARIA);
+        UUID finance = departmentId("Financeiro");
+
+        mockMvc.perform(get("/users/" + maria).cookie(adminSession))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cpf").value("52998224725"));
+
+        mockMvc.perform(put("/users/" + maria).cookie(adminSession)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(updateBody("Maria Souza", "11144477735", "Maria.Souza@contabilizape.com.br", finance)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fullName").value("Maria Souza"))
+                .andExpect(jsonPath("$.cpf").value("11144477735"))
+                .andExpect(jsonPath("$.email").value("maria.souza@contabilizape.com.br"))
+                .andExpect(jsonPath("$.departmentName").value("Financeiro"));
+
+        // O e-mail é o login: as sessões abertas caem e só o endereço novo entra
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM refresh_tokens WHERE user_id = ? AND revoked_at IS NULL",
+                Integer.class, maria)).isZero();
+        mockMvc.perform(post("/auth/login").contentType(MediaType.APPLICATION_JSON).content("""
+                        { "email": "%s", "password": "%s" }
+                        """.formatted(MARIA, PASSWORD)))
+                .andExpect(status().isUnauthorized());
+        login("maria.souza@contabilizape.com.br");
+
+        // A listagem continua sem o CPF
+        mockMvc.perform(get("/users").param("search", "Maria Souza").cookie(adminSession))
+                .andExpect(jsonPath("$.content[0].cpf").doesNotExist());
+    }
+
+    @Test
+    void invalidCorrectionsAreRejected() throws Exception {
+        UUID maria = register(MARIA, "52998224725", "Maria da Silva", GENERAL_ID);
+        jdbc.update("UPDATE users SET department_id = ?::uuid WHERE id = ?", INNOVATION_ID, maria);
+        register(JOAO, "11144477735", "João Souza", GENERAL_ID);
+        UUID innovation = UUID.fromString(INNOVATION_ID);
+
+        // CPF e e-mail de outra conta
+        mockMvc.perform(put("/users/" + maria).cookie(adminSession).contentType(MediaType.APPLICATION_JSON)
+                        .content(updateBody("Maria da Silva", "11144477735", MARIA, innovation)))
+                .andExpect(status().isConflict());
+        mockMvc.perform(put("/users/" + maria).cookie(adminSession).contentType(MediaType.APPLICATION_JSON)
+                        .content(updateBody("Maria da Silva", "52998224725", JOAO, innovation)))
+                .andExpect(status().isConflict());
+        // CPF inválido e e-mail fora do domínio
+        mockMvc.perform(put("/users/" + maria).cookie(adminSession).contentType(MediaType.APPLICATION_JSON)
+                        .content(updateBody("Maria da Silva", "12345678900", MARIA, innovation)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.cpf").exists());
+        mockMvc.perform(put("/users/" + maria).cookie(adminSession).contentType(MediaType.APPLICATION_JSON)
+                        .content(updateBody("Maria da Silva", "52998224725", "maria@gmail.com", innovation)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.email").exists());
+
+        // Administradores ficam na Inovação
+        mockMvc.perform(put("/users/" + maria + "/admin").cookie(adminSession)).andExpect(status().isOk());
+        mockMvc.perform(put("/users/" + maria).cookie(adminSession).contentType(MediaType.APPLICATION_JSON)
+                        .content(updateBody("Maria da Silva", "52998224725", MARIA, UUID.fromString(GENERAL_ID))))
+                .andExpect(status().isConflict());
+        mockMvc.perform(patch("/users/" + maria + "/department").cookie(adminSession)
+                        .contentType(MediaType.APPLICATION_JSON).content(departmentBody(UUID.fromString(GENERAL_ID))))
+                .andExpect(status().isConflict());
+        assertThat(jdbc.queryForObject("SELECT department_id FROM users WHERE id = ?", UUID.class, maria))
+                .isEqualTo(innovation);
+    }
+
+    @Test
+    void collaboratorCannotCorrectAccounts() throws Exception {
+        UUID maria = register(MARIA, "52998224725", "Maria da Silva", GENERAL_ID);
+        Cookie mariaSession = login(MARIA);
+
+        mockMvc.perform(put("/users/" + maria).cookie(mariaSession).contentType(MediaType.APPLICATION_JSON)
+                        .content(updateBody("Maria da Silva", "52998224725", MARIA, UUID.fromString(GENERAL_ID))))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/users/" + maria).cookie(mariaSession)).andExpect(status().isForbidden());
     }
 
     // ---------- SCRUM-168: filtros da listagem de contas ----------
@@ -195,6 +281,12 @@ class AdminManagementIntegrationTest {
 
     private static String departmentBody(UUID departmentId) {
         return "{ \"departmentId\": \"%s\" }".formatted(departmentId);
+    }
+
+    private static String updateBody(String fullName, String cpf, String email, UUID departmentId) {
+        return """
+                { "fullName": "%s", "cpf": "%s", "email": "%s", "departmentId": "%s" }
+                """.formatted(fullName, cpf, email, departmentId);
     }
 
     private UUID register(String email, String cpf, String name, String departmentId) throws Exception {

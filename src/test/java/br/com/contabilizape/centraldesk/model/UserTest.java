@@ -64,6 +64,17 @@ class UserTest {
         assertThat(user.getDepartment()).isSameAs(innovation);
     }
 
+    @Test
+    void adminCorrectsCpfAndEmail() {
+        User user = user(UserStatus.ACTIVE);
+
+        user.changeCpf("11144477735");
+        user.changeEmail("maria.souza@contabilizape.com.br");
+
+        assertThat(user.getCpf()).isEqualTo("11144477735");
+        assertThat(user.getEmail()).isEqualTo("maria.souza@contabilizape.com.br");
+    }
+
     private static User user(UserStatus status) {
         User user = new User("Maria da Silva", "52998224725", "maria.silva@contabilizape.com.br", "hash",
                 mock(Department.class));

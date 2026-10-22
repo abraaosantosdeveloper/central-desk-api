@@ -1,9 +1,13 @@
 package br.com.contabilizape.centraldesk.service;
 
+import br.com.contabilizape.centraldesk.dto.AdminUserDetailResponse;
 import br.com.contabilizape.centraldesk.dto.AdminUserResponse;
+import br.com.contabilizape.centraldesk.dto.AdminUserUpdateRequest;
 import br.com.contabilizape.centraldesk.dto.PageResponse;
 import br.com.contabilizape.centraldesk.dto.UserFilter;
+import br.com.contabilizape.centraldesk.exception.CpfAlreadyRegisteredException;
 import br.com.contabilizape.centraldesk.exception.DepartmentNotFoundException;
+import br.com.contabilizape.centraldesk.exception.EmailAlreadyRegisteredException;
 import br.com.contabilizape.centraldesk.exception.InvalidAccountStatusException;
 import br.com.contabilizape.centraldesk.exception.SelfDeactivationException;
 import br.com.contabilizape.centraldesk.exception.UserNotFoundException;
@@ -38,7 +42,7 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Painel do administrador: consultar, desativar e reativar contas.
+ * Painel do administrador: consultar, corrigir os dados, desativar e reativar contas.
  * Quem pode chamar é decidido no SecurityConfig (só ROLE_ADMIN).
  */
 @Service
@@ -82,9 +86,48 @@ public class UserAdministrationService {
                 user -> toResponse(user, adminIds.contains(user.getId()), pendingIds.contains(user.getId())));
     }
 
+    /** A conta aberta no painel traz também o CPF, que a tela de edição precisa. */
     @Transactional(readOnly = true)
-    public AdminUserResponse get(UUID userId) {
-        return toResponse(findUser(userId));
+    public AdminUserDetailResponse get(UUID userId) {
+        User user = findUser(userId);
+        return AdminUserDetailResponse.from(toResponse(user), user.getCpf());
+    }
+
+    /**
+     * Corrige nome, CPF, e-mail e departamento de uma conta ativa (SCRUM-176). Vale também para a
+     * própria conta do administrador. CPF e e-mail continuam únicos; trocar o e-mail de outra pessoa
+     * derruba as sessões dela, porque o e-mail é o login. O departamento segue as mesmas regras da
+     * troca isolada (PATCH /users/{id}/department).
+     */
+    @Transactional
+    public AdminUserDetailResponse update(UUID userId, AdminUserUpdateRequest request, UUID adminId) {
+        User user = findUser(userId);
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            throw new InvalidAccountStatusException("Só contas ativas podem ser editadas.");
+        }
+        Department department = departmentRepository.findById(request.departmentId())
+                .orElseThrow(() -> new DepartmentNotFoundException(request.departmentId()));
+
+        String cpf = request.cpf();
+        if (!cpf.equals(user.getCpf()) && userRepository.existsByCpf(cpf)) {
+            throw new CpfAlreadyRegisteredException();
+        }
+        String email = Emails.normalize(request.email());
+        boolean emailChanged = !email.equals(user.getEmail());
+        if (emailChanged && userRepository.existsByEmail(email)) {
+            throw new EmailAlreadyRegisteredException();
+        }
+        if (!department.getId().equals(user.getDepartment().getId())) {
+            moveToDepartment(user, department);
+        }
+
+        user.rename(request.fullName().trim());
+        user.changeCpf(cpf);
+        user.changeEmail(email);
+        if (emailChanged && !userId.equals(adminId)) {
+            offboarding.endSessions(userId);
+        }
+        return AdminUserDetailResponse.from(toResponse(user), user.getCpf());
     }
 
     /**
@@ -129,26 +172,47 @@ public class UserAdministrationService {
         if (user.getStatus() != UserStatus.ACTIVE) {
             throw new InvalidAccountStatusException("Só contas ativas podem mudar de departamento.");
         }
+        moveToDepartment(user, department);
+        return toResponse(user);
+    }
+
+    /**
+     * Regras comuns da troca de departamento: pedido pendente decide-se antes, administrador fica
+     * na Inovação e quem sai da Inovação devolve à fila os chamados em atendimento.
+     */
+    private void moveToDepartment(User user, Department department) {
+        UUID userId = user.getId();
         if (pendingRequest(userId)) {
             throw new InvalidAccountStatusException(
                     "Há um pedido de entrada na Inovação aguardando decisão. Aprove ou recuse o pedido primeiro.");
         }
+        boolean toInnovation = department.getId().equals(handlerDepartmentId);
+        if (!toInnovation && !department.getId().equals(user.getDepartment().getId())
+                && adminRepository.existsById(userId)) {
+            throw new InvalidAccountStatusException(
+                    "Administradores precisam estar na Inovação. Remova o acesso de administrador antes de trocar o departamento.");
+        }
 
-        boolean leavesInnovation = user.getDepartment().getId().equals(handlerDepartmentId)
-                && !department.getId().equals(handlerDepartmentId);
+        boolean leavesInnovation = user.getDepartment().getId().equals(handlerDepartmentId) && !toInnovation;
         user.moveTo(department);
         if (leavesInnovation) {
             ticketRepository.findByAssigneeIdAndStatus(userId, TicketStatus.IN_PROGRESS).forEach(Ticket::returnToQueue);
         }
-        return toResponse(user);
     }
 
-    /** Concede o perfil de administrador (SCRUM-169). Vale a partir do próximo login ou renovação da sessão. */
+    /**
+     * Concede o perfil de administrador (SCRUM-169). Vale a partir do próximo login ou renovação da sessão.
+     * Administradores ficam na Inovação (SCRUM-176): quem é de outro departamento muda de departamento antes.
+     */
     @Transactional
     public AdminUserResponse grantAdmin(UUID userId, UUID adminId) {
         User user = findUser(userId);
         if (user.getStatus() != UserStatus.ACTIVE) {
             throw new InvalidAccountStatusException("Só contas ativas podem receber acesso de administrador.");
+        }
+        if (!user.getDepartment().getId().equals(handlerDepartmentId)) {
+            throw new InvalidAccountStatusException(
+                    "Só contas da Inovação podem receber acesso de administrador. Mude o departamento da pessoa primeiro.");
         }
         if (adminRepository.existsById(userId)) {
             throw new InvalidAccountStatusException("Esta conta já é de administrador.");

@@ -1,6 +1,10 @@
 package br.com.contabilizape.centraldesk.service;
 
+import br.com.contabilizape.centraldesk.dto.AdminUserDetailResponse;
 import br.com.contabilizape.centraldesk.dto.AdminUserResponse;
+import br.com.contabilizape.centraldesk.dto.AdminUserUpdateRequest;
+import br.com.contabilizape.centraldesk.exception.CpfAlreadyRegisteredException;
+import br.com.contabilizape.centraldesk.exception.EmailAlreadyRegisteredException;
 import br.com.contabilizape.centraldesk.exception.InvalidAccountStatusException;
 import br.com.contabilizape.centraldesk.exception.LastAdminException;
 import br.com.contabilizape.centraldesk.exception.SelfDeactivationException;
@@ -160,8 +164,9 @@ class UserAdministrationServiceTest {
         when(departmentRequestRepository.existsByUserIdAndStatus(TARGET_ID,
                 DepartmentRequestStatus.PENDING)).thenReturn(true);
 
-        AdminUserResponse response = service.get(TARGET_ID);
+        AdminUserDetailResponse response = service.get(TARGET_ID);
 
+        assertThat(response.cpf()).isEqualTo("52998224725");
         assertThat(response.admin()).isTrue();
         assertThat(response.ticketHandler()).isFalse();
         assertThat(response.departmentApprovalPending()).isTrue();
@@ -175,7 +180,140 @@ class UserAdministrationServiceTest {
         assertThatThrownBy(() -> service.get(TARGET_ID)).isInstanceOf(UserNotFoundException.class);
     }
 
+    // ---------- editar dados (SCRUM-176) ----------
+
+    @Test
+    void adminCorrectsAllFieldsAndEndsSessionsWhenTheEmailChanges() {
+        User target = user(TARGET_ID, general, UserStatus.ACTIVE);
+        when(userRepository.findById(TARGET_ID)).thenReturn(Optional.of(target));
+        when(departmentRepository.findById(GENERAL_ID)).thenReturn(Optional.of(general));
+        when(userRepository.existsByCpf("11144477735")).thenReturn(false);
+        when(userRepository.existsByEmail("maria.souza@contabilizape.com.br")).thenReturn(false);
+
+        AdminUserDetailResponse response = service.update(TARGET_ID,
+                request("  Maria Souza  ", "11144477735", " Maria.Souza@ContabilizaPE.com.br ", GENERAL_ID), ADMIN_ID);
+
+        assertThat(target.getFullName()).isEqualTo("Maria Souza");
+        assertThat(target.getCpf()).isEqualTo("11144477735");
+        assertThat(target.getEmail()).isEqualTo("maria.souza@contabilizape.com.br");
+        assertThat(response.cpf()).isEqualTo("11144477735");
+        assertThat(response.email()).isEqualTo("maria.souza@contabilizape.com.br");
+        verify(refreshTokenService).revokeAll(TARGET_ID);
+    }
+
+    @Test
+    void keepingCpfAndEmailSkipsUniquenessChecksAndKeepsSessions() {
+        User target = user(TARGET_ID, general, UserStatus.ACTIVE);
+        when(userRepository.findById(TARGET_ID)).thenReturn(Optional.of(target));
+        when(departmentRepository.findById(GENERAL_ID)).thenReturn(Optional.of(general));
+
+        service.update(TARGET_ID, request("Maria S.", "52998224725", "maria.silva@contabilizape.com.br", GENERAL_ID), ADMIN_ID);
+
+        assertThat(target.getFullName()).isEqualTo("Maria S.");
+        verify(userRepository, never()).existsByCpf(any());
+        verify(userRepository, never()).existsByEmail(any());
+        verify(refreshTokenService, never()).revokeAll(any());
+    }
+
+    @Test
+    void adminChangingHisOwnEmailKeepsHisSession() {
+        User self = user(ADMIN_ID, innovation, UserStatus.ACTIVE);
+        when(userRepository.findById(ADMIN_ID)).thenReturn(Optional.of(self));
+        when(departmentRepository.findById(INNOVATION_ID)).thenReturn(Optional.of(innovation));
+        when(userRepository.existsByEmail("ana.souza@contabilizape.com.br")).thenReturn(false);
+
+        service.update(ADMIN_ID, request("Ana Souza", "52998224725", "ana.souza@contabilizape.com.br", INNOVATION_ID), ADMIN_ID);
+
+        assertThat(self.getEmail()).isEqualTo("ana.souza@contabilizape.com.br");
+        verify(refreshTokenService, never()).revokeAll(any());
+    }
+
+    @Test
+    void cpfOfAnotherAccountIsConflict() {
+        User target = user(TARGET_ID, general, UserStatus.ACTIVE);
+        when(userRepository.findById(TARGET_ID)).thenReturn(Optional.of(target));
+        when(departmentRepository.findById(GENERAL_ID)).thenReturn(Optional.of(general));
+        when(userRepository.existsByCpf("11144477735")).thenReturn(true);
+
+        assertThatThrownBy(() -> service.update(TARGET_ID,
+                request("Maria da Silva", "11144477735", "maria.silva@contabilizape.com.br", GENERAL_ID), ADMIN_ID))
+                .isInstanceOf(CpfAlreadyRegisteredException.class);
+        assertThat(target.getCpf()).isEqualTo("52998224725");
+    }
+
+    @Test
+    void emailOfAnotherAccountIsConflict() {
+        User target = user(TARGET_ID, general, UserStatus.ACTIVE);
+        when(userRepository.findById(TARGET_ID)).thenReturn(Optional.of(target));
+        when(departmentRepository.findById(GENERAL_ID)).thenReturn(Optional.of(general));
+        when(userRepository.existsByEmail("joao.souza@contabilizape.com.br")).thenReturn(true);
+
+        assertThatThrownBy(() -> service.update(TARGET_ID,
+                request("Maria da Silva", "52998224725", "joao.souza@contabilizape.com.br", GENERAL_ID), ADMIN_ID))
+                .isInstanceOf(EmailAlreadyRegisteredException.class);
+        assertThat(target.getEmail()).isEqualTo("maria.silva@contabilizape.com.br");
+        verify(refreshTokenService, never()).revokeAll(any());
+    }
+
+    @Test
+    void administratorCannotLeaveInnovation() {
+        User target = user(TARGET_ID, innovation, UserStatus.ACTIVE);
+        when(userRepository.findById(TARGET_ID)).thenReturn(Optional.of(target));
+        when(departmentRepository.findById(GENERAL_ID)).thenReturn(Optional.of(general));
+        when(adminRepository.existsById(TARGET_ID)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.update(TARGET_ID,
+                request("Maria da Silva", "52998224725", "maria.silva@contabilizape.com.br", GENERAL_ID), ADMIN_ID))
+                .isInstanceOf(InvalidAccountStatusException.class)
+                .hasMessageContaining("Administradores precisam estar na Inovação");
+        assertThat(target.getDepartment()).isSameAs(innovation);
+        verifyNoInteractions(ticketRepository);
+    }
+
+    @Test
+    void departmentIsLockedWhileARequestIsPending() {
+        User target = user(TARGET_ID, general, UserStatus.ACTIVE);
+        when(userRepository.findById(TARGET_ID)).thenReturn(Optional.of(target));
+        when(departmentRepository.findById(INNOVATION_ID)).thenReturn(Optional.of(innovation));
+        when(departmentRequestRepository.existsByUserIdAndStatus(TARGET_ID, DepartmentRequestStatus.PENDING)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.update(TARGET_ID,
+                request("Maria da Silva", "52998224725", "maria.silva@contabilizape.com.br", INNOVATION_ID), ADMIN_ID))
+                .isInstanceOf(InvalidAccountStatusException.class);
+        assertThat(target.getDepartment()).isSameAs(general);
+    }
+
+    @Test
+    void leavingInnovationByEditReturnsTicketsToTheQueue() {
+        User target = user(TARGET_ID, innovation, UserStatus.ACTIVE);
+        Ticket inProgress = ticketAssignedTo(target);
+        when(userRepository.findById(TARGET_ID)).thenReturn(Optional.of(target));
+        when(departmentRepository.findById(GENERAL_ID)).thenReturn(Optional.of(general));
+        when(ticketRepository.findByAssigneeIdAndStatus(TARGET_ID, TicketStatus.IN_PROGRESS)).thenReturn(List.of(inProgress));
+
+        AdminUserDetailResponse response = service.update(TARGET_ID,
+                request("Maria da Silva", "52998224725", "maria.silva@contabilizape.com.br", GENERAL_ID), ADMIN_ID);
+
+        assertThat(target.getDepartment()).isSameAs(general);
+        assertThat(response.ticketHandler()).isFalse();
+        assertThat(inProgress.getStatus()).isEqualTo(TicketStatus.OPEN);
+    }
+
+    @Test
+    void onlyActiveAccountsCanBeEdited() {
+        when(userRepository.findById(TARGET_ID)).thenReturn(Optional.of(user(TARGET_ID, general, UserStatus.DEACTIVATED)));
+
+        assertThatThrownBy(() -> service.update(TARGET_ID,
+                request("Maria da Silva", "52998224725", "maria.silva@contabilizape.com.br", GENERAL_ID), ADMIN_ID))
+                .isInstanceOf(InvalidAccountStatusException.class);
+        verifyNoInteractions(departmentRepository, refreshTokenService);
+    }
+
     // ---------- auxiliares ----------
+
+    private static AdminUserUpdateRequest request(String fullName, String cpf, String email, UUID departmentId) {
+        return new AdminUserUpdateRequest(fullName, cpf, email, departmentId);
+    }
 
     private static User user(UUID id, Department department, UserStatus status) {
         User user = new User("Maria da Silva", "52998224725", "maria.silva@contabilizape.com.br", "hash", department);

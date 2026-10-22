@@ -1,7 +1,9 @@
 package br.com.contabilizape.centraldesk.controller.doc;
 
 import br.com.contabilizape.centraldesk.config.OpenApiConfig;
+import br.com.contabilizape.centraldesk.dto.AdminUserDetailResponse;
 import br.com.contabilizape.centraldesk.dto.AdminUserResponse;
+import br.com.contabilizape.centraldesk.dto.AdminUserUpdateRequest;
 import br.com.contabilizape.centraldesk.dto.DepartmentChangeRequest;
 import br.com.contabilizape.centraldesk.dto.PageResponse;
 import br.com.contabilizape.centraldesk.dto.UserFilter;
@@ -45,10 +47,10 @@ public interface AdminUserApi {
 
     @Operation(
             summary = "Consulta uma conta",
-            description = "Só administradores.",
+            description = "Só administradores. Além dos campos da listagem, traz o CPF (usado na tela de edição).",
             security = @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH))
     @ApiResponse(responseCode = "200", description = "Conta.",
-            content = @Content(mediaType = "application/json", schema = @Schema(implementation = AdminUserResponse.class)))
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = AdminUserDetailResponse.class)))
     @ApiResponse(responseCode = "401", description = "Sem sessão.", content = @Content)
     @ApiResponse(responseCode = "403", description = "Quem chamou não é administrador.", content = @Content)
     @ApiResponse(
@@ -57,7 +59,41 @@ public interface AdminUserApi {
             content = @Content(mediaType = ProblemExamples.MEDIA_TYPE,
                     schema = @Schema(implementation = ProblemDetail.class),
                     examples = @ExampleObject(name = "Usuário não encontrado", value = ProblemExamples.USER_NOT_FOUND)))
-    AdminUserResponse get(@Parameter(description = "Id do usuário") UUID id);
+    AdminUserDetailResponse get(@Parameter(description = "Id do usuário") UUID id);
+
+    @Operation(
+            summary = "Corrige os dados de uma conta",
+            description = """
+                    Só administradores, e só para contas ativas (inclusive a do próprio administrador). Corrige \
+                    nome, CPF, e-mail e departamento de uma vez; mande todos os campos, mesmo os que não mudaram. \
+                    CPF e e-mail continuam únicos no sistema. O e-mail é o login: se o de outra pessoa mudar, as \
+                    sessões dela são encerradas. O departamento segue as regras da troca isolada: com pedido de \
+                    entrada na Inovação pendente ele não muda, administradores ficam na Inovação e quem sai da \
+                    Inovação devolve à fila os chamados em atendimento.""",
+            security = @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH))
+    @ApiResponse(responseCode = "200", description = "Dados corrigidos.",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = AdminUserDetailResponse.class)))
+    @ApiResponse(responseCode = "400", description = "Campo inválido (CPF, e-mail fora do domínio, nome vazio) ou departamento inexistente.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE,
+                    schema = @Schema(implementation = ProblemDetail.class),
+                    examples = @ExampleObject(name = "Campos inválidos", value = ProblemExamples.INVALID_FIELDS)))
+    @ApiResponse(responseCode = "401", description = "Sem sessão.", content = @Content)
+    @ApiResponse(responseCode = "403", description = "Quem chamou não é administrador.", content = @Content)
+    @ApiResponse(responseCode = "404", description = "Conta inexistente.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    @ApiResponse(
+            responseCode = "409",
+            description = """
+                    CPF ou e-mail já usados por outra conta, conta não ativa, pedido de departamento pendente \
+                    ou administrador saindo da Inovação.""",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE,
+                    schema = @Schema(implementation = ProblemDetail.class),
+                    examples = {
+                            @ExampleObject(name = "CPF já cadastrado", value = ProblemExamples.CPF_TAKEN),
+                            @ExampleObject(name = "E-mail já cadastrado", value = ProblemExamples.EMAIL_TAKEN)
+                    }))
+    AdminUserDetailResponse update(@Parameter(hidden = true) Jwt jwt, @Parameter(description = "Id do usuário") UUID id,
+                                   AdminUserUpdateRequest request);
 
     @Operation(
             summary = "Desativa uma conta",
@@ -110,7 +146,8 @@ public interface AdminUserApi {
                     Só administradores, e só para contas ativas. Mover para a Inovação já vale como aprovação; \
                     quem sai da Inovação devolve à fila os chamados em atendimento. O novo perfil vale a partir \
                     da próxima renovação da sessão. Se houver pedido de entrada na Inovação pendente, ele precisa \
-                    ser decidido antes.""",
+                    ser decidido antes. Administradores ficam na Inovação: para tirar um deles de lá, remova o \
+                    acesso de administrador primeiro.""",
             security = @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH))
     @ApiResponse(responseCode = "200", description = "Departamento alterado.",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = AdminUserResponse.class)))
@@ -120,13 +157,15 @@ public interface AdminUserApi {
     @ApiResponse(responseCode = "403", description = "Quem chamou não é administrador.", content = @Content)
     @ApiResponse(responseCode = "404", description = "Conta inexistente.",
             content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
-    @ApiResponse(responseCode = "409", description = "Conta não ativa ou com pedido de departamento pendente.",
+    @ApiResponse(responseCode = "409", description = "Conta não ativa, com pedido de departamento pendente ou administrador saindo da Inovação.",
             content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
     AdminUserResponse changeDepartment(@Parameter(description = "Id do usuário") UUID id, DepartmentChangeRequest request);
 
     @Operation(
             summary = "Concede acesso de administrador",
-            description = "Só administradores, e só para contas ativas. Vale a partir do próximo login ou renovação da sessão.",
+            description = """
+                    Só administradores, e só para contas ativas da Inovação (administradores ficam na Inovação). \
+                    Vale a partir do próximo login ou renovação da sessão.""",
             security = @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH))
     @ApiResponse(responseCode = "200", description = "Conta agora é de administrador.",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = AdminUserResponse.class)))
@@ -134,7 +173,7 @@ public interface AdminUserApi {
     @ApiResponse(responseCode = "403", description = "Quem chamou não é administrador.", content = @Content)
     @ApiResponse(responseCode = "404", description = "Conta inexistente.",
             content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
-    @ApiResponse(responseCode = "409", description = "A conta não está ativa ou já é de administrador.",
+    @ApiResponse(responseCode = "409", description = "A conta não está ativa, não é da Inovação ou já é de administrador.",
             content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
     AdminUserResponse grantAdmin(@Parameter(hidden = true) Jwt jwt, @Parameter(description = "Id do usuário") UUID id);
 

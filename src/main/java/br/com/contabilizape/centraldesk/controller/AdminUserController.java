@@ -1,7 +1,9 @@
 package br.com.contabilizape.centraldesk.controller;
 
 import br.com.contabilizape.centraldesk.controller.doc.AdminUserApi;
+import br.com.contabilizape.centraldesk.dto.AdminUserDetailResponse;
 import br.com.contabilizape.centraldesk.dto.AdminUserResponse;
+import br.com.contabilizape.centraldesk.dto.AdminUserUpdateRequest;
 import br.com.contabilizape.centraldesk.dto.PageResponse;
 import br.com.contabilizape.centraldesk.dto.UserFilter;
 import br.com.contabilizape.centraldesk.service.UserAdministrationService;
@@ -44,8 +46,15 @@ public class AdminUserController implements AdminUserApi {
 
     @Override
     @GetMapping("/{id}")
-    public AdminUserResponse get(@PathVariable UUID id) {
+    public AdminUserDetailResponse get(@PathVariable UUID id) {
         return userAdministrationService.get(id);
+    }
+
+    @Override
+    @PutMapping("/{id}")
+    public AdminUserDetailResponse update(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id,
+                                          @Valid @RequestBody AdminUserUpdateRequest request) {
+        return userAdministrationService.update(id, request, UUID.fromString(jwt.getSubject()));
     }
 
     @Override

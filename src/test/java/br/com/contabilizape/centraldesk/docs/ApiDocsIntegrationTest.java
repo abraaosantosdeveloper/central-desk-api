@@ -249,7 +249,7 @@ class ApiDocsIntegrationTest {
         String[] operations = {
                 "$.paths['/categories'].post", "$.paths['/categories/{id}'].patch", "$.paths['/categories/{id}'].delete",
                 "$.paths['/categories/usage'].get", "$.paths['/users/{id}/department'].patch",
-                "$.paths['/users/{id}/admin'].put", "$.paths['/users/{id}/admin'].delete",
+                "$.paths['/users/{id}/admin'].put", "$.paths['/users/{id}/admin'].delete", "$.paths['/users/{id}'].put",
                 "$.paths['/tickets/assignees'].get", "$.paths['/tickets/{id}/reassign'].patch"
         };
         for (String operation : operations) {
@@ -257,7 +257,12 @@ class ApiDocsIntegrationTest {
                     .andExpect(jsonPath(operation + ".security[0].cookieAuth").isArray());
         }
         docs.andExpect(jsonPath("$.paths['/tickets/{id}/reassign'].patch.responses['409']").exists())
-                .andExpect(jsonPath("$.paths['/categories'].post.responses['409']").exists());
+                .andExpect(jsonPath("$.paths['/categories'].post.responses['409']").exists())
+                .andExpect(jsonPath("$.paths['/users/{id}'].put.responses['400'].content['" + PROBLEM_JSON + "']").exists())
+                .andExpect(jsonPath("$.paths['/users/{id}'].put.responses['409'].content['" + PROBLEM_JSON + "']").exists())
+                // O CPF só aparece na conta aberta, nunca na listagem
+                .andExpect(jsonPath("$.components.schemas.AdminUserDetailResponse.properties.cpf").exists())
+                .andExpect(jsonPath("$.components.schemas.AdminUserResponse.properties.cpf").doesNotExist());
     }
 
     @Test

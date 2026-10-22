@@ -133,6 +133,16 @@ public class User {
         this.fullName = fullName;
     }
 
+    /** Correção feita pelo administrador. Recebe só os 11 dígitos, já validados. */
+    public void changeCpf(String cpf) {
+        this.cpf = cpf;
+    }
+
+    /** Correção feita pelo administrador. O e-mail é o login; chega já normalizado (minúsculas, sem espaços). */
+    public void changeEmail(String email) {
+        this.email = email;
+    }
+
     /** Recebe o hash já calculado; a entidade não conhece o algoritmo. */
     public void changePasswordHash(String passwordHash) {
         this.passwordHash = passwordHash;
