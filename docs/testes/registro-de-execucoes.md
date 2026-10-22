@@ -376,3 +376,13 @@ Modelo de entrada:
 - **Comando:** `./mvnw clean test` (Docker ligado)
 - **Antes (TDD):** os testes novos não compilavam (classes inexistentes); depois, falhas esperadas: `TicketServiceTest` com o mock de `Category` (`isActive` falso), `DepartmentControllerIntegrationTest` contando 2 departamentos, `CommentIntegrationTest.handlerCanCommentOnAnyTicket` (regra antiga) e a busca por número (`uuid ~~ text` no PostgreSQL). **Correções:** categoria real no teste, testes de departamento atualizados, teste de comentário invertido para a nova regra e `text(id)` na busca.
 - **Resultado:** 401 testes, 0 falhas, 0 erros. ✅
+
+### Mudanças entre a execução 23 e a 24
+
+- Encerramento (SCRUM-174): `PATCH /tickets/{id}/close` exige `{ resolution }` (o que foi feito, até 2000 caracteres); V15 (`tickets.resolution`); `TicketResponse.resolution`. O solicitante não encerra o próprio chamado (403).
+- Testes: `TicketCloseIntegrationTest` reescrito (todo encerramento manda o texto; novo `whatWasDoneIsRequired`), `TicketServiceTest` e `TicketTest` com a nova assinatura, `ApiDocsIntegrationTest.documentsTicketClosing` passou a exigir o corpo obrigatório.
+
+## Execução 24 — 2026-10-22 — suíte completa (SCRUM-174)
+
+- **Comando:** `./mvnw clean test` (Docker ligado)
+- **Primeira execução:** 402 testes, 1 falha — `ApiDocsIntegrationTest.documentsTicketClosing` ainda esperava o encerramento **sem** corpo. **Correção:** o teste passou a conferir o corpo obrigatório, o 400 e o campo `resolution` no schema.

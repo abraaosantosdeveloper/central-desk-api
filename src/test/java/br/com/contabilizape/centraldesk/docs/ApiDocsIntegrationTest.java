@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.hamcrest.Matchers.hasItem;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -196,7 +197,10 @@ class ApiDocsIntegrationTest {
                 .andExpect(jsonPath(close + ".responses['403']").exists())
                 .andExpect(jsonPath(close + ".responses['404'].content['" + PROBLEM_JSON + "']").exists())
                 .andExpect(jsonPath(close + ".responses['409'].content['" + PROBLEM_JSON + "']").exists())
-                .andExpect(jsonPath(close + ".requestBody").doesNotExist())
+                // SCRUM-174: o corpo com "o que foi feito" é obrigatório
+                .andExpect(jsonPath(close + ".requestBody.required").value(true))
+                .andExpect(jsonPath(close + ".responses['400']").exists())
+                .andExpect(jsonPath("$.components.schemas.TicketCloseRequest.required", hasItem("resolution")))
                 .andExpect(jsonPath(close + ".security[0].cookieAuth").isArray());
     }
 
