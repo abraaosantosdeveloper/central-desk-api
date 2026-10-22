@@ -4,6 +4,7 @@ import br.com.contabilizape.centraldesk.controller.doc.TicketApi;
 import br.com.contabilizape.centraldesk.dto.AssigneeResponse;
 import br.com.contabilizape.centraldesk.dto.PageResponse;
 import br.com.contabilizape.centraldesk.dto.ReassignRequest;
+import br.com.contabilizape.centraldesk.dto.TicketCloseRequest;
 import br.com.contabilizape.centraldesk.dto.TicketCreateRequest;
 import br.com.contabilizape.centraldesk.dto.TicketFilter;
 import br.com.contabilizape.centraldesk.dto.TicketResponse;
@@ -100,12 +101,13 @@ public class TicketController implements TicketApi {
         return reassignmentService.reassign(id, UUID.fromString(jwt.getSubject()), roles, request.assigneeId());
     }
 
-    /** Solicitante, Inovação e administradores (regra no TicketService). Sem corpo: avaliação é outro endpoint. */
+    /** Inovação e administradores, nunca o solicitante (regra no TicketService). Corpo: o que foi feito (obrigatório). */
     @Override
     @PatchMapping("/{id}/close")
-    public TicketResponse close(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {
+    public TicketResponse close(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id,
+                                @RequestBody @Valid TicketCloseRequest request) {
         List<String> roles = Objects.requireNonNullElse(jwt.getClaimAsStringList(TokenService.ROLES_CLAIM), List.of());
-        return ticketService.close(id, UUID.fromString(jwt.getSubject()), roles);
+        return ticketService.close(id, UUID.fromString(jwt.getSubject()), roles, request.resolution());
     }
 
     @Override

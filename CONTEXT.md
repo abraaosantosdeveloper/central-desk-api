@@ -166,6 +166,7 @@ Formato obrigatório: `V<n>__<descricao>.sql` — **`V` maiúsculo** e dois unde
 | `V12__create_notifications.sql` | notificações do painel (`notifications`). **Escrita em 20/10, ainda não aplicada** |
 | `V13__archive_categories.sql` | `categories.archived_at`: remover categoria arquiva, sem apagar (SCRUM-167) |
 | `V14__seed_company_departments.sql` | demais departamentos da empresa (Administrativo, Comercial, Contábil, Departamento Pessoal, Financeiro, Fiscal, Recursos Humanos, Societário) (SCRUM-170) |
+| `V15__add_ticket_resolution.sql` | `tickets.resolution`: o que foi feito, obrigatório ao encerrar (até 2000 caracteres) (SCRUM-174) |
 
 Conferido em 20/10: a V11 e a V12 não conflitam com as anteriores (numeração, nomes de tabelas, índices e constraints livres; todas as FKs apontam para tabelas já existentes). Até serem aplicadas, ainda podem ser ajustadas.
 
@@ -452,7 +453,7 @@ Ninguém é notificado de uma ação que ele mesmo fez (o `actor` nunca é o des
 | GET | `/categories/usage` | quantidade de chamados por categoria ativa (admin) (SCRUM-167) | **implementado** |
 | GET | `/priorities` | prioridades, da menos à mais urgente (logado) | **implementado** |
 | PATCH | `/tickets/{id}/assign` | assumir chamado: `OPEN` → `IN_PROGRESS`, responsável = usuário logado; só `TICKET_HANDLER` e admin (403 / 404 / 409) (SCRUM-162) | **implementado** |
-| PATCH | `/tickets/{id}/close` | encerrar chamado: `OPEN`/`IN_PROGRESS` → `CLOSED`, preenche `closed_by_id`/`closed_at`; solicitante, `TICKET_HANDLER` e admin; demais → 404; já encerrado → 409; sem corpo (SCRUM-163) | **implementado** |
+| PATCH | `/tickets/{id}/close` | encerrar chamado: `OPEN`/`IN_PROGRESS` → `CLOSED`, corpo `{ resolution }` obrigatório (o que foi feito; vazio → 400) (SCRUM-174), preenche `closed_by_id`/`closed_at`/`resolution`; `TICKET_HANDLER` e admin; **o solicitante não encerra o próprio chamado (403, decidido em 21/10)**; demais → 404; já encerrado → 409 (SCRUM-163) | **implementado** |
 | GET | `/tickets/assignees` | quem pode atender (Inovação e admins ativos), por nome, com `inProgress`; só `TICKET_HANDLER` e admin (SCRUM-173) | **implementado** |
 | PATCH | `/tickets/{id}/reassign` | reatribuir, corpo `{ assigneeId }`: responsável atual ou admin (403); destino ativo da Inovação ou admin e não o solicitante (400); mesma pessoa ou `CLOSED` → 409; na fila vira `IN_PROGRESS`; em atendimento mantém o `assignedAt` (SCRUM-173) | **implementado** |
 | POST | `/tickets/{id}/comments` | comentar: **só o solicitante e o responsável atual** (demais → 403, mesmo vendo o chamado) (SCRUM-172); conteúdo gravado cifrado; `CLOSED` → 409; dispara `comment.created` no SSE (SCRUM-164) | **implementado** |
@@ -711,6 +712,7 @@ Requisitos complementares (README): RF08 categorização, RF09 urgência, RF10 s
 - **Departamentos (170):** o usuário não troca o próprio departamento (pede a um admin); o admin usa `PATCH /users/{id}/department`. Com pedido de Inovação pendente, o pedido é decidido antes (409). O cadastro passa a listar todos os departamentos (V14).
 - **Comentários (172):** ver o chamado (Inovação e admins) não dá direito a comentar: só o solicitante e o responsável atual. Na fila, só o solicitante.
 - **Reatribuir (173):** `TicketReassignmentService` separado do `TicketService`; `Ticket.reassign` assume em nome da pessoa (fila) ou só troca o responsável mantendo o `assignedAt`.
+- **Encerrar (21/10):** o solicitante não encerra o próprio chamado (403, `TicketCloseForbiddenException`), nem quando é da Inovação ou admin; ele pede o encerramento pela conversa. Encerram a Inovação e os admins.
 - **Painel de métricas:** documentado no Jira como histórias, sem implementação nesta rodada.
 
 ## 13. Princípios de desenvolvimento

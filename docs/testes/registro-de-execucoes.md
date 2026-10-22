@@ -368,6 +368,7 @@ Modelo de entrada:
 - Departamentos (SCRUM-170): V14 com os departamentos da empresa; `PATCH /users/{id}/department`.
 - Comentários (SCRUM-172): só solicitante e responsável comentam (403 para os demais).
 - Reatribuir (SCRUM-173): `GET /tickets/assignees` e `PATCH /tickets/{id}/reassign`.
+- Encerrar: o solicitante não encerra o próprio chamado (403). `TicketCloseIntegrationTest` e `TicketServiceTest` ajustados (o teste do solicitante passou a esperar 403; os de 409 e de corpo ignorado agora usam o atendente).
 - Novos testes (35): `CategoryServiceTest` (7), `CategoryIntegrationTest` (5), `AdminManagementIntegrationTest` (8), `TicketManagementIntegrationTest` (10), `TicketTest` (+3), `TicketServiceTest` (+1), `ApiDocsIntegrationTest` (+1). Ajustados: `CommentIntegrationTest` (o atendente que não é o responsável passou a receber 403), `DepartmentControllerIntegrationTest` (10 departamentos na base) e `TicketServiceTest` (categoria real em vez de mock, por causa do `isActive`).
 
 ## Execução 23 — 2026-10-21 — suíte completa (SCRUM-167 a 173)

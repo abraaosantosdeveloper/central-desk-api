@@ -12,6 +12,7 @@ import br.com.contabilizape.centraldesk.exception.InvalidTicketTransitionExcepti
 import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
 import br.com.contabilizape.centraldesk.exception.PriorityNotFoundException;
 import br.com.contabilizape.centraldesk.exception.SelfAssignmentException;
+import br.com.contabilizape.centraldesk.exception.TicketCloseForbiddenException;
 import br.com.contabilizape.centraldesk.exception.TicketEditForbiddenException;
 import br.com.contabilizape.centraldesk.exception.TicketNotEditableException;
 import br.com.contabilizape.centraldesk.exception.TicketNotFoundException;
@@ -437,18 +438,16 @@ class TicketServiceTest {
     // ---------- encerrar ----------
 
     @Test
-    void requesterClosesOwnTicket() {
+    void requesterCannotCloseOwnTicket() {
         User maria = requester(UserStatus.ACTIVE);
         Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, maria);
         when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(maria));
         when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
 
-        TicketResponse response = ticketService.close(TICKET_ID, REQUESTER_ID, List.of());
-
-        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.CLOSED);
-        assertThat(ticket.getClosedBy()).isSameAs(maria);
-        assertThat(ticket.getClosedAt()).isEqualTo(NOW.atOffset(ZoneOffset.UTC));
-        assertThat(response.closedById()).isEqualTo(REQUESTER_ID);
+        // Vale mesmo para quem é da Inovação ou admin: quem abriu não encerra
+        assertThatThrownBy(() -> ticketService.close(TICKET_ID, REQUESTER_ID, List.of(Roles.ADMIN), "Troquei a fonte."))
+                .isInstanceOf(TicketCloseForbiddenException.class);
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.OPEN);
     }
 
     @Test
@@ -468,20 +467,19 @@ class TicketServiceTest {
         when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(other));
         when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
 
-        assertThatThrownBy(() -> ticketService.close(TICKET_ID, OTHER_ID, List.of()))
+        assertThatThrownBy(() -> ticketService.close(TICKET_ID, OTHER_ID, List.of(), "Troquei a fonte."))
                 .isInstanceOf(TicketNotFoundException.class);
         assertThat(ticket.getStatus()).isEqualTo(TicketStatus.OPEN);
     }
 
     @Test
     void closingClosedTicketIsInvalidTransition() {
-        User maria = requester(UserStatus.ACTIVE);
-        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, maria);
+        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, requester(UserStatus.ACTIVE));
         ReflectionTestUtils.setField(ticket, "status", TicketStatus.CLOSED);
-        when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(maria));
+        when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(user(OTHER_ID, UserStatus.ACTIVE)));
         when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
 
-        assertThatThrownBy(() -> ticketService.close(TICKET_ID, REQUESTER_ID, List.of()))
+        assertThatThrownBy(() -> ticketService.close(TICKET_ID, OTHER_ID, List.of(Roles.TICKET_HANDLER), "Troquei a fonte."))
                 .isInstanceOf(InvalidTicketTransitionException.class);
     }
 
@@ -490,7 +488,7 @@ class TicketServiceTest {
         User maria = requester(UserStatus.DEACTIVATED);
         when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(maria));
 
-        assertThatThrownBy(() -> ticketService.close(TICKET_ID, REQUESTER_ID, List.of()))
+        assertThatThrownBy(() -> ticketService.close(TICKET_ID, REQUESTER_ID, List.of(), "Troquei a fonte."))
                 .isInstanceOf(AccountNotActiveException.class);
         verify(ticketRepository, never()).findByIdForUpdate(any());
     }
@@ -501,10 +499,11 @@ class TicketServiceTest {
         when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(closer));
         when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
 
-        ticketService.close(TICKET_ID, OTHER_ID, roles);
+        ticketService.close(TICKET_ID, OTHER_ID, roles, "Troquei a fonte.");
 
         assertThat(ticket.getStatus()).isEqualTo(TicketStatus.CLOSED);
         assertThat(ticket.getClosedBy()).isSameAs(closer);
+        assertThat(ticket.getResolution()).isEqualTo("Troquei a fonte.");
     }
 
     // ---------- auxiliares ----------

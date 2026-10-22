@@ -100,7 +100,7 @@ class TicketTest {
         Ticket ticket = ticket(TicketStatus.IN_PROGRESS);
         User closer = mock(User.class);
 
-        ticket.close(closer, NOW);
+        ticket.close(closer, "Troquei a fonte.", NOW);
 
         assertThat(ticket.getStatus()).isEqualTo(TicketStatus.CLOSED);
         assertThat(ticket.getClosedBy()).isSameAs(closer);
@@ -111,7 +111,7 @@ class TicketTest {
     void openTicketCanBeClosedWithoutAssignee() {
         Ticket ticket = ticket(TicketStatus.OPEN);
 
-        ticket.close(mock(User.class), NOW);
+        ticket.close(mock(User.class), "Feito", NOW);
 
         assertThat(ticket.getStatus()).isEqualTo(TicketStatus.CLOSED);
         assertThat(ticket.getAssignee()).isNull();
@@ -123,7 +123,7 @@ class TicketTest {
         User firstCloser = mock(User.class);
         ReflectionTestUtils.setField(ticket, "closedBy", firstCloser);
 
-        assertThatThrownBy(() -> ticket.close(mock(User.class), NOW))
+        assertThatThrownBy(() -> ticket.close(mock(User.class), "Feito", NOW))
                 .isInstanceOf(InvalidTicketTransitionException.class);
         assertThat(ticket.getClosedBy()).isSameAs(firstCloser);
     }

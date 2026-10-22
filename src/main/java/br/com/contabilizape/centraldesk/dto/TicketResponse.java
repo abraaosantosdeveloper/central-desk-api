@@ -26,6 +26,8 @@ public record TicketResponse(
     UUID closedById,
     String closedByName,
     OffsetDateTime closedAt,
+    @Schema(description = "O que foi feito, registrado por quem encerrou; vazio enquanto o chamado não está CLOSED")
+    String resolution,
     OffsetDateTime createdAt,
     OffsetDateTime updatedAt
 ) {
@@ -46,6 +48,7 @@ public record TicketResponse(
             idOf(ticket.getClosedBy()),
             nameOf(ticket.getClosedBy()),
             ticket.getClosedAt(),
+            ticket.getResolution(),
             ticket.getCreatedAt(),
             ticket.getUpdatedAt()
         );

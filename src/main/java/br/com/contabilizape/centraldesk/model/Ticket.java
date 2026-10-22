@@ -53,6 +53,10 @@ public class Ticket {
     @Column(name = "closed_at")
     private OffsetDateTime closedAt;
 
+    // O que foi feito, registrado por quem encerrou (SCRUM-174)
+    @Column(name = "resolution", length = 2000)
+    private String resolution;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
@@ -107,10 +111,11 @@ public class Ticket {
     }
 
     /** Encerra o chamado (OPEN ou IN_PROGRESS → CLOSED). O responsável é mantido: é ele quem será avaliado. */
-    public void close(User closedBy, OffsetDateTime now) {
+    public void close(User closedBy, String resolution, OffsetDateTime now) {
         moveTo(TicketStatus.CLOSED);
         this.closedBy = closedBy;
         this.closedAt = now;
+        this.resolution = resolution;
     }
 
     /** Devolve à fila um chamado em atendimento (o responsável saiu: conta desativada ou anonimizada). */
@@ -139,6 +144,7 @@ public class Ticket {
     public OffsetDateTime getAssignedAt() { return assignedAt; }
     public User getClosedBy() { return closedBy; }
     public OffsetDateTime getClosedAt() { return closedAt; }
+    public String getResolution() { return resolution; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public OffsetDateTime getUpdatedAt() { return updatedAt; }
 }

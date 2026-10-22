@@ -23,6 +23,7 @@ import br.com.contabilizape.centraldesk.exception.PriorityNotFoundException;
 import br.com.contabilizape.centraldesk.exception.SelfAssignmentException;
 import br.com.contabilizape.centraldesk.exception.SelfDeactivationException;
 import br.com.contabilizape.centraldesk.exception.TicketClosedForCommentsException;
+import br.com.contabilizape.centraldesk.exception.TicketCloseForbiddenException;
 import br.com.contabilizape.centraldesk.exception.TicketEditForbiddenException;
 import br.com.contabilizape.centraldesk.exception.TicketNotEditableException;
 import br.com.contabilizape.centraldesk.exception.TicketNotFoundException;
@@ -76,7 +77,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return problem(HttpStatus.NOT_FOUND, "Chamado não encontrado", exception.getMessage());
     }
 
-    @ExceptionHandler({TicketEditForbiddenException.class, SelfAssignmentException.class, CommentForbiddenException.class,
+    @ExceptionHandler({TicketEditForbiddenException.class, SelfAssignmentException.class, CommentForbiddenException.class, TicketCloseForbiddenException.class,
             ReassignForbiddenException.class})
     public ProblemDetail handleTicketActionForbidden(RuntimeException exception) {
         return problem(HttpStatus.FORBIDDEN, "Acesso negado", exception.getMessage());

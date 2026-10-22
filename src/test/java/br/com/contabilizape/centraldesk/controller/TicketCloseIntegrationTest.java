@@ -11,6 +11,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 
 import java.util.Map;
 import java.util.UUID;
@@ -22,7 +23,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Encerrar chamado (RF07): PATCH /tickets/{id}/close. Inovação, administradores e o próprio solicitante.
+ * Encerrar chamado (RF07): PATCH /tickets/{id}/close. Inovação e administradores; o solicitante não encerra o próprio chamado.
  */
 @IntegrationTest
 class TicketCloseIntegrationTest {
@@ -60,37 +61,54 @@ class TicketCloseIntegrationTest {
     }
 
     @Test
-    void handlerClosesTicketInProgress() throws Exception {
+    void handlerClosesTicketInProgressWithWhatWasDone() throws Exception {
         UUID ticket = ticket("IN_PROGRESS", handler);
 
-        mockMvc.perform(patch("/tickets/" + ticket + "/close").cookie(login(HANDLER)))
+        close(ticket, login(HANDLER), "  Troquei a fonte do notebook e testei com o usuário.  ")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CLOSED"))
                 .andExpect(jsonPath("$.closedById").value(handler.toString()))
                 .andExpect(jsonPath("$.closedAt").exists())
+                .andExpect(jsonPath("$.resolution").value("Troquei a fonte do notebook e testei com o usuário."))
                 .andExpect(jsonPath("$.assigneeId").value(handler.toString()));
 
-        Map<String, Object> row = jdbc.queryForMap("SELECT status, closed_by_id, closed_at FROM tickets WHERE id = ?", ticket);
+        Map<String, Object> row = jdbc.queryForMap("SELECT status, closed_by_id, closed_at, resolution FROM tickets WHERE id = ?", ticket);
         assertThat(row.get("status")).isEqualTo("CLOSED");
         assertThat(row.get("closed_by_id")).isEqualTo(handler);
         assertThat(row.get("closed_at")).isNotNull();
+        assertThat(row.get("resolution")).isEqualTo("Troquei a fonte do notebook e testei com o usuário.");
     }
 
     @Test
-    void requesterClosesOwnOpenTicket() throws Exception {
-        UUID ticket = ticket("OPEN", null);
+    void whatWasDoneIsRequired() throws Exception {
+        UUID ticket = ticket("IN_PROGRESS", handler);
+        Cookie session = login(HANDLER);
 
-        mockMvc.perform(patch("/tickets/" + ticket + "/close").cookie(login(MARIA)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("CLOSED"))
-                .andExpect(jsonPath("$.closedById").value(maria.toString()));
+        close(ticket, session, "   ")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.resolution").exists());
+        close(ticket, session, "x".repeat(2001))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.resolution").exists());
+        mockMvc.perform(patch("/tickets/" + ticket + "/close").cookie(session))
+                .andExpect(status().isBadRequest());
+        assertThat(jdbc.queryForObject("SELECT status FROM tickets WHERE id = ?", String.class, ticket)).isEqualTo("IN_PROGRESS");
+    }
+
+    @Test
+    void requesterCannotCloseOwnTicket() throws Exception {
+        UUID ticket = ticket("IN_PROGRESS", handler);
+
+        // Quem encerra é quem atende: o solicitante pede o encerramento pela conversa
+        close(ticket, login(MARIA), "Resolvido").andExpect(status().isForbidden());
+        assertThat(jdbc.queryForObject("SELECT status FROM tickets WHERE id = ?", String.class, ticket)).isEqualTo("IN_PROGRESS");
     }
 
     @Test
     void adminClosesTicket() throws Exception {
         UUID ticket = ticket("OPEN", null);
 
-        mockMvc.perform(patch("/tickets/" + ticket + "/close").cookie(adminSession()))
+        close(ticket, adminSession(), "Chamado duplicado do #1A2B3C4D.")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CLOSED"));
     }
@@ -100,8 +118,7 @@ class TicketCloseIntegrationTest {
         UUID ticket = ticket("OPEN", null);
         register(JOAO, "11144477735");
 
-        mockMvc.perform(patch("/tickets/" + ticket + "/close").cookie(login(JOAO)))
-                .andExpect(status().isNotFound());
+        close(ticket, login(JOAO), "Intrometido").andExpect(status().isNotFound());
         assertThat(jdbc.queryForObject("SELECT status FROM tickets WHERE id = ?", String.class, ticket)).isEqualTo("OPEN");
     }
 
@@ -109,32 +126,38 @@ class TicketCloseIntegrationTest {
     void alreadyClosedTicketIsConflict() throws Exception {
         UUID ticket = ticket("CLOSED", handler);
 
-        mockMvc.perform(patch("/tickets/" + ticket + "/close").cookie(login(MARIA)))
+        close(ticket, login(HANDLER), "De novo")
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.title").value("Transição de status inválida"));
     }
 
     @Test
-    void bodyIsIgnored() throws Exception {
+    void ratingIsNotPartOfTheClosing() throws Exception {
         UUID ticket = ticket("IN_PROGRESS", handler);
 
         // Encerrar não recebe avaliação: ela é feita depois, em POST /tickets/{id}/rating
-        mockMvc.perform(patch("/tickets/" + ticket + "/close").cookie(login(MARIA))
-                        .contentType(MediaType.APPLICATION_JSON).content("{ \"score\": 5 }"))
+        mockMvc.perform(patch("/tickets/" + ticket + "/close").cookie(login(HANDLER))
+                        .contentType(MediaType.APPLICATION_JSON).content("{ \"resolution\": \"Feito\", \"score\": 5 }"))
                 .andExpect(status().isOk());
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM ticket_ratings", Integer.class)).isZero();
     }
 
     @Test
     void unknownTicketIsNotFound() throws Exception {
-        mockMvc.perform(patch("/tickets/" + UUID.randomUUID() + "/close").cookie(login(MARIA)))
-                .andExpect(status().isNotFound());
+        close(UUID.randomUUID(), login(HANDLER), "Feito").andExpect(status().isNotFound());
     }
 
     @Test
     void withoutSessionIsUnauthorized() throws Exception {
-        mockMvc.perform(patch("/tickets/" + UUID.randomUUID() + "/close"))
+        mockMvc.perform(patch("/tickets/" + UUID.randomUUID() + "/close")
+                        .contentType(MediaType.APPLICATION_JSON).content("{ \"resolution\": \"Feito\" }"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    private ResultActions close(UUID ticket, Cookie session, String resolution) throws Exception {
+        return mockMvc.perform(patch("/tickets/" + ticket + "/close").cookie(session)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{ \"resolution\": \"%s\" }".formatted(resolution)));
     }
 
     // ---------- auxiliares ----------

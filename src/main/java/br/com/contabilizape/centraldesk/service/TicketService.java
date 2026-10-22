@@ -11,6 +11,7 @@ import br.com.contabilizape.centraldesk.exception.CategoryNotFoundException;
 import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
 import br.com.contabilizape.centraldesk.exception.PriorityNotFoundException;
 import br.com.contabilizape.centraldesk.exception.SelfAssignmentException;
+import br.com.contabilizape.centraldesk.exception.TicketCloseForbiddenException;
 import br.com.contabilizape.centraldesk.exception.TicketEditForbiddenException;
 import br.com.contabilizape.centraldesk.exception.TicketNotEditableException;
 import br.com.contabilizape.centraldesk.exception.TicketNotFoundException;
@@ -62,16 +63,19 @@ public class TicketService {
     }
 
     /**
-     * Encerra o chamado. Podem: o solicitante, a Inovação e os administradores (as mesmas pessoas que o veem).
+     * Encerra o chamado. Podem: a Inovação e os administradores; o solicitante não encerra o próprio (403).
      * Os demais recebem 404, como em GET /tickets/{id}.
      */
     @Transactional
-    public TicketResponse close(UUID ticketId, UUID userId, List<String> roles) {
+    public TicketResponse close(UUID ticketId, UUID userId, List<String> roles, String resolution) {
         User closer = findActiveRequester(userId);
         Ticket ticket = ticketRepository.findByIdForUpdate(ticketId)
                 .filter(found -> TicketAccess.canView(found, userId, roles))
                 .orElseThrow(() -> new TicketNotFoundException(ticketId));
-        ticket.close(closer, OffsetDateTime.now(clock));
+        if (ticket.getRequester().getId().equals(userId)) {
+            throw new TicketCloseForbiddenException();
+        }
+        ticket.close(closer, resolution.trim(), OffsetDateTime.now(clock));
         ticketRepository.flush(); // grava agora e atualiza o updated_at
         return TicketResponse.from(ticket);
     }

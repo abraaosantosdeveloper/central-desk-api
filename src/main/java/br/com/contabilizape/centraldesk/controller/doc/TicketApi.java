@@ -4,6 +4,7 @@ import br.com.contabilizape.centraldesk.config.OpenApiConfig;
 import br.com.contabilizape.centraldesk.dto.AssigneeResponse;
 import br.com.contabilizape.centraldesk.dto.PageResponse;
 import br.com.contabilizape.centraldesk.dto.ReassignRequest;
+import br.com.contabilizape.centraldesk.dto.TicketCloseRequest;
 import br.com.contabilizape.centraldesk.dto.TicketCreateRequest;
 import br.com.contabilizape.centraldesk.dto.TicketFilter;
 import br.com.contabilizape.centraldesk.dto.TicketResponse;
@@ -187,17 +188,20 @@ public interface TicketApi {
     @Operation(
             summary = "Encerra um chamado",
             description = """
-                    Leva o chamado de `OPEN` ou `IN_PROGRESS` para `CLOSED` e registra quem encerrou e quando. \
-                    Podem encerrar: **quem abriu**, a Inovação (`TICKET_HANDLER`) e administradores. Para os \
-                    demais a resposta é 404, como em `GET /tickets/{id}`. Sem corpo: a avaliação do atendimento \
-                    é feita depois, em `POST /tickets/{id}/rating`.""",
+                    Leva o chamado de `OPEN` ou `IN_PROGRESS` para `CLOSED` e registra quem encerrou, quando e \
+                    **o que foi feito** (`resolution`, obrigatório, até 2000 caracteres). Podem encerrar: a Inovação \
+                    (`TICKET_HANDLER`) e administradores. **Quem abriu não encerra** o próprio chamado (403). Para os \
+                    demais a resposta é 404, como em `GET /tickets/{id}`. A avaliação do atendimento é feita depois, \
+                    em `POST /tickets/{id}/rating`.""",
             security = @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH))
+    @ApiResponse(responseCode = "400", description = "`resolution` vazio ou com mais de 2000 caracteres.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
     @ApiResponse(responseCode = "200", description = "Chamado encerrado.",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = TicketResponse.class)))
     @ApiResponse(responseCode = "401", description = "Sem sessão.", content = @Content)
     @ApiResponse(
             responseCode = "403",
-            description = "A conta foi desativada depois do login.",
+            description = "Quem chamou abriu o chamado, ou a conta foi desativada depois do login.",
             content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
     @ApiResponse(
             responseCode = "404",
@@ -211,7 +215,7 @@ public interface TicketApi {
             content = @Content(mediaType = ProblemExamples.MEDIA_TYPE,
                     schema = @Schema(implementation = ProblemDetail.class),
                     examples = @ExampleObject(name = "Já encerrado", value = ProblemExamples.TICKET_ALREADY_CLOSED)))
-    TicketResponse close(@Parameter(hidden = true) Jwt jwt, UUID id);
+    TicketResponse close(@Parameter(hidden = true) Jwt jwt, UUID id, TicketCloseRequest request);
 
     @Operation(
             summary = "Detalhes de um chamado",
