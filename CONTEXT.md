@@ -192,6 +192,7 @@ Formato obrigatório: `V<n>__<descricao>.sql` — **`V` maiúsculo** e dois unde
 | `V14__seed_company_departments.sql` | demais departamentos da empresa (Administrativo, Comercial, Contábil, Departamento Pessoal, Financeiro, Fiscal, Recursos Humanos, Societário) (SCRUM-170) |
 | `V15__add_ticket_resolution.sql` | `tickets.resolution`: o que foi feito, obrigatório ao encerrar (até 2000 caracteres) (SCRUM-174) |
 | `V16__add_users_sessions_valid_from.sql` | `users.sessions_valid_from`: corte de sessões; access tokens emitidos antes dele deixam de valer (PR #26) |
+| `V17__add_ticket_number.sql` | `tickets.ticket_number`: número sequencial do chamado (`#n`), identity gerado pelo banco; os chamados existentes foram numerados por ordem de abertura (SCRUM-181) |
 
 A V11 e a V12 já estão na `main` (PR #10, 20/10) e rodam em toda a suíte de integração, então valem como aplicadas e **não se editam mais**: qualquer ajuste vira V17 em diante. O código que as usa (entidades, services, endpoints) ainda não existe (SCRUM-152 e SCRUM-150).
 
@@ -221,7 +222,7 @@ Os UUIDs são fixos porque a aplicação os referencia por configuração: assim
 
 **priorities** — `id` SMALLINT PK · `label` VARCHAR(20) UNIQUE. Valores fixos: 1 Baixa, 2 Média, 3 Alta, 4 Crítica. O `id` define a ordem de urgência.
 
-**tickets** — `id` UUID PK · `title` VARCHAR(120) · `description` TEXT · `status` (`OPEN`, `IN_PROGRESS`, `CLOSED`) · `category_id` FK · `priority_id` FK · `requester_id` FK · `assignee_id` FK nullable · `assigned_at` nullable · `closed_by_id` FK nullable · `closed_at` nullable · `resolution` TEXT nullable, até 2000 caracteres (V15: o que foi feito, obrigatório ao encerrar) · `created_at` · `updated_at`
+**tickets** — `id` UUID PK · `ticket_number` BIGINT UNIQUE, identity (V17: número legível `#n` usado em e-mails e na interface; o `id` segue sendo o identificador da API) · `title` VARCHAR(120) · `description` TEXT · `status` (`OPEN`, `IN_PROGRESS`, `CLOSED`) · `category_id` FK · `priority_id` FK · `requester_id` FK · `assignee_id` FK nullable · `assigned_at` nullable · `closed_by_id` FK nullable · `closed_at` nullable · `resolution` TEXT nullable, até 2000 caracteres (V15: o que foi feito, obrigatório ao encerrar) · `created_at` · `updated_at`
 
 **comments** — `id` UUID PK · `content` TEXT · `user_id` FK · `ticket_id` FK · `created_at` · `updated_at`
 
