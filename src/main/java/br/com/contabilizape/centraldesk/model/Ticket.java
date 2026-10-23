@@ -3,7 +3,9 @@ package br.com.contabilizape.centraldesk.model;
 import br.com.contabilizape.centraldesk.exception.InvalidTicketTransitionException;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.Generated;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.generator.EventType;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -15,6 +17,11 @@ public class Ticket {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
+
+    // Número legível (#n), gerado pelo banco (identity, V17) e lido de volta no INSERT; nunca vem do cliente
+    @Generated(event = EventType.INSERT)
+    @Column(name = "ticket_number", insertable = false, updatable = false, nullable = false)
+    private Long number;
 
     @Column(name = "title", nullable = false, length = 120)
     private String title;
@@ -134,6 +141,7 @@ public class Ticket {
     }
 
     public UUID getId() { return id; }
+    public Long getNumber() { return number; }
     public String getTitle() { return title; }
     public String getDescription() { return description; }
     public TicketStatus getStatus() { return status; }

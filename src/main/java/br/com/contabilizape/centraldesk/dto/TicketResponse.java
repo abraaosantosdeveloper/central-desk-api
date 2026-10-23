@@ -11,6 +11,8 @@ import java.util.UUID;
 @Schema(description = "Chamado completo (detalhes); as listagens usam um resumo sem a descrição")
 public record TicketResponse(
     UUID id,
+    @Schema(description = "Número sequencial exibido como #n; o id continua sendo o UUID", example = "123")
+    Long number,
     String title,
     String description,
     TicketStatus status,
@@ -35,6 +37,7 @@ public record TicketResponse(
     public static TicketResponse from(Ticket ticket) {
         return new TicketResponse(
             ticket.getId(),
+            ticket.getNumber(),
             ticket.getTitle(),
             ticket.getDescription(),
             ticket.getStatus(),
