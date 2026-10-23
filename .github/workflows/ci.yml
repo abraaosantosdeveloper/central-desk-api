@@ -1,0 +1,56 @@
+# Portão do deploy: roda a suíte completa a cada push na main e em todo pull request.
+# O Railway espera este workflow terminar antes de publicar o commit (Settings > Wait for CI):
+# se ele falhar, o deploy é descartado. Contexto: docs/GUIA-DE-DESENVOLVIMENTO.md, seção 6.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# Uma execução por branch. Em pull request, um push novo cancela a execução anterior.
+# Na main nunca se cancela: um run cancelado deixaria o deploy do Railway sem resposta do portão.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  test:
+    name: Testes
+    # ubuntu-latest já traz o Docker, de que o Testcontainers precisa para subir o PostgreSQL.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Valores de fachada: o application.properties lê estas variáveis do .env em desenvolvimento.
+      # Nos testes o banco vem do Testcontainers (@ServiceConnection) e as chaves, do @IntegrationTest.
+      DB_URL: jdbc:postgresql://localhost:5432/ci
+      DB_USER: ci
+      DB_PASSWORD: ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # O mvnw está no Git sem permissão de execução (o Dockerfile faz o mesmo chmod).
+      - name: Permissão de execução do mvnw
+        run: chmod +x mvnw
+
+      - name: Suíte completa
+        run: ./mvnw -B clean test
+
+      # Mesmo com testes falhando, o relatório ajuda a achar a causa raiz.
+      - name: Relatório do Surefire
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: target/surefire-reports
+          if-no-files-found: ignore
+          retention-days: 14
