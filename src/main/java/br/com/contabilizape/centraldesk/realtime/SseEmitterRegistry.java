@@ -25,6 +25,8 @@ public class SseEmitterRegistry {
 
     private static final Logger log = LoggerFactory.getLogger(SseEmitterRegistry.class);
     static final String CONNECTED = "connected";
+    // Comentário SSE: o navegador ignora, mas a conexão deixa de ficar ociosa
+    static final String HEARTBEAT = "ping";
 
     private record Subscription(UUID userId, Set<String> roles, SseEmitter emitter) {
     }
@@ -59,6 +61,16 @@ public class SseEmitterRegistry {
         sendTo(subscription -> subscription.roles().stream().anyMatch(roles::contains), eventName, data);
     }
 
+    /** Mantém as conexões vivas e descarta as que já morreram (ver {@link SseHeartbeat}). */
+    public void sendHeartbeat() {
+        subscriptions.forEach(subscription -> deliver(subscription, SseEmitter.event().comment(HEARTBEAT)));
+    }
+
+    /** Quantas conexões estão registradas (para os testes). */
+    int connectionCount() {
+        return subscriptions.size();
+    }
+
     /** Fecha os streams dos usuários (ex.: sessões encerradas); o navegador reconecta e é reautenticado. */
     public void closeUsers(Collection<UUID> userIds) {
         subscriptions.stream().filter(subscription -> userIds.contains(subscription.userId())).forEach(subscription -> {
@@ -77,8 +89,12 @@ public class SseEmitterRegistry {
 
     // Uma conexão quebrada não pode impedir as outras de receberem o evento
     private void send(Subscription subscription, String eventName, Object data) {
+        deliver(subscription, SseEmitter.event().name(eventName).data(data, MediaType.APPLICATION_JSON));
+    }
+
+    private void deliver(Subscription subscription, SseEmitter.SseEventBuilder event) {
         try {
-            subscription.emitter().send(SseEmitter.event().name(eventName).data(data, MediaType.APPLICATION_JSON));
+            subscription.emitter().send(event);
         } catch (IOException | IllegalStateException e) {
             subscriptions.remove(subscription);
             log.debug("Conexão SSE do usuário {} encerrada: {}", subscription.userId(), e.getMessage());

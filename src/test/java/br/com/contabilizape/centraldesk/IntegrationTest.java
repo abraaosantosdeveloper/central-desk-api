@@ -26,6 +26,8 @@ import java.lang.annotation.Target;
         "app.bootstrap.admin.name=", "app.bootstrap.admin.cpf=",
         "app.bootstrap.admin.email=", "app.bootstrap.admin.password=",
         "API_DOCS_ENABLED=false",
+        // Nenhum teste fala com o Resend de verdade (o .env local pode ter a chave); e-mails saem na mesma thread
+        "app.email.resend.api-key=", "app.email.async=false",
         "app.security.jwt.secret=" + IntegrationTest.JWT_SECRET,
         "app.security.content-encryption-key=" + IntegrationTest.CONTENT_ENCRYPTION_KEY,
         "app.security.cookie.secure=true"

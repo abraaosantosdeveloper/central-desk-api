@@ -1,5 +1,6 @@
 package br.com.contabilizape.centraldesk.service;
 
+import br.com.contabilizape.centraldesk.event.TicketsReturnedToQueueEvent;
 import br.com.contabilizape.centraldesk.exception.LastAdminException;
 import br.com.contabilizape.centraldesk.model.Ticket;
 import br.com.contabilizape.centraldesk.model.TicketStatus;
@@ -8,8 +9,10 @@ import br.com.contabilizape.centraldesk.model.UserStatus;
 import br.com.contabilizape.centraldesk.repository.AdminRepository;
 import br.com.contabilizape.centraldesk.repository.TicketRepository;
 import br.com.contabilizape.centraldesk.repository.UserRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -24,13 +27,16 @@ class AccountOffboarding {
     private final AdminRepository adminRepository;
     private final TicketRepository ticketRepository;
     private final RefreshTokenService refreshTokenService;
+    private final ApplicationEventPublisher eventPublisher;
 
     AccountOffboarding(UserRepository userRepository, AdminRepository adminRepository,
-                       TicketRepository ticketRepository, RefreshTokenService refreshTokenService) {
+                       TicketRepository ticketRepository, RefreshTokenService refreshTokenService,
+                       ApplicationEventPublisher eventPublisher) {
         this.userRepository = userRepository;
         this.adminRepository = adminRepository;
         this.ticketRepository = ticketRepository;
         this.refreshTokenService = refreshTokenService;
+        this.eventPublisher = eventPublisher;
     }
 
     /** Recusa a saída do último administrador ativo; a regra vale para desativar e anonimizar. */
@@ -53,7 +59,19 @@ class AccountOffboarding {
     /** Derruba as sessões e devolve à fila os chamados que estavam com a pessoa. */
     void release(UUID userId) {
         refreshTokenService.revokeAll(userId);
-        ticketRepository.findByAssigneeIdAndStatus(userId, TicketStatus.IN_PROGRESS)
-                .forEach(Ticket::returnToQueue);
+        returnTicketsToQueue(userId);
+    }
+
+    /**
+     * Devolve à fila os chamados em atendimento da pessoa e avisa uma vez só, se houve algum:
+     * quem está com a fila aberta passa a ver todos eles.
+     */
+    void returnTicketsToQueue(UUID userId) {
+        List<Ticket> tickets = ticketRepository.findByAssigneeIdAndStatus(userId, TicketStatus.IN_PROGRESS);
+        if (tickets.isEmpty()) {
+            return;
+        }
+        tickets.forEach(Ticket::returnToQueue);
+        eventPublisher.publishEvent(TicketsReturnedToQueueEvent.of(tickets));
     }
 }

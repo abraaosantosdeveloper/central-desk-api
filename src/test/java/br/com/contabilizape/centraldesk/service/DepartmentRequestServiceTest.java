@@ -9,14 +9,17 @@ import br.com.contabilizape.centraldesk.model.DepartmentRequest;
 import br.com.contabilizape.centraldesk.model.DepartmentRequestStatus;
 import br.com.contabilizape.centraldesk.model.User;
 import br.com.contabilizape.centraldesk.model.UserStatus;
+import br.com.contabilizape.centraldesk.realtime.UserPermissionsChangedEvent;
 import br.com.contabilizape.centraldesk.repository.DepartmentRequestRepository;
 import br.com.contabilizape.centraldesk.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.quality.Strictness;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Clock;
@@ -28,7 +31,10 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.withSettings;
 
@@ -42,6 +48,7 @@ class DepartmentRequestServiceTest {
 
     @Mock private DepartmentRequestRepository departmentRequestRepository;
     @Mock private UserRepository userRepository;
+    @Mock private ApplicationEventPublisher eventPublisher;
 
     private DepartmentRequestService service;
 
@@ -50,7 +57,8 @@ class DepartmentRequestServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new DepartmentRequestService(departmentRequestRepository, userRepository, Clock.fixed(NOW, ZoneOffset.UTC));
+        service = new DepartmentRequestService(departmentRequestRepository, userRepository, eventPublisher,
+                Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     @Test
@@ -82,6 +90,9 @@ class DepartmentRequestServiceTest {
         assertThat(response.status()).isEqualTo(DepartmentRequestStatus.APPROVED);
         assertThat(response.reviewedById()).isEqualTo(ADMIN_ID);
         assertThat(response.reviewedAt()).isEqualTo(NOW.atOffset(ZoneOffset.UTC));
+
+        // As permissões de quem pediu mudaram: o stream dele é reaberto e já volta com TICKET_HANDLER
+        assertThat(published(UserPermissionsChangedEvent.class).userId()).isEqualTo(REQUESTER_ID);
     }
 
     @Test
@@ -95,6 +106,8 @@ class DepartmentRequestServiceTest {
 
         assertThat(requester.getDepartment()).isSameAs(general);
         assertThat(response.status()).isEqualTo(DepartmentRequestStatus.REJECTED);
+        // Recusar não muda as permissões de ninguém
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
@@ -106,6 +119,7 @@ class DepartmentRequestServiceTest {
 
         assertThatThrownBy(() -> service.reject(REQUEST_ID, ADMIN_ID))
                 .isInstanceOf(DepartmentRequestAlreadyReviewedException.class);
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
@@ -116,6 +130,7 @@ class DepartmentRequestServiceTest {
 
         assertThatThrownBy(() -> service.approve(REQUEST_ID, ADMIN_ID)).isInstanceOf(InvalidAccountStatusException.class);
         assertThat(requester.getDepartment()).isSameAs(general);
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
@@ -127,6 +142,14 @@ class DepartmentRequestServiceTest {
     }
 
     // ---------- auxiliares ----------
+
+    // Os eventos são records (não ApplicationEvent): o publishEvent(Object) é o chamado
+    private <T> T published(Class<T> type) {
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher, atLeastOnce()).publishEvent(captor.capture());
+        return captor.getAllValues().stream().filter(type::isInstance).map(type::cast).findFirst()
+                .orElseThrow(() -> new AssertionError("Evento não publicado: " + type.getSimpleName()));
+    }
 
     private DepartmentRequest request(User requester) {
         DepartmentRequest request = new DepartmentRequest(requester, innovation);

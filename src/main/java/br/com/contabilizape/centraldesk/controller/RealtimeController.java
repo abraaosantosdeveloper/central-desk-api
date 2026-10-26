@@ -4,6 +4,7 @@ import br.com.contabilizape.centraldesk.controller.doc.RealtimeApi;
 import br.com.contabilizape.centraldesk.realtime.SseEmitterRegistry;
 import br.com.contabilizape.centraldesk.security.TokenService;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,6 +20,8 @@ import java.util.UUID;
 @RequestMapping("/events")
 public class RealtimeController implements RealtimeApi {
 
+    static final String NO_PROXY_BUFFERING_HEADER = "X-Accel-Buffering";
+
     private final SseEmitterRegistry registry;
 
     public RealtimeController(SseEmitterRegistry registry) {
@@ -27,8 +30,10 @@ public class RealtimeController implements RealtimeApi {
 
     @Override
     @GetMapping(path = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter stream(@AuthenticationPrincipal Jwt jwt) {
+    public ResponseEntity<SseEmitter> stream(@AuthenticationPrincipal Jwt jwt) {
         List<String> roles = Objects.requireNonNullElse(jwt.getClaimAsStringList(TokenService.ROLES_CLAIM), List.of());
-        return registry.subscribe(UUID.fromString(jwt.getSubject()), roles);
+        SseEmitter emitter = registry.subscribe(UUID.fromString(jwt.getSubject()), roles);
+        // Pede ao nginx (e a proxies parecidos) que não segure a resposta em buffer: o evento tem de chegar na hora
+        return ResponseEntity.ok().header(NO_PROXY_BUFFERING_HEADER, "no").body(emitter);
     }
 }

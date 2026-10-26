@@ -3,6 +3,7 @@ package br.com.contabilizape.centraldesk.service;
 import br.com.contabilizape.centraldesk.dto.AdminUserDetailResponse;
 import br.com.contabilizape.centraldesk.dto.AdminUserResponse;
 import br.com.contabilizape.centraldesk.dto.AdminUserUpdateRequest;
+import br.com.contabilizape.centraldesk.event.TicketsReturnedToQueueEvent;
 import br.com.contabilizape.centraldesk.exception.CpfAlreadyRegisteredException;
 import br.com.contabilizape.centraldesk.exception.EmailAlreadyRegisteredException;
 import br.com.contabilizape.centraldesk.exception.InvalidAccountStatusException;
@@ -21,13 +22,16 @@ import br.com.contabilizape.centraldesk.repository.AdminRepository;
 import br.com.contabilizape.centraldesk.repository.DepartmentRepository;
 import br.com.contabilizape.centraldesk.repository.DepartmentRequestRepository;
 import br.com.contabilizape.centraldesk.repository.TicketRepository;
+import br.com.contabilizape.centraldesk.realtime.UserPermissionsChangedEvent;
 import br.com.contabilizape.centraldesk.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.quality.Strictness;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Clock;
@@ -41,6 +45,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -56,6 +61,7 @@ class UserAdministrationServiceTest {
     private static final UUID GENERAL_ID = UUID.fromString("3094ed3f-42ab-4bc0-9d8d-f6eb08891016");
     private static final UUID ADMIN_ID = UUID.fromString("aaaaaaaa-0000-4000-8000-000000000001");
     private static final UUID TARGET_ID = UUID.fromString("bbbbbbbb-0000-4000-8000-000000000002");
+    private static final UUID TICKET_ID = UUID.fromString("dddddddd-0000-4000-8000-000000000004");
 
     @Mock private UserRepository userRepository;
     @Mock private AdminRepository adminRepository;
@@ -63,6 +69,7 @@ class UserAdministrationServiceTest {
     @Mock private TicketRepository ticketRepository;
     @Mock private DepartmentRepository departmentRepository;
     @Mock private RefreshTokenService refreshTokenService;
+    @Mock private ApplicationEventPublisher eventPublisher;
 
     private UserAdministrationService service;
 
@@ -72,10 +79,9 @@ class UserAdministrationServiceTest {
     @BeforeEach
     void setUp() {
         AccountOffboarding offboarding = new AccountOffboarding(userRepository, adminRepository, ticketRepository,
-                refreshTokenService);
+                refreshTokenService, eventPublisher);
         service = new UserAdministrationService(userRepository, adminRepository, departmentRequestRepository,
-                departmentRepository, ticketRepository,
-                offboarding, Clock.fixed(NOW, ZoneOffset.UTC), INNOVATION_ID);
+                departmentRepository, offboarding, eventPublisher, Clock.fixed(NOW, ZoneOffset.UTC), INNOVATION_ID);
     }
 
     // ---------- desativar ----------
@@ -84,6 +90,7 @@ class UserAdministrationServiceTest {
     void deactivatingEndsSessionsAndReturnsTicketsToTheQueue() {
         User target = user(TARGET_ID, innovation, UserStatus.ACTIVE);
         Ticket inProgress = ticketAssignedTo(target);
+        ReflectionTestUtils.setField(inProgress, "id", TICKET_ID);
         when(userRepository.findById(TARGET_ID)).thenReturn(Optional.of(target));
         when(ticketRepository.findByAssigneeIdAndStatus(TARGET_ID, TicketStatus.IN_PROGRESS)).thenReturn(List.of(inProgress));
 
@@ -96,6 +103,17 @@ class UserAdministrationServiceTest {
         assertThat(inProgress.getAssignee()).isNull();
         assertThat(response.status()).isEqualTo(UserStatus.DEACTIVATED);
         assertThat(response.ticketHandler()).isTrue();
+        assertThat(published(TicketsReturnedToQueueEvent.class).ticketIds()).containsExactly(TICKET_ID);
+    }
+
+    @Test
+    void deactivatingSomeoneWithoutTicketsInProgressDoesNotTouchTheQueue() {
+        User target = user(TARGET_ID, innovation, UserStatus.ACTIVE);
+        when(userRepository.findById(TARGET_ID)).thenReturn(Optional.of(target));
+
+        service.deactivate(TARGET_ID, ADMIN_ID);
+
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
@@ -180,6 +198,64 @@ class UserAdministrationServiceTest {
         assertThatThrownBy(() -> service.get(TARGET_ID)).isInstanceOf(UserNotFoundException.class);
     }
 
+    // ---------- permissões mudam: o stream da pessoa é reaberto (SCRUM-190) ----------
+
+    @Test
+    void changingTheDepartmentReopensTheStreamOfThePerson() {
+        User target = user(TARGET_ID, general, UserStatus.ACTIVE);
+        when(userRepository.findById(TARGET_ID)).thenReturn(Optional.of(target));
+        when(departmentRepository.findById(INNOVATION_ID)).thenReturn(Optional.of(innovation));
+
+        service.changeDepartment(TARGET_ID, INNOVATION_ID);
+
+        assertThat(published(UserPermissionsChangedEvent.class).userId()).isEqualTo(TARGET_ID);
+    }
+
+    @Test
+    void choosingTheCurrentDepartmentChangesNothingAndPublishesNothing() {
+        User target = user(TARGET_ID, general, UserStatus.ACTIVE);
+        when(userRepository.findById(TARGET_ID)).thenReturn(Optional.of(target));
+        when(departmentRepository.findById(GENERAL_ID)).thenReturn(Optional.of(general));
+
+        service.changeDepartment(TARGET_ID, GENERAL_ID);
+
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    void grantingAdminReopensTheStreamOfThePerson() {
+        User target = user(TARGET_ID, innovation, UserStatus.ACTIVE);
+        User granter = user(ADMIN_ID, innovation, UserStatus.ACTIVE);
+        when(userRepository.findById(TARGET_ID)).thenReturn(Optional.of(target));
+        when(userRepository.findById(ADMIN_ID)).thenReturn(Optional.of(granter));
+
+        service.grantAdmin(TARGET_ID, ADMIN_ID);
+
+        assertThat(published(UserPermissionsChangedEvent.class).userId()).isEqualTo(TARGET_ID);
+    }
+
+    @Test
+    void revokingAdminReopensTheStreamOfThePerson() {
+        User target = user(TARGET_ID, innovation, UserStatus.ACTIVE);
+        User other = user(ADMIN_ID, innovation, UserStatus.ACTIVE);
+        when(userRepository.findById(TARGET_ID)).thenReturn(Optional.of(target));
+        when(adminRepository.existsById(TARGET_ID)).thenReturn(true);
+        when(userRepository.findAdminsByStatus(UserStatus.ACTIVE)).thenReturn(List.of(target, other));
+
+        service.revokeAdmin(TARGET_ID, ADMIN_ID);
+
+        verify(adminRepository).deleteById(TARGET_ID);
+        assertThat(published(UserPermissionsChangedEvent.class).userId()).isEqualTo(TARGET_ID);
+    }
+
+    @Test
+    void revokingAdminOfSomeoneWhoIsNotAdminPublishesNothing() {
+        when(userRepository.findById(TARGET_ID)).thenReturn(Optional.of(user(TARGET_ID, innovation, UserStatus.ACTIVE)));
+
+        assertThatThrownBy(() -> service.revokeAdmin(TARGET_ID, ADMIN_ID)).isInstanceOf(InvalidAccountStatusException.class);
+        verifyNoInteractions(eventPublisher);
+    }
+
     // ---------- editar dados (SCRUM-176) ----------
 
     @Test
@@ -213,6 +289,8 @@ class UserAdministrationServiceTest {
         verify(userRepository, never()).existsByCpf(any());
         verify(userRepository, never()).existsByEmail(any());
         verify(refreshTokenService, never()).endAllSessions(any());
+        // Mesmo departamento: as permissões não mudaram
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
@@ -287,6 +365,7 @@ class UserAdministrationServiceTest {
     void leavingInnovationByEditReturnsTicketsToTheQueue() {
         User target = user(TARGET_ID, innovation, UserStatus.ACTIVE);
         Ticket inProgress = ticketAssignedTo(target);
+        ReflectionTestUtils.setField(inProgress, "id", TICKET_ID);
         when(userRepository.findById(TARGET_ID)).thenReturn(Optional.of(target));
         when(departmentRepository.findById(GENERAL_ID)).thenReturn(Optional.of(general));
         when(ticketRepository.findByAssigneeIdAndStatus(TARGET_ID, TicketStatus.IN_PROGRESS)).thenReturn(List.of(inProgress));
@@ -297,6 +376,9 @@ class UserAdministrationServiceTest {
         assertThat(target.getDepartment()).isSameAs(general);
         assertThat(response.ticketHandler()).isFalse();
         assertThat(inProgress.getStatus()).isEqualTo(TicketStatus.OPEN);
+        assertThat(published(TicketsReturnedToQueueEvent.class).ticketIds()).containsExactly(TICKET_ID);
+        // Mudou de departamento: as permissões da pessoa mudam, então o stream dela é reaberto
+        assertThat(published(UserPermissionsChangedEvent.class).userId()).isEqualTo(TARGET_ID);
     }
 
     @Test
@@ -310,6 +392,14 @@ class UserAdministrationServiceTest {
     }
 
     // ---------- auxiliares ----------
+
+    // Os eventos são records (não ApplicationEvent): o publishEvent(Object) é o chamado
+    private <T> T published(Class<T> type) {
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher, atLeastOnce()).publishEvent(captor.capture());
+        return captor.getAllValues().stream().filter(type::isInstance).map(type::cast).findFirst()
+                .orElseThrow(() -> new AssertionError("Evento não publicado: " + type.getSimpleName()));
+    }
 
     private static AdminUserUpdateRequest request(String fullName, String cpf, String email, UUID departmentId) {
         return new AdminUserUpdateRequest(fullName, cpf, email, departmentId);

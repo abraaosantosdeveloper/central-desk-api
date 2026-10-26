@@ -386,3 +386,16 @@ Modelo de entrada:
 
 - **Comando:** `./mvnw clean test` (Docker ligado)
 - **Primeira execução:** 402 testes, 1 falha — `ApiDocsIntegrationTest.documentsTicketClosing` ainda esperava o encerramento **sem** corpo. **Correção:** o teste passou a conferir o corpo obrigatório, o 400 e o campo `resolution` no schema.
+
+### Mudanças entre a execução 24 e a 25 (SCRUM-186: tempo real confiável e contadores)
+
+- SCRUM-188: pacote `event/` (`TicketOpenedEvent`, `TicketAssignedEvent`, `TicketReassignedEvent`, `TicketClosedEvent`, `TicketsReturnedToQueueEvent`); `TicketService`, `TicketReassignmentService` e `AccountOffboarding` publicam; `UserAdministrationService` deixou de acessar o `TicketRepository` (usa `AccountOffboarding.returnTicketsToQueue`).
+- Testes: `TicketReassignmentServiceTest` (novo, 6), `TicketServiceTest` (+2, eventos de abertura, assumir e encerrar; recusas não publicam), `AccountAnonymizationServiceTest` e `UserAdministrationServiceTest` (evento da devolução à fila; +1 caso sem chamados).
+- SCRUM-190: `SseEmitterRegistry.sendHeartbeat`, `SseHeartbeat` (`SchedulingConfigurer`) e `RealtimeConfig` (`@EnableScheduling`); `app.realtime.heartbeat-interval=25s`; cabeçalho `X-Accel-Buffering: no` (o controller devolve `ResponseEntity<SseEmitter>`); `UserPermissionsChangedEvent` fecha o stream (aprovar pedido, trocar departamento, conceder/remover admin).
+- Testes: `SseEmitterRegistryTest` (6), `SseHeartbeatTest` (2) e `RealtimeEventListenerTest` (1) novos; `RealtimeIntegrationTest` (+2, agora com um admin criado no `setUp`); `UserAdministrationServiceTest` (+5) e `DepartmentRequestServiceTest` (eventos de permissão).
+
+## Execução 25 — SCRUM-186 (SCRUM-188 a 191) — **PENDENTE**
+
+- **Comando:** `.\mvnw clean test` (Docker ligado)
+- **Situação:** os testes e o código foram escritos sem acesso ao Maven, ao Docker e ao Maven Central, então **nada foi compilado nem executado**. Rodar a suíte e preencher aqui: comando, total, resultado e, nas falhas, causa raiz e correção (subtarefa `[BUG]` no Jira).
+- **Resultado:** _a preencher_

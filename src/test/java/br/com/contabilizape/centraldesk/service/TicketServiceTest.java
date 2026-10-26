@@ -22,6 +22,9 @@ import br.com.contabilizape.centraldesk.model.Priority;
 import br.com.contabilizape.centraldesk.model.Ticket;
 import br.com.contabilizape.centraldesk.model.TicketStatus;
 import br.com.contabilizape.centraldesk.model.User;
+import br.com.contabilizape.centraldesk.event.TicketAssignedEvent;
+import br.com.contabilizape.centraldesk.event.TicketClosedEvent;
+import br.com.contabilizape.centraldesk.event.TicketOpenedEvent;
 import br.com.contabilizape.centraldesk.realtime.TicketCreatedEvent;
 import br.com.contabilizape.centraldesk.model.UserStatus;
 import br.com.contabilizape.centraldesk.repository.CategoryRepository;
@@ -55,9 +58,11 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.withSettings;
 
@@ -109,10 +114,11 @@ class TicketServiceTest {
         assertThat(response.priority().label()).isEqualTo("Média");
         assertThat(response.assigneeId()).isNull();
 
-        // A Inovação e os admins conectados ficam sabendo na hora (SSE, depois do commit)
-        ArgumentCaptor<TicketCreatedEvent> event = ArgumentCaptor.forClass(TicketCreatedEvent.class);
-        verify(eventPublisher).publishEvent(event.capture());
-        assertThat(event.getValue().ticket().title()).isEqualTo("Impressora parada");
+        // Dois eventos: o resumo para a tela (SSE) e o fato de domínio (fila, e-mails)
+        assertThat(published(TicketCreatedEvent.class).ticket().title()).isEqualTo("Impressora parada");
+        TicketOpenedEvent opened = published(TicketOpenedEvent.class);
+        assertThat(opened.eventId()).isNotNull();
+        assertThat(opened.requesterId()).isEqualTo(REQUESTER_ID);
     }
 
     @Test
@@ -124,6 +130,7 @@ class TicketServiceTest {
         assertThatThrownBy(() -> ticketService.open(REQUESTER_ID, request("Título", CATEGORY_ID, MEDIUM)))
                 .isInstanceOf(CategoryNotFoundException.class);
         verify(ticketRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
@@ -388,6 +395,11 @@ class TicketServiceTest {
         assertThat(ticket.getAssignee()).isSameAs(handler);
         assertThat(ticket.getAssignedAt()).isEqualTo(NOW.atOffset(ZoneOffset.UTC));
         assertThat(response.assigneeId()).isEqualTo(OTHER_ID);
+
+        TicketAssignedEvent event = published(TicketAssignedEvent.class);
+        assertThat(event.eventId()).isNotNull();
+        assertThat(event.assigneeId()).isEqualTo(OTHER_ID);
+        assertThat(event.requesterId()).isEqualTo(REQUESTER_ID);
     }
 
     @Test
@@ -398,6 +410,7 @@ class TicketServiceTest {
 
         assertThatThrownBy(() -> ticketService.assign(TICKET_ID, OTHER_ID))
                 .isInstanceOf(TicketNotFoundException.class);
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
@@ -410,6 +423,8 @@ class TicketServiceTest {
 
         assertThatThrownBy(() -> ticketService.assign(TICKET_ID, OTHER_ID))
                 .isInstanceOf(InvalidTicketTransitionException.class);
+        // 409: ninguém deve ser avisado de uma mudança que não aconteceu
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
@@ -423,6 +438,7 @@ class TicketServiceTest {
                 .isInstanceOf(SelfAssignmentException.class);
         assertThat(ticket.getStatus()).isEqualTo(TicketStatus.OPEN);
         assertThat(ticket.getAssignee()).isNull();
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
@@ -448,6 +464,7 @@ class TicketServiceTest {
         assertThatThrownBy(() -> ticketService.close(TICKET_ID, REQUESTER_ID, List.of(Roles.ADMIN), "Troquei a fonte."))
                 .isInstanceOf(TicketCloseForbiddenException.class);
         assertThat(ticket.getStatus()).isEqualTo(TicketStatus.OPEN);
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test
@@ -481,6 +498,32 @@ class TicketServiceTest {
 
         assertThatThrownBy(() -> ticketService.close(TICKET_ID, OTHER_ID, List.of(Roles.TICKET_HANDLER), "Troquei a fonte."))
                 .isInstanceOf(InvalidTicketTransitionException.class);
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    void closingATicketStillInTheQueueIsFlaggedInTheEvent() {
+        closesTicketOfAnotherUserWith(List.of(Roles.TICKET_HANDLER));
+
+        TicketClosedEvent event = published(TicketClosedEvent.class);
+        assertThat(event.eventId()).isNotNull();
+        assertThat(event.closedById()).isEqualTo(OTHER_ID);
+        assertThat(event.requesterId()).isEqualTo(REQUESTER_ID);
+        assertThat(event.wasOpen()).isTrue();
+    }
+
+    @Test
+    void closingATicketInProgressIsNotFlaggedAsWasOpen() {
+        User closer = user(OTHER_ID, UserStatus.ACTIVE);
+        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, requester(UserStatus.ACTIVE));
+        ReflectionTestUtils.setField(ticket, "status", TicketStatus.IN_PROGRESS);
+        when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(closer));
+        when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
+
+        ticketService.close(TICKET_ID, OTHER_ID, List.of(Roles.TICKET_HANDLER), "Troquei a fonte.");
+
+        // O chamado já tinha saído da fila: a contagem dela não muda
+        assertThat(published(TicketClosedEvent.class).wasOpen()).isFalse();
     }
 
     @Test
@@ -507,6 +550,14 @@ class TicketServiceTest {
     }
 
     // ---------- auxiliares ----------
+
+    // Os eventos de domínio são records (não ApplicationEvent): o publishEvent(Object) é o chamado
+    private <T> T published(Class<T> type) {
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher, atLeastOnce()).publishEvent(captor.capture());
+        return captor.getAllValues().stream().filter(type::isInstance).map(type::cast).findFirst()
+                .orElseThrow(() -> new AssertionError("Evento não publicado: " + type.getSimpleName()));
+    }
 
     private static User user(UUID id, UserStatus status) {
         User user = new User("João Souza", "11144477735", "joao.souza@contabilizape.com.br", "hash",

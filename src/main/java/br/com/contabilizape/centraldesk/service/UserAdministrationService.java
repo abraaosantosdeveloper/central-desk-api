@@ -14,18 +14,17 @@ import br.com.contabilizape.centraldesk.exception.UserNotFoundException;
 import br.com.contabilizape.centraldesk.model.Admin;
 import br.com.contabilizape.centraldesk.model.Department;
 import br.com.contabilizape.centraldesk.model.DepartmentRequestStatus;
-import br.com.contabilizape.centraldesk.model.Ticket;
-import br.com.contabilizape.centraldesk.model.TicketStatus;
 import br.com.contabilizape.centraldesk.model.User;
 import br.com.contabilizape.centraldesk.model.UserStatus;
+import br.com.contabilizape.centraldesk.realtime.UserPermissionsChangedEvent;
 import br.com.contabilizape.centraldesk.repository.AdminRepository;
 import br.com.contabilizape.centraldesk.repository.DepartmentRepository;
 import br.com.contabilizape.centraldesk.repository.DepartmentRequestRepository;
-import br.com.contabilizape.centraldesk.repository.TicketRepository;
 import br.com.contabilizape.centraldesk.repository.UserRepository;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Subquery;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -55,22 +54,23 @@ public class UserAdministrationService {
     private final AdminRepository adminRepository;
     private final DepartmentRequestRepository departmentRequestRepository;
     private final DepartmentRepository departmentRepository;
-    private final TicketRepository ticketRepository;
     private final AccountOffboarding offboarding;
+    private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
     private final UUID handlerDepartmentId;
 
     public UserAdministrationService(UserRepository userRepository, AdminRepository adminRepository,
                                      DepartmentRequestRepository departmentRequestRepository,
-                                     DepartmentRepository departmentRepository, TicketRepository ticketRepository,
-                                     AccountOffboarding offboarding, Clock clock,
+                                     DepartmentRepository departmentRepository,
+                                     AccountOffboarding offboarding, ApplicationEventPublisher eventPublisher,
+                                     Clock clock,
                                      @Value("${app.tickets.handler-department-id}") UUID handlerDepartmentId) {
         this.userRepository = userRepository;
         this.adminRepository = adminRepository;
         this.departmentRequestRepository = departmentRequestRepository;
         this.departmentRepository = departmentRepository;
-        this.ticketRepository = ticketRepository;
         this.offboarding = offboarding;
+        this.eventPublisher = eventPublisher;
         this.clock = clock;
         this.handlerDepartmentId = handlerDepartmentId;
     }
@@ -194,9 +194,13 @@ public class UserAdministrationService {
         }
 
         boolean leavesInnovation = user.getDepartment().getId().equals(handlerDepartmentId) && !toInnovation;
+        boolean changesDepartment = !department.getId().equals(user.getDepartment().getId());
         user.moveTo(department);
         if (leavesInnovation) {
-            ticketRepository.findByAssigneeIdAndStatus(userId, TicketStatus.IN_PROGRESS).forEach(Ticket::returnToQueue);
+            offboarding.returnTicketsToQueue(userId);
+        }
+        if (changesDepartment) {
+            eventPublisher.publishEvent(new UserPermissionsChangedEvent(userId));
         }
     }
 
@@ -218,6 +222,7 @@ public class UserAdministrationService {
             throw new InvalidAccountStatusException("Esta conta já é de administrador.");
         }
         adminRepository.save(new Admin(user, findUser(adminId)));
+        eventPublisher.publishEvent(new UserPermissionsChangedEvent(userId));
         return toResponse(user, true, pendingRequest(userId));
     }
 
@@ -233,6 +238,7 @@ public class UserAdministrationService {
         }
         offboarding.ensureNotLastActiveAdmin(userId);
         adminRepository.deleteById(userId);
+        eventPublisher.publishEvent(new UserPermissionsChangedEvent(userId));
         return toResponse(user, false, pendingRequest(userId));
     }
 

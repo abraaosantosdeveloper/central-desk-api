@@ -8,6 +8,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -40,10 +41,20 @@ public interface RealtimeApi {
                     trocado pelo admin). A conexão é fechada logo depois; a tela deve conferir a sessão \
                     (`GET /users/me`), que responde 401 nos dispositivos que perderam o acesso.
 
+                    Além dos eventos, o servidor escreve um comentário (`:ping`) a cada 25 segundos para a \
+                    conexão não ficar ociosa e ser derrubada por um proxy. O navegador ignora esse comentário.
+
+                    As permissões do usuário são lidas do token **ao abrir** a conexão. Quando elas mudam \
+                    (departamento trocado, perfil de administrador concedido ou removido, pedido de entrada na \
+                    Inovação aprovado), o servidor **fecha** o stream do usuário sem enviar evento: a reconexão \
+                    automática renova a sessão e a conexão nova já nasce com as permissões certas.
+
+                    A resposta leva `X-Accel-Buffering: no` para o nginx não segurar os eventos em buffer.
+
                     Limite conhecido: funciona com uma única instância da aplicação.""",
             security = @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH))
     @ApiResponse(responseCode = "200", description = "Conexão aberta; os eventos chegam enquanto ela durar.",
             content = @Content(mediaType = "text/event-stream", schema = @Schema(type = "string", example = EVENT_EXAMPLE)))
     @ApiResponse(responseCode = "401", description = "Sem sessão.", content = @Content)
-    SseEmitter stream(@Parameter(hidden = true) Jwt jwt);
+    ResponseEntity<SseEmitter> stream(@Parameter(hidden = true) Jwt jwt);
 }

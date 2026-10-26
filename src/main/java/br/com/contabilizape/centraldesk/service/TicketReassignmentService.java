@@ -2,6 +2,7 @@ package br.com.contabilizape.centraldesk.service;
 
 import br.com.contabilizape.centraldesk.dto.AssigneeResponse;
 import br.com.contabilizape.centraldesk.dto.TicketResponse;
+import br.com.contabilizape.centraldesk.event.TicketReassignedEvent;
 import br.com.contabilizape.centraldesk.exception.AccountNotActiveException;
 import br.com.contabilizape.centraldesk.exception.InvalidAssigneeException;
 import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
@@ -17,6 +18,7 @@ import br.com.contabilizape.centraldesk.repository.TicketRepository;
 import br.com.contabilizape.centraldesk.repository.UserRepository;
 import br.com.contabilizape.centraldesk.security.Roles;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,15 +37,18 @@ public class TicketReassignmentService {
     private final TicketRepository ticketRepository;
     private final UserRepository userRepository;
     private final AdminRepository adminRepository;
+    private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
     private final UUID handlerDepartmentId;
 
     public TicketReassignmentService(TicketRepository ticketRepository, UserRepository userRepository,
-                                     AdminRepository adminRepository, Clock clock,
+                                     AdminRepository adminRepository, ApplicationEventPublisher eventPublisher,
+                                     Clock clock,
                                      @Value("${app.tickets.handler-department-id}") UUID handlerDepartmentId) {
         this.ticketRepository = ticketRepository;
         this.userRepository = userRepository;
         this.adminRepository = adminRepository;
+        this.eventPublisher = eventPublisher;
         this.clock = clock;
         this.handlerDepartmentId = handlerDepartmentId;
     }
@@ -69,8 +74,10 @@ public class TicketReassignmentService {
             throw new ReassignConflictException("Esta pessoa já é a responsável pelo chamado.");
         }
 
+        boolean fromQueue = ticket.isOpen(); // lido antes: reatribuir um chamado da fila o coloca em atendimento
         ticket.reassign(findEligibleAssignee(newAssigneeId, ticket), OffsetDateTime.now(clock));
         ticketRepository.flush(); // grava agora e atualiza o updated_at
+        eventPublisher.publishEvent(TicketReassignedEvent.of(ticket, userId, fromQueue));
         return TicketResponse.from(ticket);
     }
 

@@ -1,5 +1,6 @@
 package br.com.contabilizape.centraldesk.service;
 
+import br.com.contabilizape.centraldesk.event.TicketsReturnedToQueueEvent;
 import br.com.contabilizape.centraldesk.exception.AccountNotActiveException;
 import br.com.contabilizape.centraldesk.exception.AccountNotDeactivatedException;
 import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
@@ -20,8 +21,10 @@ import br.com.contabilizape.centraldesk.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -57,6 +60,7 @@ class AccountAnonymizationServiceTest {
     @Mock private NotificationCleanupRepository notificationCleanup;
     @Mock private RefreshTokenService refreshTokenService;
     @Mock private PasswordEncoder passwordEncoder;
+    @Mock private ApplicationEventPublisher eventPublisher;
 
     private AccountAnonymizationService service;
 
@@ -64,7 +68,7 @@ class AccountAnonymizationServiceTest {
     void setUp() {
         // A parte compartilhada com a desativação é real; as dependências dela são os mocks acima
         AccountOffboarding offboarding = new AccountOffboarding(userRepository, adminRepository, ticketRepository,
-                refreshTokenService);
+                refreshTokenService, eventPublisher);
         service = new AccountAnonymizationService(userRepository, adminRepository, notificationCleanup, offboarding,
                 passwordEncoder, Clock.fixed(NOW, ZoneOffset.UTC));
     }
@@ -75,6 +79,8 @@ class AccountAnonymizationServiceTest {
     void ownAccountIsAnonymizedWithEverythingInTheSameTransaction() {
         User maria = user(UserStatus.ACTIVE);
         Ticket assigned = ticketInProgressAssignedTo(maria);
+        UUID assignedId = UUID.fromString("dddddddd-0000-4000-8000-000000000004");
+        ReflectionTestUtils.setField(assigned, "id", assignedId);
         when(userRepository.findById(USER_ID)).thenReturn(Optional.of(maria));
         when(passwordEncoder.matches(PASSWORD, "hash-da-maria")).thenReturn(true);
         when(passwordEncoder.encode(anyString())).thenReturn("hash-aleatorio");
@@ -94,6 +100,12 @@ class AccountAnonymizationServiceTest {
         assertThat(assigned.getAssignee()).isNull();
         assertThat(assigned.getAssignedAt()).isNull();
         assertThat(assigned.getStatus()).isEqualTo(TicketStatus.OPEN);
+
+        // A fila ganhou o chamado: quem a está olhando precisa saber (um evento para todos os devolvidos)
+        ArgumentCaptor<TicketsReturnedToQueueEvent> returned = ArgumentCaptor.forClass(TicketsReturnedToQueueEvent.class);
+        verify(eventPublisher).publishEvent(returned.capture());
+        assertThat(returned.getValue().eventId()).isNotNull();
+        assertThat(returned.getValue().ticketIds()).containsExactly(assignedId);
     }
 
     @Test
@@ -105,7 +117,7 @@ class AccountAnonymizationServiceTest {
         assertThatThrownBy(() -> service.anonymizeOwnAccount(USER_ID, "errada"))
                 .isInstanceOf(PasswordConfirmationMismatchException.class);
         assertThat(maria.getStatus()).isEqualTo(UserStatus.ACTIVE);
-        verifyNoInteractions(refreshTokenService, notificationCleanup, ticketRepository);
+        verifyNoInteractions(refreshTokenService, notificationCleanup, ticketRepository, eventPublisher);
     }
 
     @Test
@@ -168,6 +180,8 @@ class AccountAnonymizationServiceTest {
         assertThat(maria.getStatus()).isEqualTo(UserStatus.ANONYMIZED);
         verify(refreshTokenService).revokeAll(USER_ID);
         verify(notificationCleanup).deleteByRecipientId(USER_ID);
+        // Sem chamados em atendimento a fila não muda: nenhum evento
+        verifyNoInteractions(eventPublisher);
     }
 
     @Test

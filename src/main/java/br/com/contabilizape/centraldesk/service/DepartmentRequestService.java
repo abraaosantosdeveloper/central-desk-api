@@ -7,8 +7,10 @@ import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
 import br.com.contabilizape.centraldesk.model.DepartmentRequest;
 import br.com.contabilizape.centraldesk.model.DepartmentRequestStatus;
 import br.com.contabilizape.centraldesk.model.User;
+import br.com.contabilizape.centraldesk.realtime.UserPermissionsChangedEvent;
 import br.com.contabilizape.centraldesk.repository.DepartmentRequestRepository;
 import br.com.contabilizape.centraldesk.repository.UserRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,12 +28,15 @@ public class DepartmentRequestService {
 
     private final DepartmentRequestRepository departmentRequestRepository;
     private final UserRepository userRepository;
+    private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
 
     public DepartmentRequestService(DepartmentRequestRepository departmentRequestRepository,
-                                    UserRepository userRepository, Clock clock) {
+                                    UserRepository userRepository, ApplicationEventPublisher eventPublisher,
+                                    Clock clock) {
         this.departmentRequestRepository = departmentRequestRepository;
         this.userRepository = userRepository;
+        this.eventPublisher = eventPublisher;
         this.clock = clock;
     }
 
@@ -52,6 +57,7 @@ public class DepartmentRequestService {
         }
         request.approve(reviewer, OffsetDateTime.now(clock));
         departmentRequestRepository.flush(); // grava agora e atualiza o updated_at
+        eventPublisher.publishEvent(new UserPermissionsChangedEvent(request.getUser().getId()));
         return DepartmentRequestResponse.from(request);
     }
 

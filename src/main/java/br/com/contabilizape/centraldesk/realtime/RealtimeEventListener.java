@@ -38,6 +38,12 @@ public class RealtimeEventListener {
         registry.closeUsers(user);
     }
 
+    /** Fecha os streams: o navegador reconecta renovando a sessão e a conexão nova já traz as permissões novas. */
+    @TransactionalEventListener
+    public void onUserPermissionsChanged(UserPermissionsChangedEvent event) {
+        registry.closeUsers(Set.of(event.userId()));
+    }
+
     @TransactionalEventListener
     public void onTicketCreated(TicketCreatedEvent event) {
         registry.sendToRoles(Set.of(Roles.TICKET_HANDLER, Roles.ADMIN), TICKET_CREATED, event.ticket());

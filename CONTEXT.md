@@ -79,6 +79,8 @@ API_DOCS_ENABLED=true
 JWT_SECRET=...
 CONTENT_ENCRYPTION_KEY=...
 SHOW_SQL=true
+RESEND_API_KEY=...
+EMAIL_FROM=...
 ```
 
 O compose lê o `.env` automaticamente. O Spring também o lê, pelo `spring.config.import` do `application.properties` — então a aplicação recebe as variáveis tanto pelo VS Code quanto por `.\mvnw spring-boot:run`. Os testes que sobem o Spring usam a anotação `@IntegrationTest`, que zera `app.bootstrap.admin.*`, fixa `API_DOCS_ENABLED=false` e usa uma chave JWT própria (`IntegrationTest.JWT_SECRET`) e uma chave de comentários própria, para não depender do `.env` local.
@@ -87,7 +89,7 @@ O compose lê o `.env` automaticamente. O Spring também o lê, pelo `spring.con
 
 `API_DOCS_ENABLED=true` liga a documentação da API (Swagger). Sem a variável, ela fica desligada: é o caso de produção.
 
-`CONTENT_ENCRYPTION_KEY` é a chave que cifra os comentários dos chamados: base64 de 32 bytes aleatórios, gerada como a `JWT_SECRET`. Sem ela, a aplicação não sobe, e **ela nunca muda**: sem a chave, os comentários gravados não podem ser lidos (guardar uma cópia em cofre de senhas). `SHOW_SQL=true` (só em desenvolvimento) mostra o SQL no log; sem a variável, fica desligado. `PORT` é informada pelo Railway; sem ela, a porta é 8080. O `.env.example` da raiz lista todas as variáveis.
+`CONTENT_ENCRYPTION_KEY` é a chave que cifra os comentários dos chamados: base64 de 32 bytes aleatórios, gerada como a `JWT_SECRET`. Sem ela, a aplicação não sobe, e **ela nunca muda**: sem a chave, os comentários gravados não podem ser lidos (guardar uma cópia em cofre de senhas). `SHOW_SQL=true` (só em desenvolvimento) mostra o SQL no log; sem a variável, fica desligado. `PORT` é informada pelo Railway; sem ela, a porta é 8080. `RESEND_API_KEY` é a chave da API do Resend (permissão só de envio): sem ela, os e-mails não saem e só aparecem no log (`LoggingEmailSender`), que é o comportamento de desenvolvimento e da CI. `EMAIL_FROM` (opcional) é o remetente, no formato `Nome <endereco@dominio>`, e o domínio precisa estar verificado no Resend; o padrão é `CentralDesk <centraldesk@notificacoes.contabilizape.com.br>`. O `.env.example` da raiz lista todas as variáveis.
 
 **Acentos no `.env`:** pelo `spring.config.import`, o Spring lê o `.env` como `.properties`, em **ISO-8859-1**. Um valor acentuado salvo em UTF-8 chega corrompido ("Abraão" vira "AbraÃ£o"). Nas variáveis lidas pelo Spring, escreva acentos como escape Unicode: `ADMIN_NAME=Abra\u00e3o ...` (ã = `\u00e3`, ç = `\u00e7`, é = `\u00e9`). Senhas: prefira só ASCII; um acento corrompido mudaria o hash gravado. As variáveis `ADMIN_*` definem o **primeiro administrador**, criado pela aplicação ao subir (ver seção 5).
 
@@ -140,6 +142,18 @@ app.security.cookie.secure=${COOKIE_SECURE:true}
 app.security.content-encryption-key=${CONTENT_ENCRYPTION_KEY:}
 # Stream SSE (GET /events/stream): a conexão é encerrada após este tempo e o navegador reconecta sozinho
 app.realtime.sse-timeout=30m
+# Comentário ":ping" periódico em todos os streams: evita que um proxy derrube a conexão ociosa (o do Railway, por exemplo)
+app.realtime.heartbeat-interval=25s
+
+# E-mails pela API do Resend. Sem RESEND_API_KEY, os e-mails só aparecem no log (desenvolvimento e CI).
+# O domínio do remetente precisa estar verificado no Resend.
+app.email.from=${EMAIL_FROM:CentralDesk <centraldesk@notificacoes.contabilizape.com.br>}
+# true: envia em threads próprias, sem fazer a ação do usuário esperar o Resend (os testes usam false)
+app.email.async=true
+app.email.resend.api-key=${RESEND_API_KEY:}
+app.email.resend.base-url=https://api.resend.com
+app.email.resend.connect-timeout=3s
+app.email.resend.read-timeout=10s
 
 # Documentação da API (springdoc): desligada por padrão, inclusive em produção.
 # Em desenvolvimento, API_DOCS_ENABLED=true no .env liga /swagger-ui.html e /v3/api-docs.
@@ -166,7 +180,7 @@ O Flyway aplica as migrations ao subir. Com `API_DOCS_ENABLED=true`, a documenta
 
 O `Dockerfile` da raiz gera a imagem do back-end em duas etapas: compila com o JDK 21 (`./mvnw -DskipTests package`) e executa só com o JRE 21, com usuário sem privilégio (`centraldesk`, uid 10001), `LANG=C.UTF-8` (para ler variáveis com acento) e `JAVA_OPTS=-XX:MaxRAMPercentage=75`. Os testes **não** rodam na imagem: precisam de Docker (Testcontainers) e rodam antes, com `.\mvnw test`. O `.dockerignore` deixa de fora `target`, `.git`, `.env*` (menos o `.env.example`), `docs` e logs. A porta vem de `PORT`, e em produção as variáveis são as do ambiente, sem `.env`.
 
-**Estado do deploy:** só a imagem existe. Faltam o CI como portão, `/actuator/health` público, CORS, domínio próprio, heartbeat do SSE e 1 réplica fixa; o roteiro está na seção 6 do `docs/GUIA-DE-DESENVOLVIMENTO.md`.
+**Estado do deploy:** só a imagem existe. Faltam o CI como portão, `/actuator/health` público, CORS, domínio próprio e 1 réplica fixa (o heartbeat do SSE já existe, SCRUM-190); o roteiro está na seção 6 do `docs/GUIA-DE-DESENVOLVIMENTO.md`.
 
 ## 4. Banco de dados
 
@@ -375,8 +389,10 @@ Ninguém é notificado de uma ação que ele mesmo fez (o `actor` nunca é o des
 
 - **Atualizações em tempo real na interface via SSE** (Server-Sent Events), e não WebSocket: o fluxo é só do servidor para o cliente, com um stream único por usuário (`GET /events/stream`), que leva **qualquer evento** do usuário (hoje `comment.created`, `ticket.created` e `session.ended`; os demais virão depois). Limite conhecido: funciona com uma única instância da aplicação; pub/sub entre instâncias fica como trabalho futuro (ADR no Jira: SCRUM-51). O painel pode começar consultando a API e ganhar o SSE depois.
 - Canais no MVP: **painel na interface primeiro**; e-mail depois, aproveitando os mesmos eventos (SCRUM-44).
-- E-mail: previsto com `spring-boot-starter-mail` (`JavaMailSender`) via SMTP — Resend com domínio próprio para testes, Mailpit no Docker para desenvolvimento, e SMTP da empresa (`@contabilizape.com.br`) como alvo de produção. Ainda não implementado.
+- E-mail: **API HTTPS do Resend** (`POST https://api.resend.com/emails`, `RestClient` do Spring), e não SMTP, porque o Railway só libera SMTP de saída no plano Pro e recomenda APIs HTTPS. Pacote `email/` (SCRUM-182): `EmailSender` (interface), `ResendEmailSender` (até 3 tentativas com a mesma `Idempotency-Key`; repete em 429, 5xx, falha de rede e 409 "em andamento"; nunca lança), `LoggingEmailSender` (sem `RESEND_API_KEY`, só registra no log; o corpo fica em DEBUG), `EmailConfig` (`@EnableAsync` e o executor `emailExecutor` com 2 threads; `app.email.async=false` troca por execução na mesma thread nos testes) e `EmailProperties` (`app.email.*`). Desenho completo e regras de quem recebe cada e-mail em `docs/ARQUITETURA-EMAILS.md`. Mailpit deixou de ser necessário. Os templates e os eventos (SCRUM-183 e 184) ainda não existem.
 - Disparadas por **eventos do Spring** (`ApplicationEventPublisher`), ouvidos com `@TransactionalEventListener(phase = AFTER_COMMIT)`: o ouvinte só roda depois que a transação foi gravada, e uma falha no envio não desfaz a operação.
+- **Robustez do SSE (SCRUM-190):** `SseHeartbeat` escreve um comentário `:ping` em todos os streams a cada `app.realtime.heartbeat-interval` (25 s) e `SseEmitterRegistry.sendHeartbeat` descarta as conexões que já morreram; a resposta do stream leva `X-Accel-Buffering: no` (o nginx não segura os eventos). As roles do stream são copiadas do token ao conectar, então `UserPermissionsChangedEvent` (departamento trocado, admin concedido ou removido, pedido de entrada aprovado) **fecha** os streams da pessoa: o front reconecta renovando a sessão e a conexão nova já traz as roles certas.
+- **Eventos de domínio do chamado (pacote `event/`, SCRUM-188):** um `record` por fato, com `eventId` próprio e só IDs: `TicketOpenedEvent` (abrir), `TicketAssignedEvent` (assumir), `TicketReassignedEvent` (`fromQueue` = estava `OPEN`), `TicketClosedEvent` (`wasOpen` = ainda estava na fila) e `TicketsReturnedToQueueEvent` (desativar, anonimizar ou tirar da Inovação quem tinha chamados em atendimento: um evento só, com todos os IDs). São publicados dentro da transação, depois do `flush`, e só quando a operação foi aceita (409/403/404 não publicam). `TicketCreatedEvent` e `CommentCreatedEvent` (pacote `realtime/`) continuam levando DTOs de tela para o SSE. Plano completo: `PLANO-SSE-CONTADORES.md`, no Projeto do claude.ai (SCRUM-186).
 - Implementado: `DepartmentRequestCreatedEvent` → `DepartmentRequestNotificationListener`, que busca os admins ativos (`UserRepository.findAdminsByStatus`). **Provisório**: por enquanto só registra no log (`Notificar ...`). Com o painel, o ouvinte passa a gravar uma notificação `DEPARTMENT_REQUEST_CREATED` por administrador.
 
 ## 7. Autenticação
@@ -578,11 +594,14 @@ src/main/java/br/com/contabilizape/centraldesk/
 │                 TicketCloseForbiddenException, TicketClosedForCommentsException, TicketEditForbiddenException,
 │                 TicketNotEditableException, TicketNotFoundException, UserNotFoundException
 ├── bootstrap/    AdminBootstrap, BootstrapAdminProperties
+├── email/        EmailConfig, EmailMessage, EmailProperties, EmailSender, LoggingEmailSender, ResendEmailSender
+├── event/        TicketOpenedEvent, TicketAssignedEvent, TicketReassignedEvent, TicketClosedEvent,
+│                 TicketsReturnedToQueueEvent (fatos do chamado; a fila, o SSE e, depois, e-mails e painel ouvem os mesmos)
 ├── model/        Admin, Category, Comment, Department, DepartmentRequest, DepartmentRequestStatus,
 │                 EncryptedStringConverter, Priority, RefreshToken, Ticket, TicketStatus, User, UserStatus
 ├── notification/ DepartmentRequestCreatedEvent, DepartmentRequestNotificationListener
-├── realtime/     CommentCreatedEvent, RealtimeEventListener, SessionsEndedEvent, SseEmitterRegistry,
-│                 TicketCreatedEvent
+├── realtime/     CommentCreatedEvent, RealtimeConfig, RealtimeEventListener, SessionsEndedEvent, SseEmitterRegistry,
+│                 SseHeartbeat, TicketCreatedEvent, UserPermissionsChangedEvent
 ├── repository/   AdminRepository, CategoryRepository, CommentRepository, DepartmentRepository,
 │                 DepartmentRequestRepository, NotificationCleanupRepository (JdbcTemplate, provisório até a
 │                 SCRUM-152), PriorityRepository, RefreshTokenRepository, TicketRepository, UserRepository
@@ -621,7 +640,10 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 ├── controller/AdminManagementIntegrationTest   conceder/remover admin, departamento, PUT /users/{id}, corte de sessões: token antigo → 401 (11)
 ├── controller/CategoryIntegrationTest          criar, editar, arquivar, uso por categoria, 403 (5)
 ├── controller/TicketManagementIntegrationTest  reatribuir, responsáveis, comentários só do solicitante e do responsável, busca e ordenação (10)
-├── controller/RealtimeIntegrationTest         /events/stream: text/event-stream, 401, comment.created e ticket.created só para quem deve (4)
+├── controller/RealtimeIntegrationTest         /events/stream: text/event-stream, 401, comment.created e ticket.created só para quem deve, X-Accel-Buffering, aprovação fecha o stream (6)
+├── realtime/SseEmitterRegistryTest            heartbeat tira conexão quebrada e mantém as boas, closeUsers (JUnit puro, 6)
+├── realtime/SseHeartbeatTest                  tarefa agendada com o intervalo configurado (2)
+├── realtime/RealtimeEventListenerTest         mudança de permissão fecha o stream do usuário (1)
 ├── controller/AccountAnonymizationIntegrationTest  DELETE /users/me e PATCH /users/{id}/anonymize (10)
 ├── docs/ApiDocsIntegrationTest                OpenAPI e Swagger UI ligados (19 casos)
 ├── docs/ApiDocsDisabledIntegrationTest        sem API_DOCS_ENABLED: 404 (2 casos)
@@ -629,14 +651,15 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 ├── dto/PasswordChangeRequestValidationTest    senha atual obrigatória e  na nova (6)
 ├── service/UserServiceTest                    regras de negócio (JUnit 5 + Mockito, sem banco)
 ├── service/DepartmentServiceTest              listagem ordenada (Mockito, 2 casos)
-├── service/AccountAnonymizationServiceTest   anonimização: dados, sessões, fila, notificações, último admin (Mockito, 10)
+├── service/AccountAnonymizationServiceTest   anonimização: dados, sessões, fila (+ evento), notificações, último admin (Mockito, 10)
 ├── service/AuthServiceTest                    login, permissões, renovação, logout e troca de senha (Mockito, 16 casos)
 ├── service/RefreshTokenServiceTest            emissão, hash, rotação, reuso, revogação, revogar todas (Mockito, 12)
-├── service/TicketServiceTest                  abertura, detalhes, edição, listagens, assumir e encerrar (Mockito, 31)
+├── service/TicketServiceTest                  abertura, detalhes, edição, listagens, assumir e encerrar; eventos de domínio (Mockito, 33)
+├── service/TicketReassignmentServiceTest      reatribuir: evento com `fromQueue`, recusas não publicam nada (Mockito, 6)
 ├── service/CommentServiceTest                 comentar, evento aos participantes, encerrado, 404, conta desativada, leitura (7)
-├── service/UserAdministrationServiceTest      desativar, reativar, consultar, editar dados, trocar departamento, conceder/remover admin (Mockito, 18)
+├── service/UserAdministrationServiceTest      desativar, reativar, consultar, editar dados, trocar departamento, conceder/remover admin; devolução à fila e mudança de permissões publicam evento (Mockito, 24)
 ├── service/CategoryServiceTest                criar, editar, arquivar, nome repetido (Mockito, 7)
-├── service/DepartmentRequestServiceTest        fila, aprovar, recusar, já analisado, conta inativa, inexistente (Mockito, 6)
+├── service/DepartmentRequestServiceTest        fila, aprovar (publica a mudança de permissões), recusar, já analisado, conta inativa, inexistente (Mockito, 6)
 ├── model/TicketTest                           máquina de estados: transições, assumir, devolver à fila, encerrar (17)
 ├── model/UserTest                             ciclo da conta: desativar, reativar, anonimizada é final, trocar de departamento, corte de sessões (7)
 ├── model/DepartmentRequestTest                aprovar move para o departamento, recusar, decisão única (3)
@@ -764,7 +787,8 @@ O roteiro vigente a partir de 23/10/2026 está na seção 5 do `docs/GUIA-DE-DES
 - [ ] Limpeza periódica de notificações lidas há mais de N dias (junto da limpeza de `refresh_tokens`).
 - [ ] Definir o significado de `validated_at` (hoje nasce nulo).
 - [x] Criptografia em repouso (AES-256-GCM) dos comentários (SCRUM-164). Descrições e avaliações ficam fora, por decisão de 21/10.
-- [ ] SSE: heartbeat periódico (proxies, inclusive o do Railway, podem derrubar conexões ociosas) e pub/sub para mais de uma instância.
+- [x] SSE: heartbeat periódico (`:ping` a cada 25 s) contra proxies que derrubam conexões ociosas (SCRUM-190).
+- [ ] SSE: pub/sub para mais de uma instância (ADR SCRUM-51).
 - [x] Swagger (springdoc), documentando também o formato de erro `ProblemDetail` (SCRUM-122).
 - [ ] **Dívida de produção** para o deploy automatizado (guia, seção 6, passo 1): `/actuator/health` público, CORS, domínio próprio, `baseline-on-migrate=false`, `ddl-auto=validate`, heartbeat do SSE e 1 réplica.
 - [ ] **CI no GitHub Actions** como portão do deploy e "Wait for CI" no Railway (guia, passos 2 e 3).

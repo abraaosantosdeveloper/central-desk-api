@@ -6,6 +6,9 @@ import br.com.contabilizape.centraldesk.dto.TicketFilter;
 import br.com.contabilizape.centraldesk.dto.TicketResponse;
 import br.com.contabilizape.centraldesk.dto.TicketSummaryResponse;
 import br.com.contabilizape.centraldesk.dto.TicketUpdateRequest;
+import br.com.contabilizape.centraldesk.event.TicketAssignedEvent;
+import br.com.contabilizape.centraldesk.event.TicketClosedEvent;
+import br.com.contabilizape.centraldesk.event.TicketOpenedEvent;
 import br.com.contabilizape.centraldesk.exception.AccountNotActiveException;
 import br.com.contabilizape.centraldesk.exception.CategoryNotFoundException;
 import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
@@ -75,8 +78,10 @@ public class TicketService {
         if (ticket.getRequester().getId().equals(userId)) {
             throw new TicketCloseForbiddenException();
         }
+        boolean wasOpen = ticket.isOpen(); // lido antes: encerrar muda o status
         ticket.close(closer, resolution.trim(), OffsetDateTime.now(clock));
         ticketRepository.flush(); // grava agora e atualiza o updated_at
+        eventPublisher.publishEvent(TicketClosedEvent.of(ticket, wasOpen));
         return TicketResponse.from(ticket);
     }
 
@@ -95,6 +100,7 @@ public class TicketService {
         }
         ticket.assign(assignee, OffsetDateTime.now(clock));
         ticketRepository.flush(); // grava agora e atualiza o updated_at
+        eventPublisher.publishEvent(TicketAssignedEvent.of(ticket));
         return TicketResponse.from(ticket);
     }
 
@@ -109,7 +115,9 @@ public class TicketService {
 
         Ticket ticket = new Ticket(request.title().trim(), request.description().trim(), category, priority, requester);
         ticketRepository.saveAndFlush(ticket); // flush preenche o createdAt antes de montar a resposta
+        // Dois eventos: o resumo para a tela (SSE) e o fato de domínio, que a fila e os e-mails também ouvem
         eventPublisher.publishEvent(new TicketCreatedEvent(TicketSummaryResponse.from(ticket)));
+        eventPublisher.publishEvent(TicketOpenedEvent.of(ticket));
         return TicketResponse.from(ticket);
     }
 

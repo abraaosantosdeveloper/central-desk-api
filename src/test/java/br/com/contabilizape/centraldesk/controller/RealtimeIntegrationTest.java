@@ -3,6 +3,7 @@ package br.com.contabilizape.centraldesk.controller;
 import br.com.contabilizape.centraldesk.DatabaseCleanup;
 import br.com.contabilizape.centraldesk.IntegrationTest;
 import jakarta.servlet.http.Cookie;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,10 +13,12 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -32,6 +35,8 @@ class RealtimeIntegrationTest {
     private static final String MARIA = "maria.silva@contabilizape.com.br";
     private static final String JOAO = "joao.souza@contabilizape.com.br";
     private static final String HANDLER = "carlos.inovacao@contabilizape.com.br";
+    private static final String ADMIN = "ana.admin@contabilizape.com.br";
+    private static final String PAULO = "paulo.novo@contabilizape.com.br";
 
     @Autowired
     private MockMvc mockMvc;
@@ -41,6 +46,8 @@ class RealtimeIntegrationTest {
 
     private UUID maria;
     private UUID handler;
+    private UUID admin;
+    private Cookie adminSession;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -49,6 +56,16 @@ class RealtimeIntegrationTest {
         handler = register(HANDLER, "39053344705");
         register(JOAO, "11144477735");
         jdbc.update("UPDATE users SET department_id = ? WHERE id = ?", UUID.fromString(INNOVATION_ID), handler);
+        admin = register(ADMIN, "71428793860");
+        jdbc.update("INSERT INTO admins (user_id) VALUES (?)", admin);
+        adminSession = login(ADMIN);
+    }
+
+    // A limpeza padrão preserva administradores; o criado aqui sai ao final
+    @AfterEach
+    void removeTestAdmin() {
+        jdbc.update("DELETE FROM admins WHERE user_id IN (SELECT id FROM users WHERE email LIKE '%@contabilizape.com.br')");
+        DatabaseCleanup.removeNonAdminUsers(jdbc);
     }
 
     @Test
@@ -101,6 +118,35 @@ class RealtimeIntegrationTest {
         assertThat(joaoStream.getContentAsString()).doesNotContain("ticket.created");
     }
 
+    // ---------- robustez do stream (SCRUM-190) ----------
+
+    @Test
+    void streamAsksProxiesNotToBufferIt() throws Exception {
+        MockHttpServletResponse stream = openStream(login(MARIA));
+
+        // O nginx (e proxies parecidos) seguram a resposta em buffer e o evento só chegaria depois
+        assertThat(stream.getHeader("X-Accel-Buffering")).isEqualTo("no");
+    }
+
+    @Test
+    void approvingTheRequestClosesTheStreamOfThePersonWhoAsked() throws Exception {
+        UUID paulo = register(PAULO, "27946934092", INNOVATION_ID);
+        String request = jdbc.queryForObject("SELECT id FROM department_requests WHERE user_id = ?", String.class, paulo);
+        UUID ticket = ticketOf(paulo, handler);
+        Cookie handlerSession = login(HANDLER);
+        MockHttpServletResponse pauloStream = openStream(login(PAULO));
+
+        comment(ticket, handlerSession, "Antes da aprovação");
+        assertThat(pauloStream.getContentAsString(StandardCharsets.UTF_8)).contains("Antes da aprovação");
+
+        mockMvc.perform(patch("/department-requests/" + request + "/approve").cookie(adminSession))
+                .andExpect(status().isOk());
+        comment(ticket, handlerSession, "Depois da aprovação");
+
+        // A conexão antiga foi fechada: o navegador reconecta renovando a sessão, já com as permissões novas
+        assertThat(pauloStream.getContentAsString(StandardCharsets.UTF_8)).doesNotContain("Depois da aprovação");
+    }
+
     // ---------- auxiliares ----------
 
     private MockHttpServletResponse openStream(Cookie session) throws Exception {
@@ -110,12 +156,23 @@ class RealtimeIntegrationTest {
     }
 
     private UUID register(String email, String cpf) throws Exception {
+        return register(email, cpf, GENERAL_ID);
+    }
+
+    // Pedir a Inovação cria o pedido pendente; a conta começa no Geral
+    private UUID register(String email, String cpf, String departmentId) throws Exception {
         mockMvc.perform(post("/auth/register").contentType(MediaType.APPLICATION_JSON).content("""
                         { "fullName": "Maria da Silva", "cpf": "%s", "email": "%s",
                           "password": "%s", "departmentId": "%s" }
-                        """.formatted(cpf, email, PASSWORD, GENERAL_ID)))
+                        """.formatted(cpf, email, PASSWORD, departmentId)))
                 .andExpect(status().isCreated());
         return jdbc.queryForObject("SELECT id FROM users WHERE email = ?", UUID.class, email);
+    }
+
+    private void comment(UUID ticket, Cookie session, String content) throws Exception {
+        mockMvc.perform(post("/tickets/" + ticket + "/comments").cookie(session)
+                        .contentType(MediaType.APPLICATION_JSON).content("{ \"content\": \"" + content + "\" }"))
+                .andExpect(status().isCreated());
     }
 
     private Cookie login(String email) throws Exception {
@@ -129,10 +186,14 @@ class RealtimeIntegrationTest {
     }
 
     private UUID ticket(UUID assignee) {
+        return ticketOf(maria, assignee);
+    }
+
+    private UUID ticketOf(UUID requester, UUID assignee) {
         UUID category = jdbc.queryForObject("SELECT id FROM categories LIMIT 1", UUID.class);
         return jdbc.queryForObject("""
                 INSERT INTO tickets (title, description, status, category_id, priority_id, requester_id, assignee_id)
                 VALUES ('Impressora', 'Sem papel', 'IN_PROGRESS', ?, 2, ?, ?) RETURNING id
-                """, UUID.class, category, maria, assignee);
+                """, UUID.class, category, requester, assignee);
     }
 }
