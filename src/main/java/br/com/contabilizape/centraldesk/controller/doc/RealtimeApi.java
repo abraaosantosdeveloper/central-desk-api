@@ -44,6 +44,11 @@ public interface RealtimeApi {
                     `ticketId` nulo). `openCount` é a contagem pronta, calculada depois do commit: a tela \
                     **substitui** o valor, não soma nem subtrai. Reatribuir ou encerrar um chamado em \
                     andamento não emite o evento. O mesmo número vem de `GET /tickets/queue/count`;
+                    - `department-requests.changed`: pedidos de entrada pendentes mudaram; só para \
+                    administradores. `data` = `{ "pendingCount": 2, "requestId": "...", "reason": "CREATED" }`, \
+                    com `reason` = `CREATED`, `APPROVED` ou `REJECTED`. `pendingCount` é a contagem pronta, \
+                    calculada depois do commit: a tela **substitui** o valor. Pedido já decidido (409) não \
+                    emite o evento;
                     - `session.ended`: as sessões do usuário foram encerradas (senha trocada, e-mail de login \
                     trocado pelo admin). A conexão é fechada logo depois; a tela deve conferir a sessão \
                     (`GET /users/me`), que responde 401 nos dispositivos que perderam o acesso.

@@ -38,6 +38,7 @@ class RealtimeIntegrationTest {
     private static final String ADMIN = "ana.admin@contabilizape.com.br";
     private static final String PAULO = "paulo.novo@contabilizape.com.br";
     private static final String COLLEAGUE = "dani.inovacao@contabilizape.com.br";
+    private static final String PEDRO = "pedro.novo@contabilizape.com.br";
 
     @Autowired
     private MockMvc mockMvc;
@@ -229,6 +230,58 @@ class RealtimeIntegrationTest {
                 .contains("\"reason\":\"RETURNED\"");
     }
 
+    // ---------- Aprovações em tempo real: department-requests.changed (SCRUM-191) ----------
+
+    @Test
+    void newInnovationRequestReachesTheAdminsWithoutReloading() throws Exception {
+        MockHttpServletResponse adminStream = openStream(adminSession);
+        MockHttpServletResponse handlerStream = openStream(login(HANDLER));
+        MockHttpServletResponse collaboratorStream = openStream(login(JOAO));
+
+        UUID paulo = register(PAULO, "12345678909", INNOVATION_ID);
+
+        assertThat(adminStream.getContentAsString())
+                .contains("event:department-requests.changed")
+                .contains("\"pendingCount\":1")
+                .contains("\"reason\":\"CREATED\"")
+                .contains(requestOf(paulo));
+        // É assunto de administrador: nem a Inovação nem os colaboradores recebem
+        assertThat(handlerStream.getContentAsString()).doesNotContain("department-requests.changed");
+        assertThat(collaboratorStream.getContentAsString()).doesNotContain("department-requests.changed");
+    }
+
+    @Test
+    void approvingAndRejectingSendTheNewPendingCount() throws Exception {
+        UUID paulo = register(PAULO, "12345678909", INNOVATION_ID);
+        UUID pedro = register(PEDRO, "98765432100", INNOVATION_ID);
+        MockHttpServletResponse adminStream = openStream(adminSession);
+
+        mockMvc.perform(patch("/department-requests/" + requestOf(paulo) + "/approve").cookie(adminSession))
+                .andExpect(status().isOk());
+        assertThat(adminStream.getContentAsString())
+                .contains("\"pendingCount\":1")
+                .contains("\"reason\":\"APPROVED\"");
+
+        mockMvc.perform(patch("/department-requests/" + requestOf(pedro) + "/reject").cookie(adminSession))
+                .andExpect(status().isOk());
+        assertThat(adminStream.getContentAsString())
+                .contains("\"pendingCount\":0")
+                .contains("\"reason\":\"REJECTED\"");
+    }
+
+    @Test
+    void requestAlreadyReviewedDoesNotEmitAgain() throws Exception {
+        UUID paulo = register(PAULO, "12345678909", INNOVATION_ID);
+        String request = requestOf(paulo);
+        mockMvc.perform(patch("/department-requests/" + request + "/reject").cookie(adminSession)).andExpect(status().isOk());
+        MockHttpServletResponse adminStream = openStream(adminSession);
+
+        mockMvc.perform(patch("/department-requests/" + request + "/approve").cookie(adminSession))
+                .andExpect(status().isConflict());
+
+        assertThat(adminStream.getContentAsString()).doesNotContain("department-requests.changed");
+    }
+
     // ---------- robustez do stream (SCRUM-190) ----------
 
     @Test
@@ -278,6 +331,10 @@ class RealtimeIntegrationTest {
                         """.formatted(cpf, email, PASSWORD, departmentId)))
                 .andExpect(status().isCreated());
         return jdbc.queryForObject("SELECT id FROM users WHERE email = ?", UUID.class, email);
+    }
+
+    private String requestOf(UUID user) {
+        return jdbc.queryForObject("SELECT id FROM department_requests WHERE user_id = ?", String.class, user);
     }
 
     private UUID joao() {

@@ -18,6 +18,8 @@ public interface DepartmentRequestRepository extends JpaRepository<DepartmentReq
 
     boolean existsByUserIdAndStatus(UUID userId, DepartmentRequestStatus status);
 
+    long countByStatus(DepartmentRequestStatus status);
+
     /** Fila de aprovação dos admins, do mais antigo para o mais novo (índice da V9). */
     @EntityGraph(attributePaths = {"user", "department"})
     List<DepartmentRequest> findByStatusOrderByCreatedAtAsc(DepartmentRequestStatus status);

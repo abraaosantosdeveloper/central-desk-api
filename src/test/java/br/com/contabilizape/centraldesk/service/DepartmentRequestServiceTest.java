@@ -1,6 +1,8 @@
 package br.com.contabilizape.centraldesk.service;
 
 import br.com.contabilizape.centraldesk.dto.DepartmentRequestResponse;
+import br.com.contabilizape.centraldesk.event.DepartmentRequestApprovedEvent;
+import br.com.contabilizape.centraldesk.event.DepartmentRequestRejectedEvent;
 import br.com.contabilizape.centraldesk.exception.DepartmentRequestAlreadyReviewedException;
 import br.com.contabilizape.centraldesk.exception.DepartmentRequestNotFoundException;
 import br.com.contabilizape.centraldesk.exception.InvalidAccountStatusException;
@@ -31,6 +33,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -93,6 +96,10 @@ class DepartmentRequestServiceTest {
 
         // As permissões de quem pediu mudaram: o stream dele é reaberto e já volta com TICKET_HANDLER
         assertThat(published(UserPermissionsChangedEvent.class).userId()).isEqualTo(REQUESTER_ID);
+        // E a fila de Aprovações dos admins perdeu um pedido
+        DepartmentRequestApprovedEvent approved = published(DepartmentRequestApprovedEvent.class);
+        assertThat(approved.eventId()).isNotNull();
+        assertThat(approved.requestId()).isEqualTo(REQUEST_ID);
     }
 
     @Test
@@ -106,8 +113,11 @@ class DepartmentRequestServiceTest {
 
         assertThat(requester.getDepartment()).isSameAs(general);
         assertThat(response.status()).isEqualTo(DepartmentRequestStatus.REJECTED);
-        // Recusar não muda as permissões de ninguém
-        verifyNoInteractions(eventPublisher);
+        DepartmentRequestRejectedEvent rejected = published(DepartmentRequestRejectedEvent.class);
+        assertThat(rejected.eventId()).isNotNull();
+        assertThat(rejected.requestId()).isEqualTo(REQUEST_ID);
+        // Recusar não muda as permissões de ninguém: só esse evento sai
+        verify(eventPublisher).publishEvent(any(Object.class));
     }
 
     @Test

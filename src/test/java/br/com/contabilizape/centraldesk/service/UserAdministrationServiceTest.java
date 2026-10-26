@@ -81,7 +81,7 @@ class UserAdministrationServiceTest {
         AccountOffboarding offboarding = new AccountOffboarding(userRepository, adminRepository, ticketRepository,
                 refreshTokenService, eventPublisher);
         service = new UserAdministrationService(userRepository, adminRepository, departmentRequestRepository,
-                departmentRepository, offboarding, Clock.fixed(NOW, ZoneOffset.UTC), INNOVATION_ID);
+                departmentRepository, offboarding, eventPublisher, Clock.fixed(NOW, ZoneOffset.UTC), INNOVATION_ID);
     }
 
     // ---------- desativar ----------
@@ -103,7 +103,7 @@ class UserAdministrationServiceTest {
         assertThat(inProgress.getAssignee()).isNull();
         assertThat(response.status()).isEqualTo(UserStatus.DEACTIVATED);
         assertThat(response.ticketHandler()).isTrue();
-        assertThat(returnedToQueue().ticketIds()).containsExactly(TICKET_ID);
+        assertThat(published(TicketsReturnedToQueueEvent.class).ticketIds()).containsExactly(TICKET_ID);
     }
 
     @Test
@@ -376,7 +376,9 @@ class UserAdministrationServiceTest {
         assertThat(target.getDepartment()).isSameAs(general);
         assertThat(response.ticketHandler()).isFalse();
         assertThat(inProgress.getStatus()).isEqualTo(TicketStatus.OPEN);
-        assertThat(returnedToQueue().ticketIds()).containsExactly(TICKET_ID);
+        assertThat(published(TicketsReturnedToQueueEvent.class).ticketIds()).containsExactly(TICKET_ID);
+        // Mudou de departamento: as permissões da pessoa mudam, então o stream dela é reaberto
+        assertThat(published(UserPermissionsChangedEvent.class).userId()).isEqualTo(TARGET_ID);
     }
 
     @Test
@@ -391,10 +393,12 @@ class UserAdministrationServiceTest {
 
     // ---------- auxiliares ----------
 
-    private TicketsReturnedToQueueEvent returnedToQueue() {
-        ArgumentCaptor<TicketsReturnedToQueueEvent> captor = ArgumentCaptor.forClass(TicketsReturnedToQueueEvent.class);
-        verify(eventPublisher).publishEvent(captor.capture());
-        return captor.getValue();
+    // Os eventos são records (não ApplicationEvent): o publishEvent(Object) é o chamado
+    private <T> T published(Class<T> type) {
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher, atLeastOnce()).publishEvent(captor.capture());
+        return captor.getAllValues().stream().filter(type::isInstance).map(type::cast).findFirst()
+                .orElseThrow(() -> new AssertionError("Evento não publicado: " + type.getSimpleName()));
     }
 
     private static AdminUserUpdateRequest request(String fullName, String cpf, String email, UUID departmentId) {

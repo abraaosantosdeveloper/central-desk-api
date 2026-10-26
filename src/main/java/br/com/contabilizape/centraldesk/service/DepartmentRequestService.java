@@ -1,6 +1,8 @@
 package br.com.contabilizape.centraldesk.service;
 
 import br.com.contabilizape.centraldesk.dto.DepartmentRequestResponse;
+import br.com.contabilizape.centraldesk.event.DepartmentRequestApprovedEvent;
+import br.com.contabilizape.centraldesk.event.DepartmentRequestRejectedEvent;
 import br.com.contabilizape.centraldesk.exception.DepartmentRequestNotFoundException;
 import br.com.contabilizape.centraldesk.exception.InvalidAccountStatusException;
 import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
@@ -58,6 +60,7 @@ public class DepartmentRequestService {
         request.approve(reviewer, OffsetDateTime.now(clock));
         departmentRequestRepository.flush(); // grava agora e atualiza o updated_at
         eventPublisher.publishEvent(new UserPermissionsChangedEvent(request.getUser().getId()));
+        eventPublisher.publishEvent(DepartmentRequestApprovedEvent.of(request.getId()));
         return DepartmentRequestResponse.from(request);
     }
 
@@ -66,6 +69,7 @@ public class DepartmentRequestService {
         DepartmentRequest request = findForUpdate(requestId);
         request.reject(findReviewer(adminId), OffsetDateTime.now(clock));
         departmentRequestRepository.flush();
+        eventPublisher.publishEvent(DepartmentRequestRejectedEvent.of(request.getId()));
         return DepartmentRequestResponse.from(request);
     }
 
