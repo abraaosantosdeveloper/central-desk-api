@@ -155,6 +155,16 @@ app.email.resend.base-url=https://api.resend.com
 app.email.resend.connect-timeout=3s
 app.email.resend.read-timeout=10s
 
+# E-mails pela API do Resend. Sem RESEND_API_KEY, os e-mails só aparecem no log (desenvolvimento e CI).
+# O domínio do remetente precisa estar verificado no Resend.
+app.email.from=${EMAIL_FROM:CentralDesk <centraldesk@notificacoes.contabilizape.com.br>}
+# true: envia em threads próprias, sem fazer a ação do usuário esperar o Resend (os testes usam false)
+app.email.async=true
+app.email.resend.api-key=${RESEND_API_KEY:}
+app.email.resend.base-url=https://api.resend.com
+app.email.resend.connect-timeout=3s
+app.email.resend.read-timeout=10s
+
 # Documentação da API (springdoc): desligada por padrão, inclusive em produção.
 # Em desenvolvimento, API_DOCS_ENABLED=true no .env liga /swagger-ui.html e /v3/api-docs.
 springdoc.api-docs.enabled=${API_DOCS_ENABLED:false}
@@ -391,8 +401,6 @@ Ninguém é notificado de uma ação que ele mesmo fez (o `actor` nunca é o des
 - Canais no MVP: **painel na interface primeiro**; e-mail depois, aproveitando os mesmos eventos (SCRUM-44).
 - E-mail: **API HTTPS do Resend** (`POST https://api.resend.com/emails`, `RestClient` do Spring), e não SMTP, porque o Railway só libera SMTP de saída no plano Pro e recomenda APIs HTTPS. Pacote `email/` (SCRUM-182): `EmailSender` (interface), `ResendEmailSender` (até 3 tentativas com a mesma `Idempotency-Key`; repete em 429, 5xx, falha de rede e 409 "em andamento"; nunca lança), `LoggingEmailSender` (sem `RESEND_API_KEY`, só registra no log; o corpo fica em DEBUG), `EmailConfig` (`@EnableAsync` e o executor `emailExecutor` com 2 threads; `app.email.async=false` troca por execução na mesma thread nos testes) e `EmailProperties` (`app.email.*`). Desenho completo e regras de quem recebe cada e-mail em `docs/ARQUITETURA-EMAILS.md`. Mailpit deixou de ser necessário. Os templates e os eventos (SCRUM-183 e 184) ainda não existem.
 - Disparadas por **eventos do Spring** (`ApplicationEventPublisher`), ouvidos com `@TransactionalEventListener(phase = AFTER_COMMIT)`: o ouvinte só roda depois que a transação foi gravada, e uma falha no envio não desfaz a operação.
-- **Robustez do SSE (SCRUM-190):** `SseHeartbeat` escreve um comentário `:ping` em todos os streams a cada `app.realtime.heartbeat-interval` (25 s) e `SseEmitterRegistry.sendHeartbeat` descarta as conexões que já morreram; a resposta do stream leva `X-Accel-Buffering: no` (o nginx não segura os eventos). As roles do stream são copiadas do token ao conectar, então `UserPermissionsChangedEvent` (departamento trocado, admin concedido ou removido, pedido de entrada aprovado) **fecha** os streams da pessoa: o front reconecta renovando a sessão e a conexão nova já traz as roles certas.
-- **Contador da fila (SCRUM-189):** `QueueRealtimeListener` ouve os eventos de `event/` e envia `queue.changed` (`{ openCount, ticketId, reason }`, `reason` = `OPENED`, `ASSIGNED`, `CLOSED` ou `RETURNED`) para `TICKET_HANDLER` e `ROLE_ADMIN`. **O servidor manda a contagem pronta** (`TicketRepository.countByStatus(OPEN)`, depois do commit) e o cliente só substitui o valor: somar e subtrair no cliente deriva com qualquer evento perdido, duplicado ou fora de ordem. "Em aberto" = `status = OPEN`, que pela máquina de estados é o mesmo que "sem responsável" e é exatamente o conteúdo de `/tickets/queue`. Reatribuir ou encerrar um chamado **em andamento** não muda a fila e não emite. `RETURNED` (responsável saiu) é um evento só, com `ticketId` nulo. Como o SSE não tem replay, a tela busca `GET /tickets/queue/count` a cada `connected` (primeira conexão e reconexões).
 - **Eventos de domínio do chamado (pacote `event/`, SCRUM-188):** um `record` por fato, com `eventId` próprio e só IDs: `TicketOpenedEvent` (abrir), `TicketAssignedEvent` (assumir), `TicketReassignedEvent` (`fromQueue` = estava `OPEN`), `TicketClosedEvent` (`wasOpen` = ainda estava na fila) e `TicketsReturnedToQueueEvent` (desativar, anonimizar ou tirar da Inovação quem tinha chamados em atendimento: um evento só, com todos os IDs). São publicados dentro da transação, depois do `flush`, e só quando a operação foi aceita (409/403/404 não publicam). `TicketCreatedEvent` e `CommentCreatedEvent` (pacote `realtime/`) continuam levando DTOs de tela para o SSE. Plano completo: `PLANO-SSE-CONTADORES.md`, no Projeto do claude.ai (SCRUM-186).
 - Implementado: `DepartmentRequestCreatedEvent` → `DepartmentRequestNotificationListener`, que busca os admins ativos (`UserRepository.findAdminsByStatus`). **Provisório**: por enquanto só registra no log (`Notificar ...`). Com o painel, o ouvinte passa a gravar uma notificação `DEPARTMENT_REQUEST_CREATED` por administrador.
 
@@ -661,11 +669,10 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 ├── service/AccountAnonymizationServiceTest   anonimização: dados, sessões, fila (+ evento), notificações, último admin (Mockito, 10)
 ├── service/AuthServiceTest                    login, permissões, renovação, logout e troca de senha (Mockito, 16 casos)
 ├── service/RefreshTokenServiceTest            emissão, hash, rotação, reuso, revogação, revogar todas (Mockito, 12)
-├── service/TicketServiceTest                  abertura, detalhes, edição, listagens, assumir e encerrar; eventos de domínio; contagem da fila (Mockito, 36)
 ├── service/TicketServiceTest                  abertura, detalhes, edição, listagens, assumir e encerrar; eventos de domínio (Mockito, 33)
 ├── service/TicketReassignmentServiceTest      reatribuir: evento com `fromQueue`, recusas não publicam nada (Mockito, 6)
 ├── service/CommentServiceTest                 comentar, evento aos participantes, encerrado, 404, conta desativada, leitura (7)
-├── service/UserAdministrationServiceTest      desativar, reativar, consultar, editar dados, trocar departamento, conceder/remover admin; devolução à fila e mudança de permissões publicam evento (Mockito, 24)
+├── service/UserAdministrationServiceTest      desativar, reativar, consultar, editar dados, trocar departamento, conceder/remover admin; devolução à fila publica o evento (Mockito, 19)
 ├── service/CategoryServiceTest                criar, editar, arquivar, nome repetido (Mockito, 7)
 ├── service/DepartmentRequestServiceTest        fila, aprovar (publica a mudança de permissões), recusar, já analisado, conta inativa, inexistente (Mockito, 6)
 ├── model/TicketTest                           máquina de estados: transições, assumir, devolver à fila, encerrar (17)

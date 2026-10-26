@@ -62,8 +62,7 @@ public class UserAdministrationService {
     public UserAdministrationService(UserRepository userRepository, AdminRepository adminRepository,
                                      DepartmentRequestRepository departmentRequestRepository,
                                      DepartmentRepository departmentRepository,
-                                     AccountOffboarding offboarding, ApplicationEventPublisher eventPublisher,
-                                     Clock clock,
+                                     AccountOffboarding offboarding, Clock clock,
                                      @Value("${app.tickets.handler-department-id}") UUID handlerDepartmentId) {
         this.userRepository = userRepository;
         this.adminRepository = adminRepository;
@@ -198,9 +197,6 @@ public class UserAdministrationService {
         user.moveTo(department);
         if (leavesInnovation) {
             offboarding.returnTicketsToQueue(userId);
-        }
-        if (changesDepartment) {
-            eventPublisher.publishEvent(new UserPermissionsChangedEvent(userId));
         }
     }
 
