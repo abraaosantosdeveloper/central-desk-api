@@ -380,6 +380,32 @@ class TicketServiceTest {
         return captor.getValue();
     }
 
+    // ---------- contagem da fila (SCRUM-189) ----------
+
+    @Test
+    void queueCountIsTheNumberOfOpenTickets() {
+        when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(user(OTHER_ID, UserStatus.ACTIVE)));
+        when(ticketRepository.countByStatus(TicketStatus.OPEN)).thenReturn(7L);
+
+        assertThat(ticketService.countQueue(OTHER_ID).openCount()).isEqualTo(7);
+    }
+
+    @Test
+    void emptyQueueCountsZero() {
+        when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(user(OTHER_ID, UserStatus.ACTIVE)));
+        when(ticketRepository.countByStatus(TicketStatus.OPEN)).thenReturn(0L);
+
+        assertThat(ticketService.countQueue(OTHER_ID).openCount()).isZero();
+    }
+
+    @Test
+    void deactivatedUserCannotCountTheQueue() {
+        when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(user(OTHER_ID, UserStatus.DEACTIVATED)));
+
+        assertThatThrownBy(() -> ticketService.countQueue(OTHER_ID)).isInstanceOf(AccountNotActiveException.class);
+        verify(ticketRepository, never()).countByStatus(any());
+    }
+
     // ---------- assumir ----------
 
     @Test

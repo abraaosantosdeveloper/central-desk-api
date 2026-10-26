@@ -1,6 +1,7 @@
 package br.com.contabilizape.centraldesk.service;
 
 import br.com.contabilizape.centraldesk.dto.PageResponse;
+import br.com.contabilizape.centraldesk.dto.QueueCountResponse;
 import br.com.contabilizape.centraldesk.dto.TicketCreateRequest;
 import br.com.contabilizape.centraldesk.dto.TicketFilter;
 import br.com.contabilizape.centraldesk.dto.TicketResponse;
@@ -21,6 +22,7 @@ import br.com.contabilizape.centraldesk.exception.TicketNotFoundException;
 import br.com.contabilizape.centraldesk.model.Category;
 import br.com.contabilizape.centraldesk.model.Priority;
 import br.com.contabilizape.centraldesk.model.Ticket;
+import br.com.contabilizape.centraldesk.model.TicketStatus;
 import br.com.contabilizape.centraldesk.model.User;
 import br.com.contabilizape.centraldesk.model.UserStatus;
 import br.com.contabilizape.centraldesk.repository.CategoryRepository;
@@ -172,6 +174,13 @@ public class TicketService {
     public PageResponse<TicketSummaryResponse> listQueue(UUID userId, TicketFilter filter, Pageable pageable) {
         findActiveRequester(userId);
         return list(TicketSpecifications.inQueue(), filter, pageable);
+    }
+
+    /** Quantos chamados esperam na fila (OPEN). Quem pode ver é decidido no SecurityConfig. */
+    @Transactional(readOnly = true)
+    public QueueCountResponse countQueue(UUID userId) {
+        findActiveRequester(userId);
+        return new QueueCountResponse(ticketRepository.countByStatus(TicketStatus.OPEN));
     }
 
     /** Chamados sob responsabilidade do usuário logado, em atendimento ou já encerrados. */

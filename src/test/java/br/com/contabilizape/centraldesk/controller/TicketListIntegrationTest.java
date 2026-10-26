@@ -148,6 +148,41 @@ class TicketListIntegrationTest {
                 .andExpect(jsonPath("$.totalElements").value(1));
     }
 
+    // ---------- GET /tickets/queue/count (SCRUM-189) ----------
+
+    @Test
+    void queueCountIsTheNumberOfOpenTicketsOfEveryoneAndIgnoresTheOthers() throws Exception {
+        ticket("Na fila", maria, "OPEN", null, hardware, 2, 3);
+        ticket("Na fila do João", joao, "OPEN", null, hardware, 2, 2);
+        ticket("Em atendimento", maria, "IN_PROGRESS", handler, hardware, 2, 1);
+
+        mockMvc.perform(get("/tickets/queue/count").cookie(login(HANDLER)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.openCount").value(2));
+        mockMvc.perform(get("/tickets/queue/count").cookie(adminSession()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.openCount").value(2));
+    }
+
+    @Test
+    void queueCountIsZeroWhenNobodyIsWaiting() throws Exception {
+        ticket("Em atendimento", maria, "IN_PROGRESS", handler, hardware, 2, 1);
+
+        mockMvc.perform(get("/tickets/queue/count").cookie(login(HANDLER)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.openCount").value(0));
+    }
+
+    @Test
+    void collaboratorCannotCountTheQueue() throws Exception {
+        mockMvc.perform(get("/tickets/queue/count").cookie(mariaSession)).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void queueCountWithoutSessionIsUnauthorized() throws Exception {
+        mockMvc.perform(get("/tickets/queue/count")).andExpect(status().isUnauthorized());
+    }
+
     @Test
     void collaboratorCannotSeeTheQueue() throws Exception {
         mockMvc.perform(get("/tickets/queue").cookie(mariaSession)).andExpect(status().isForbidden());

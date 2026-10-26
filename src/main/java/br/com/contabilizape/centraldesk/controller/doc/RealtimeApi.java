@@ -37,6 +37,13 @@ public interface RealtimeApi {
                     ou autor (`data` = comentário);
                     - `ticket.created`: chamado aberto; só para a Inovação e administradores (`data` = resumo, \
                     sem a descrição);
+                    - `queue.changed`: a fila de atendimento mudou; só para a Inovação e administradores. \
+                    `data` = `{ "openCount": 7, "ticketId": "...", "reason": "OPENED" }`, com `reason` = \
+                    `OPENED` (chamado novo), `ASSIGNED` (assumido, ou reatribuído a partir da fila), `CLOSED` \
+                    (encerrado ainda na fila) ou `RETURNED` (responsável saiu: vários chamados voltaram, \
+                    `ticketId` nulo). `openCount` é a contagem pronta, calculada depois do commit: a tela \
+                    **substitui** o valor, não soma nem subtrai. Reatribuir ou encerrar um chamado em \
+                    andamento não emite o evento. O mesmo número vem de `GET /tickets/queue/count`;
                     - `session.ended`: as sessões do usuário foram encerradas (senha trocada, e-mail de login \
                     trocado pelo admin). A conexão é fechada logo depois; a tela deve conferir a sessão \
                     (`GET /users/me`), que responde 401 nos dispositivos que perderam o acesso.

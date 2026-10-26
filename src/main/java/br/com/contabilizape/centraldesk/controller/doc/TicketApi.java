@@ -3,6 +3,7 @@ package br.com.contabilizape.centraldesk.controller.doc;
 import br.com.contabilizape.centraldesk.config.OpenApiConfig;
 import br.com.contabilizape.centraldesk.dto.AssigneeResponse;
 import br.com.contabilizape.centraldesk.dto.PageResponse;
+import br.com.contabilizape.centraldesk.dto.QueueCountResponse;
 import br.com.contabilizape.centraldesk.dto.ReassignRequest;
 import br.com.contabilizape.centraldesk.dto.TicketCloseRequest;
 import br.com.contabilizape.centraldesk.dto.TicketCreateRequest;
@@ -101,6 +102,19 @@ public interface TicketApi {
     PageResponse<TicketSummaryResponse> listQueue(@Parameter(hidden = true) Jwt jwt,
                                                   @ParameterObject TicketFilter filter,
                                                   @ParameterObject Pageable pageable);
+
+    @Operation(
+            summary = "Tamanho da fila de atendimento",
+            description = """
+                    Quantos chamados `OPEN` (sem responsável) esperam na fila. Só para a Inovação \
+                    (`TICKET_HANDLER`) e administradores. É o número do círculo do menu: a tela busca este valor \
+                    ao conectar e a cada reconexão do stream, e depois o substitui pelo `openCount` de cada \
+                    evento `queue.changed` (`GET /events/stream`).""",
+            security = @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH))
+    @ApiResponse(responseCode = "200", description = "Tamanho atual da fila.")
+    @ApiResponse(responseCode = "401", description = "Sem sessão.", content = @Content)
+    @ApiResponse(responseCode = "403", description = "Quem chamou não é da Inovação nem administrador.", content = @Content)
+    QueueCountResponse countQueue(@Parameter(hidden = true) Jwt jwt);
 
     @Operation(
             summary = "Chamados sob minha responsabilidade",

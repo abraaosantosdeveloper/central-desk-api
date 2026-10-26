@@ -64,7 +64,8 @@ public class SecurityConfig {
                 .requestMatchers(PATHS.matcher(HttpMethod.POST, "/categories"), PATHS.matcher(HttpMethod.PATCH, "/categories/*"),
                         PATHS.matcher(HttpMethod.DELETE, "/categories/*"), PATHS.matcher(HttpMethod.GET, "/categories/usage"))
                     .hasAuthority(Roles.ADMIN)
-                .requestMatchers(PATHS.matcher(HttpMethod.GET, "/tickets/queue"), PATHS.matcher(HttpMethod.GET, "/tickets/assigned"))
+                .requestMatchers(PATHS.matcher(HttpMethod.GET, "/tickets/queue"), PATHS.matcher(HttpMethod.GET, "/tickets/queue/count"),
+                        PATHS.matcher(HttpMethod.GET, "/tickets/assigned"))
                     .hasAnyAuthority(Roles.TICKET_HANDLER, Roles.ADMIN)
                 .requestMatchers(PATHS.matcher(HttpMethod.PATCH, "/tickets/*/assign"), PATHS.matcher(HttpMethod.PATCH, "/tickets/*/reassign"),
                         PATHS.matcher(HttpMethod.GET, "/tickets/assignees"))

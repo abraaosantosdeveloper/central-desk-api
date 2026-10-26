@@ -21,6 +21,9 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
 
     List<Ticket> findByAssigneeIdAndStatus(UUID assigneeId, TicketStatus status);
 
+    /** Tamanho da fila: OPEN ⇔ sem responsável (a máquina de estados garante). */
+    long countByStatus(TicketStatus status);
+
     /** Listagens: carrega junto o que o resumo mostra, sem uma consulta por chamado. */
     /** Lê o chamado travando a linha até o fim da transação: duas pessoas não assumem o mesmo chamado. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)

@@ -3,6 +3,7 @@ package br.com.contabilizape.centraldesk.controller;
 import br.com.contabilizape.centraldesk.controller.doc.TicketApi;
 import br.com.contabilizape.centraldesk.dto.AssigneeResponse;
 import br.com.contabilizape.centraldesk.dto.PageResponse;
+import br.com.contabilizape.centraldesk.dto.QueueCountResponse;
 import br.com.contabilizape.centraldesk.dto.ReassignRequest;
 import br.com.contabilizape.centraldesk.dto.TicketCloseRequest;
 import br.com.contabilizape.centraldesk.dto.TicketCreateRequest;
@@ -68,6 +69,13 @@ public class TicketController implements TicketApi {
     public PageResponse<TicketSummaryResponse> listQueue(@AuthenticationPrincipal Jwt jwt, TicketFilter filter,
                                                          @PageableDefault(size = 20) Pageable pageable) {
         return ticketService.listQueue(UUID.fromString(jwt.getSubject()), filter, pageable);
+    }
+
+    /** Só Inovação e administradores (regra no SecurityConfig). */
+    @Override
+    @GetMapping("/queue/count")
+    public QueueCountResponse countQueue(@AuthenticationPrincipal Jwt jwt) {
+        return ticketService.countQueue(UUID.fromString(jwt.getSubject()));
     }
 
     /** Só Inovação e administradores (regra no SecurityConfig). */

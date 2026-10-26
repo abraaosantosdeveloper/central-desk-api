@@ -393,6 +393,8 @@ Modelo de entrada:
 - Testes: `TicketReassignmentServiceTest` (novo, 6), `TicketServiceTest` (+2, eventos de abertura, assumir e encerrar; recusas não publicam), `AccountAnonymizationServiceTest` e `UserAdministrationServiceTest` (evento da devolução à fila; +1 caso sem chamados).
 - SCRUM-190: `SseEmitterRegistry.sendHeartbeat`, `SseHeartbeat` (`SchedulingConfigurer`) e `RealtimeConfig` (`@EnableScheduling`); `app.realtime.heartbeat-interval=25s`; cabeçalho `X-Accel-Buffering: no` (o controller devolve `ResponseEntity<SseEmitter>`); `UserPermissionsChangedEvent` fecha o stream (aprovar pedido, trocar departamento, conceder/remover admin).
 - Testes: `SseEmitterRegistryTest` (6), `SseHeartbeatTest` (2) e `RealtimeEventListenerTest` (1) novos; `RealtimeIntegrationTest` (+2, agora com um admin criado no `setUp`); `UserAdministrationServiceTest` (+5) e `DepartmentRequestServiceTest` (eventos de permissão).
+- SCRUM-189: `GET /tickets/queue/count` (`QueueCountResponse`, `TicketService.countQueue`, `TicketRepository.countByStatus`, regra no `SecurityConfig`); `QueueRealtimeListener` envia `queue.changed` com a contagem pronta.
+- Testes: `QueueRealtimeListenerTest` (novo, 7), `TicketServiceTest` (+3), `TicketListIntegrationTest` (+4), `RealtimeIntegrationTest` (+8: abrir, assumir, 409, reatribuir da fila e em andamento, encerrar na fila e em andamento, desativar), `ApiDocsIntegrationTest` (+1).
 
 ## Execução 25 — SCRUM-186 (SCRUM-188 a 191) — **PENDENTE**
 

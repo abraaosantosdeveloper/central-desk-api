@@ -392,6 +392,7 @@ Ninguém é notificado de uma ação que ele mesmo fez (o `actor` nunca é o des
 - E-mail: **API HTTPS do Resend** (`POST https://api.resend.com/emails`, `RestClient` do Spring), e não SMTP, porque o Railway só libera SMTP de saída no plano Pro e recomenda APIs HTTPS. Pacote `email/` (SCRUM-182): `EmailSender` (interface), `ResendEmailSender` (até 3 tentativas com a mesma `Idempotency-Key`; repete em 429, 5xx, falha de rede e 409 "em andamento"; nunca lança), `LoggingEmailSender` (sem `RESEND_API_KEY`, só registra no log; o corpo fica em DEBUG), `EmailConfig` (`@EnableAsync` e o executor `emailExecutor` com 2 threads; `app.email.async=false` troca por execução na mesma thread nos testes) e `EmailProperties` (`app.email.*`). Desenho completo e regras de quem recebe cada e-mail em `docs/ARQUITETURA-EMAILS.md`. Mailpit deixou de ser necessário. Os templates e os eventos (SCRUM-183 e 184) ainda não existem.
 - Disparadas por **eventos do Spring** (`ApplicationEventPublisher`), ouvidos com `@TransactionalEventListener(phase = AFTER_COMMIT)`: o ouvinte só roda depois que a transação foi gravada, e uma falha no envio não desfaz a operação.
 - **Robustez do SSE (SCRUM-190):** `SseHeartbeat` escreve um comentário `:ping` em todos os streams a cada `app.realtime.heartbeat-interval` (25 s) e `SseEmitterRegistry.sendHeartbeat` descarta as conexões que já morreram; a resposta do stream leva `X-Accel-Buffering: no` (o nginx não segura os eventos). As roles do stream são copiadas do token ao conectar, então `UserPermissionsChangedEvent` (departamento trocado, admin concedido ou removido, pedido de entrada aprovado) **fecha** os streams da pessoa: o front reconecta renovando a sessão e a conexão nova já traz as roles certas.
+- **Contador da fila (SCRUM-189):** `QueueRealtimeListener` ouve os eventos de `event/` e envia `queue.changed` (`{ openCount, ticketId, reason }`, `reason` = `OPENED`, `ASSIGNED`, `CLOSED` ou `RETURNED`) para `TICKET_HANDLER` e `ROLE_ADMIN`. **O servidor manda a contagem pronta** (`TicketRepository.countByStatus(OPEN)`, depois do commit) e o cliente só substitui o valor: somar e subtrair no cliente deriva com qualquer evento perdido, duplicado ou fora de ordem. "Em aberto" = `status = OPEN`, que pela máquina de estados é o mesmo que "sem responsável" e é exatamente o conteúdo de `/tickets/queue`. Reatribuir ou encerrar um chamado **em andamento** não muda a fila e não emite. `RETURNED` (responsável saiu) é um evento só, com `ticketId` nulo. Como o SSE não tem replay, a tela busca `GET /tickets/queue/count` a cada `connected` (primeira conexão e reconexões).
 - **Eventos de domínio do chamado (pacote `event/`, SCRUM-188):** um `record` por fato, com `eventId` próprio e só IDs: `TicketOpenedEvent` (abrir), `TicketAssignedEvent` (assumir), `TicketReassignedEvent` (`fromQueue` = estava `OPEN`), `TicketClosedEvent` (`wasOpen` = ainda estava na fila) e `TicketsReturnedToQueueEvent` (desativar, anonimizar ou tirar da Inovação quem tinha chamados em atendimento: um evento só, com todos os IDs). São publicados dentro da transação, depois do `flush`, e só quando a operação foi aceita (409/403/404 não publicam). `TicketCreatedEvent` e `CommentCreatedEvent` (pacote `realtime/`) continuam levando DTOs de tela para o SSE. Plano completo: `PLANO-SSE-CONTADORES.md`, no Projeto do claude.ai (SCRUM-186).
 - Implementado: `DepartmentRequestCreatedEvent` → `DepartmentRequestNotificationListener`, que busca os admins ativos (`UserRepository.findAdminsByStatus`). **Provisório**: por enquanto só registra no log (`Notificar ...`). Com o painel, o ouvinte passa a gravar uma notificação `DEPARTMENT_REQUEST_CREATED` por administrador.
 
@@ -500,6 +501,7 @@ Revogar só os refresh tokens deixava o access token em uso valendo até 15 min.
 | POST | `/tickets` | abrir chamado (logado): solicitante = usuário do token, nasce `OPEN` | **implementado** |
 | GET | `/tickets/mine` | chamados abertos pelo usuário: paginado, filtros `status`/`categoryId`/`priorityId`/`q` (título ou `#número`)/`departmentId` (de quem abriu) e `orderBy` (`RECENT` padrão ou `PRIORITY`: mais urgente e, no empate, mais antigo) — os mesmos valem para `/queue` e `/assigned` (SCRUM-168); resumo sem descrição (SCRUM-160) | **implementado** |
 | GET | `/tickets/queue` | fila da Inovação: `OPEN` sem responsável; só `TICKET_HANDLER` e admin (SCRUM-160) | **implementado** |
+| GET | `/tickets/queue/count` | tamanho da fila (`{ "openCount": 7 }`, chamados `OPEN`); só `TICKET_HANDLER` e admin; é o número do círculo do menu (SCRUM-189) | **implementado** |
 | GET | `/tickets/assigned` | chamados sob responsabilidade do usuário; só `TICKET_HANDLER` e admin (SCRUM-160) | **implementado** |
 | GET | `/tickets/{id}` | detalhes do chamado: solicitante, `TICKET_HANDLER` e admin; demais → 404 (SCRUM-161) | **implementado** |
 | PUT | `/tickets/{id}` | editar chamado: só o solicitante e só enquanto `OPEN` (403 / 409 / 404) | **implementado** |
@@ -515,7 +517,7 @@ Revogar só os refresh tokens deixava o access token em uso valendo até 15 min.
 | PATCH | `/tickets/{id}/reassign` | reatribuir, corpo `{ assigneeId }`: responsável atual ou admin (403); destino ativo da Inovação ou admin e não o solicitante (400); mesma pessoa ou `CLOSED` → 409; na fila vira `IN_PROGRESS`; em atendimento mantém o `assignedAt` (SCRUM-173) | **implementado** |
 | POST | `/tickets/{id}/comments` | comentar: **só o solicitante e o responsável atual** (demais → 403, mesmo vendo o chamado) (SCRUM-172); conteúdo gravado cifrado; `CLOSED` → 409; dispara `comment.created` no SSE (SCRUM-164) | **implementado** |
 | GET | `/tickets/{id}/comments` | conversa do chamado, do mais antigo para o mais novo, já decifrada; funciona com o chamado encerrado (SCRUM-164) | **implementado** |
-| GET | `/events/stream` | stream SSE do usuário logado (`text/event-stream`): eventos `connected`, `comment.created`, `ticket.created` e `session.ended` (SCRUM-164, PR #26) | **implementado** |
+| GET | `/events/stream` | stream SSE do usuário logado (`text/event-stream`): eventos `connected`, `comment.created`, `ticket.created`, `session.ended` e `queue.changed` (SCRUM-164, PR #26; `queue.changed` na SCRUM-189) | **implementado** |
 | POST | `/tickets/{id}/rating` | avaliar o atendimento: só o solicitante, chamado `CLOSED` com responsável, uma vez (201 / 403 / 404 / 409) | previsto |
 | GET | `/notifications` | notificações do usuário logado, mais recentes primeiro, paginadas; filtros opcionais `category` e `unread` | previsto |
 | GET | `/notifications/unread-count` | contador de não lidas (para o ícone do painel) | previsto |
@@ -578,7 +580,7 @@ src/main/java/br/com/contabilizape/centraldesk/
 ├── dto/          AccountDeletionRequest, AdminUserDetailResponse, AdminUserResponse, AdminUserUpdateRequest,
 │                 AssigneeResponse, CategoryRequest, CategoryResponse, CategoryUsageResponse,
 │                 CommentCreateRequest, CommentResponse, CurrentUserResponse, DepartmentChangeRequest,
-│                 DepartmentRequestResponse, DepartmentResponse, LoginRequest, PageResponse,
+│                 DepartmentRequestResponse, DepartmentResponse, LoginRequest, PageResponse, QueueCountResponse,
 │                 PasswordChangeRequest, PriorityResponse, ReassignRequest, TicketCloseRequest,
 │                 TicketCreateRequest, TicketFilter, TicketResponse, TicketSummaryResponse, TicketUpdateRequest,
 │                 UserCreateRequest, UserFilter, UserProfileUpdateRequest, UserResponse
@@ -600,6 +602,9 @@ src/main/java/br/com/contabilizape/centraldesk/
 ├── model/        Admin, Category, Comment, Department, DepartmentRequest, DepartmentRequestStatus,
 │                 EncryptedStringConverter, Priority, RefreshToken, Ticket, TicketStatus, User, UserStatus
 ├── notification/ DepartmentRequestCreatedEvent, DepartmentRequestNotificationListener
+├── realtime/     CommentCreatedEvent, QueueChangedPayload, QueueChangeReason, QueueRealtimeListener, RealtimeConfig,
+│                 RealtimeEventListener, SessionsEndedEvent, SseEmitterRegistry, SseHeartbeat, TicketCreatedEvent,
+│                 UserPermissionsChangedEvent
 ├── realtime/     CommentCreatedEvent, RealtimeConfig, RealtimeEventListener, SessionsEndedEvent, SseEmitterRegistry,
 │                 SseHeartbeat, TicketCreatedEvent, UserPermissionsChangedEvent
 ├── repository/   AdminRepository, CategoryRepository, CommentRepository, DepartmentRepository,
@@ -632,7 +637,7 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 ├── controller/AuthRefreshIntegrationTest      rotação, reuso, vencido, conta inativa, logout revoga (11)
 ├── controller/UserControllerIntegrationTest   /users/me: GET (7), PUT nome (4), PATCH senha (5)
 ├── controller/TicketControllerIntegrationTest abertura, detalhes, edição, categorias e prioridades (20)
-├── controller/TicketListIntegrationTest       /tickets/mine, /queue e /assigned: ordem, paginação, filtros, 400, 401, 403 (10)
+├── controller/TicketListIntegrationTest       /tickets/mine, /queue, /queue/count e /assigned: ordem, paginação, filtros, contagem, 400, 401, 403 (14)
 ├── controller/TicketAssignIntegrationTest     PATCH /tickets/{id}/assign: handler, admin, fila→atribuídos, próprio chamado, 409, 403, 404, 401 (9)
 ├── controller/TicketCloseIntegrationTest      PATCH /tickets/{id}/close: handler, resolução obrigatória, solicitante → 403, admin, outro → 404, 409, 401 (9)
 ├── controller/CommentIntegrationTest          comentários: cifra no banco, ordem, handler, 404, 409 com histórico, 400, 401 (8)
@@ -640,12 +645,14 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 ├── controller/AdminManagementIntegrationTest   conceder/remover admin, departamento, PUT /users/{id}, corte de sessões: token antigo → 401 (11)
 ├── controller/CategoryIntegrationTest          criar, editar, arquivar, uso por categoria, 403 (5)
 ├── controller/TicketManagementIntegrationTest  reatribuir, responsáveis, comentários só do solicitante e do responsável, busca e ordenação (10)
+├── controller/RealtimeIntegrationTest         /events/stream: text/event-stream, 401, comment.created e ticket.created só para quem deve, X-Accel-Buffering, aprovação fecha o stream, queue.changed por motivo com a contagem certa, 409 e ações em atendimento não emitem (14)
+├── realtime/QueueRealtimeListenerTest         contagem pronta por motivo; reatribuir/encerrar em atendimento não emite (Mockito, 7)
 ├── controller/RealtimeIntegrationTest         /events/stream: text/event-stream, 401, comment.created e ticket.created só para quem deve, X-Accel-Buffering, aprovação fecha o stream (6)
 ├── realtime/SseEmitterRegistryTest            heartbeat tira conexão quebrada e mantém as boas, closeUsers (JUnit puro, 6)
 ├── realtime/SseHeartbeatTest                  tarefa agendada com o intervalo configurado (2)
 ├── realtime/RealtimeEventListenerTest         mudança de permissão fecha o stream do usuário (1)
 ├── controller/AccountAnonymizationIntegrationTest  DELETE /users/me e PATCH /users/{id}/anonymize (10)
-├── docs/ApiDocsIntegrationTest                OpenAPI e Swagger UI ligados (19 casos)
+├── docs/ApiDocsIntegrationTest                OpenAPI e Swagger UI ligados (20 casos)
 ├── docs/ApiDocsDisabledIntegrationTest        sem API_DOCS_ENABLED: 404 (2 casos)
 ├── dto/UserCreateRequestValidationTest        regras do DTO (Bean Validation)
 ├── dto/PasswordChangeRequestValidationTest    senha atual obrigatória e  na nova (6)
@@ -654,6 +661,7 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 ├── service/AccountAnonymizationServiceTest   anonimização: dados, sessões, fila (+ evento), notificações, último admin (Mockito, 10)
 ├── service/AuthServiceTest                    login, permissões, renovação, logout e troca de senha (Mockito, 16 casos)
 ├── service/RefreshTokenServiceTest            emissão, hash, rotação, reuso, revogação, revogar todas (Mockito, 12)
+├── service/TicketServiceTest                  abertura, detalhes, edição, listagens, assumir e encerrar; eventos de domínio; contagem da fila (Mockito, 36)
 ├── service/TicketServiceTest                  abertura, detalhes, edição, listagens, assumir e encerrar; eventos de domínio (Mockito, 33)
 ├── service/TicketReassignmentServiceTest      reatribuir: evento com `fromQueue`, recusas não publicam nada (Mockito, 6)
 ├── service/CommentServiceTest                 comentar, evento aos participantes, encerrado, 404, conta desativada, leitura (7)

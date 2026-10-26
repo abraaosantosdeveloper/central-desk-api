@@ -175,6 +175,18 @@ class ApiDocsIntegrationTest {
     }
 
     @Test
+    void documentsTheQueueCount() throws Exception {
+        String count = "$.paths['/tickets/queue/count'].get";
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(count + ".responses['200']").exists())
+                .andExpect(jsonPath(count + ".responses['401']").exists())
+                .andExpect(jsonPath(count + ".responses['403']").exists())
+                .andExpect(jsonPath(count + ".security[0].cookieAuth").isArray())
+                .andExpect(jsonPath("$.components.schemas.QueueCountResponse.properties.openCount").exists());
+    }
+
+    @Test
     void documentsTicketAssignment() throws Exception {
         String assign = "$.paths['/tickets/{id}/assign'].patch";
         mockMvc.perform(get("/v3/api-docs"))

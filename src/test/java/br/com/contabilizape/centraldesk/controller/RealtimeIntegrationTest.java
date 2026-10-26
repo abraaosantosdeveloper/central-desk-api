@@ -37,6 +37,7 @@ class RealtimeIntegrationTest {
     private static final String HANDLER = "carlos.inovacao@contabilizape.com.br";
     private static final String ADMIN = "ana.admin@contabilizape.com.br";
     private static final String PAULO = "paulo.novo@contabilizape.com.br";
+    private static final String COLLEAGUE = "dani.inovacao@contabilizape.com.br";
 
     @Autowired
     private MockMvc mockMvc;
@@ -118,6 +119,116 @@ class RealtimeIntegrationTest {
         assertThat(joaoStream.getContentAsString()).doesNotContain("ticket.created");
     }
 
+    // ---------- contador da fila: queue.changed (SCRUM-189) ----------
+
+    @Test
+    void openingATicketSendsTheQueueSizeToTheHandlersOnly() throws Exception {
+        queueTicket(joao()); // já havia um chamado esperando: a contagem é o total, e não "+1"
+        MockHttpServletResponse handlerStream = openStream(login(HANDLER));
+        MockHttpServletResponse adminStream = openStream(adminSession);
+        MockHttpServletResponse collaboratorStream = openStream(login(JOAO));
+
+        openTicket(login(MARIA), "Monitor piscando");
+
+        for (MockHttpServletResponse stream : new MockHttpServletResponse[] {handlerStream, adminStream}) {
+            assertThat(stream.getContentAsString())
+                    .contains("event:queue.changed")
+                    .contains("\"openCount\":2")
+                    .contains("\"reason\":\"OPENED\"");
+        }
+        assertThat(collaboratorStream.getContentAsString()).doesNotContain("queue.changed");
+    }
+
+    @Test
+    void assumingATicketLowersTheQueueSize() throws Exception {
+        UUID waiting = queueTicket(maria);
+        queueTicket(joao());
+        MockHttpServletResponse adminStream = openStream(adminSession);
+
+        mockMvc.perform(patch("/tickets/" + waiting + "/assign").cookie(login(HANDLER))).andExpect(status().isOk());
+
+        assertThat(adminStream.getContentAsString())
+                .contains("event:queue.changed")
+                .contains("\"openCount\":1")
+                .contains("\"reason\":\"ASSIGNED\"")
+                .contains(waiting.toString());
+    }
+
+    @Test
+    void refusedAssignmentDoesNotEmitAnything() throws Exception {
+        UUID inProgress = ticket(handler);
+        MockHttpServletResponse adminStream = openStream(adminSession);
+
+        mockMvc.perform(patch("/tickets/" + inProgress + "/assign").cookie(login(HANDLER))).andExpect(status().isConflict());
+
+        assertThat(adminStream.getContentAsString()).doesNotContain("queue.changed");
+    }
+
+    @Test
+    void reassigningATicketFromTheQueueLowersTheQueueSize() throws Exception {
+        UUID waiting = queueTicket(maria);
+        MockHttpServletResponse handlerStream = openStream(login(HANDLER));
+
+        mockMvc.perform(patch("/tickets/" + waiting + "/reassign").cookie(adminSession)
+                        .contentType(MediaType.APPLICATION_JSON).content("{ \"assigneeId\": \"" + handler + "\" }"))
+                .andExpect(status().isOk());
+
+        assertThat(handlerStream.getContentAsString())
+                .contains("\"openCount\":0")
+                .contains("\"reason\":\"ASSIGNED\"");
+    }
+
+    @Test
+    void reassigningATicketInProgressLeavesTheQueueAlone() throws Exception {
+        UUID inProgress = ticket(handler);
+        UUID colleague = register(COLLEAGUE, "98765432100");
+        jdbc.update("UPDATE users SET department_id = ? WHERE id = ?", UUID.fromString(INNOVATION_ID), colleague);
+        MockHttpServletResponse handlerStream = openStream(login(HANDLER));
+
+        mockMvc.perform(patch("/tickets/" + inProgress + "/reassign").cookie(adminSession)
+                        .contentType(MediaType.APPLICATION_JSON).content("{ \"assigneeId\": \"" + colleague + "\" }"))
+                .andExpect(status().isOk());
+
+        assertThat(handlerStream.getContentAsString()).doesNotContain("queue.changed");
+    }
+
+    @Test
+    void closingATicketThatWasStillInTheQueueLowersTheQueueSize() throws Exception {
+        UUID waiting = queueTicket(maria);
+        MockHttpServletResponse adminStream = openStream(adminSession);
+
+        close(waiting);
+
+        assertThat(adminStream.getContentAsString())
+                .contains("\"openCount\":0")
+                .contains("\"reason\":\"CLOSED\"");
+    }
+
+    @Test
+    void closingATicketInProgressLeavesTheQueueAlone() throws Exception {
+        UUID inProgress = ticket(handler);
+        MockHttpServletResponse adminStream = openStream(adminSession);
+
+        close(inProgress);
+
+        assertThat(adminStream.getContentAsString()).doesNotContain("queue.changed");
+    }
+
+    @Test
+    void deactivatingSomeoneReturnsTheirTicketsAndTheQueueGrowsAtOnce() throws Exception {
+        ticket(handler);
+        ticket(handler);
+        queueTicket(joao());
+        MockHttpServletResponse adminStream = openStream(adminSession);
+
+        mockMvc.perform(patch("/users/" + handler + "/deactivate").cookie(adminSession)).andExpect(status().isOk());
+
+        // Um evento só, com o total: 1 que já esperava + 2 devolvidos
+        assertThat(adminStream.getContentAsString())
+                .contains("\"openCount\":3")
+                .contains("\"reason\":\"RETURNED\"");
+    }
+
     // ---------- robustez do stream (SCRUM-190) ----------
 
     @Test
@@ -169,6 +280,24 @@ class RealtimeIntegrationTest {
         return jdbc.queryForObject("SELECT id FROM users WHERE email = ?", UUID.class, email);
     }
 
+    private UUID joao() {
+        return jdbc.queryForObject("SELECT id FROM users WHERE email = ?", UUID.class, JOAO);
+    }
+
+    private void openTicket(Cookie session, String title) throws Exception {
+        String category = jdbc.queryForObject("SELECT id FROM categories LIMIT 1", String.class);
+        mockMvc.perform(post("/tickets").cookie(session).contentType(MediaType.APPLICATION_JSON).content("""
+                        { "title": "%s", "description": "Desde ontem.", "categoryId": "%s", "priorityId": 2 }
+                        """.formatted(title, category)))
+                .andExpect(status().isCreated());
+    }
+
+    private void close(UUID ticket) throws Exception {
+        mockMvc.perform(patch("/tickets/" + ticket + "/close").cookie(login(HANDLER))
+                        .contentType(MediaType.APPLICATION_JSON).content("{ \"resolution\": \"Resolvido.\" }"))
+                .andExpect(status().isOk());
+    }
+
     private void comment(UUID ticket, Cookie session, String content) throws Exception {
         mockMvc.perform(post("/tickets/" + ticket + "/comments").cookie(session)
                         .contentType(MediaType.APPLICATION_JSON).content("{ \"content\": \"" + content + "\" }"))
@@ -187,6 +316,15 @@ class RealtimeIntegrationTest {
 
     private UUID ticket(UUID assignee) {
         return ticketOf(maria, assignee);
+    }
+
+    // Chamado esperando na fila: OPEN, sem responsável
+    private UUID queueTicket(UUID requester) {
+        UUID category = jdbc.queryForObject("SELECT id FROM categories LIMIT 1", UUID.class);
+        return jdbc.queryForObject("""
+                INSERT INTO tickets (title, description, status, category_id, priority_id, requester_id)
+                VALUES ('Na fila', 'Aguardando', 'OPEN', ?, 2, ?) RETURNING id
+                """, UUID.class, category, requester);
     }
 
     private UUID ticketOf(UUID requester, UUID assignee) {
