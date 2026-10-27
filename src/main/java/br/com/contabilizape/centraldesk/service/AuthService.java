@@ -2,15 +2,19 @@ package br.com.contabilizape.centraldesk.service;
 
 import br.com.contabilizape.centraldesk.dto.LoginRequest;
 import br.com.contabilizape.centraldesk.dto.PasswordChangeRequest;
+import br.com.contabilizape.centraldesk.exception.AccountBlockedException;
 import br.com.contabilizape.centraldesk.exception.AccountNotActiveException;
+import br.com.contabilizape.centraldesk.exception.EmailNotVerifiedException;
 import br.com.contabilizape.centraldesk.exception.CurrentPasswordMismatchException;
 import br.com.contabilizape.centraldesk.exception.InvalidCredentialsException;
 import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
 import br.com.contabilizape.centraldesk.exception.NewPasswordSameAsCurrentException;
+import br.com.contabilizape.centraldesk.model.SecurityEventType;
 import br.com.contabilizape.centraldesk.model.User;
-import br.com.contabilizape.centraldesk.model.UserStatus;
 import br.com.contabilizape.centraldesk.repository.AdminRepository;
 import br.com.contabilizape.centraldesk.repository.UserRepository;
+import br.com.contabilizape.centraldesk.security.ClientInfo;
+import br.com.contabilizape.centraldesk.security.LoginAttemptLimiter;
 import br.com.contabilizape.centraldesk.security.Roles;
 import br.com.contabilizape.centraldesk.security.TokenService;
 import org.springframework.beans.factory.annotation.Value;
@@ -18,6 +22,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -31,6 +37,10 @@ public class AuthService {
     private final TokenService tokenService;
     private final UserService userService;
     private final RefreshTokenService refreshTokenService;
+    private final LoginAttemptLimiter loginAttemptLimiter;
+    private final LoginLockout loginLockout;
+    private final SecurityEventService securityEvents;
+    private final Clock clock;
     private final UUID handlerDepartmentId;
 
     // Comparado quando o e-mail não existe, para a resposta levar o mesmo tempo de uma senha errada
@@ -42,6 +52,10 @@ public class AuthService {
                        TokenService tokenService,
                        UserService userService,
                        RefreshTokenService refreshTokenService,
+                       LoginAttemptLimiter loginAttemptLimiter,
+                       LoginLockout loginLockout,
+                       SecurityEventService securityEvents,
+                       Clock clock,
                        @Value("${app.tickets.handler-department-id}") UUID handlerDepartmentId) {
         this.userRepository = userRepository;
         this.adminRepository = adminRepository;
@@ -49,19 +63,28 @@ public class AuthService {
         this.tokenService = tokenService;
         this.userService = userService;
         this.refreshTokenService = refreshTokenService;
+        this.loginAttemptLimiter = loginAttemptLimiter;
+        this.loginLockout = loginLockout;
+        this.securityEvents = securityEvents;
+        this.clock = clock;
         this.handlerDepartmentId = handlerDepartmentId;
         this.dummyPasswordHash = passwordEncoder.encode("senha-ficticia-" + UUID.randomUUID());
     }
 
-    @Transactional
-    public AuthenticatedSession login(LoginRequest request) {
-        User user = authenticate(Emails.normalize(request.email()), request.password());
-
-        // A senha confere antes de olhar o status: só quem sabe a senha descobre que a conta está inativa
-        if (user.getStatus() != UserStatus.ACTIVE) {
-            throw new AccountNotActiveException();
-        }
-
+    /**
+     * Confere e-mail e senha (PLANO-SEGURANCA §5). As recusas não desfazem a transação: a falha contada,
+     * o bloqueio e a auditoria precisam ficar gravados.
+     *
+     * Senha errada → 401 genérico, em qualquer estado da conta (conta ativa soma uma falha; na 5ª, bloqueia).
+     * Senha certa → aí sim o estado decide: bloqueada (403), e-mail não confirmado (403), inativa (403).
+     */
+    @Transactional(noRollbackFor = {InvalidCredentialsException.class, AccountBlockedException.class,
+            EmailNotVerifiedException.class, AccountNotActiveException.class})
+    public AuthenticatedSession login(LoginRequest request, ClientInfo client) {
+        loginAttemptLimiter.ensureAllowed(client.ip());
+        User user = authenticate(Emails.normalize(request.email()), request.password(), client);
+        ensureCanEnter(user, client);
+        user.resetFailedLogins();
         return openSession(user, refreshTokenService.issue(user));
     }
 
@@ -114,16 +137,44 @@ public class AuthService {
         return new AuthenticatedSession(userService.getCurrentUser(user.getId(), roles), accessToken, rawRefreshToken);
     }
 
-    private User authenticate(String email, String password) {
-        User user = userRepository.findByEmail(email).orElse(null);
+    private User authenticate(String email, String password, ClientInfo client) {
+        User user = userRepository.findByEmailForUpdate(email).orElse(null);
         if (user == null) {
+            // Compara mesmo assim: a resposta leva o mesmo tempo de uma senha errada
             passwordEncoder.matches(password, dummyPasswordHash);
+            loginAttemptLimiter.recordFailure(client.ip());
+            securityEvents.record(SecurityEventType.LOGIN_UNKNOWN_EMAIL, null, client, "e-mail: " + email);
             throw new InvalidCredentialsException();
         }
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
+            loginAttemptLimiter.recordFailure(client.ip());
+            if (user.isActive()) {
+                loginLockout.registerFailure(user, client, SecurityEventType.LOGIN_FAILED);
+            } else {
+                // Conta bloqueada ou inativa não acumula falhas; fica só na auditoria
+                securityEvents.record(SecurityEventType.LOGIN_FAILED, user, client, "conta " + user.getStatus());
+            }
             throw new InvalidCredentialsException();
         }
         return user;
+    }
+
+    // A senha confere antes de olhar o status: só quem sabe a senha descobre o estado da conta (B2)
+    private void ensureCanEnter(User user, ClientInfo client) {
+        switch (user.getStatus()) {
+            case ACTIVE -> {
+                // Senha temporária vencida: como uma senha errada; é preciso pedir outra ao administrador
+                if (user.isTemporaryPasswordExpiredAt(OffsetDateTime.now(clock))) {
+                    throw new InvalidCredentialsException();
+                }
+            }
+            case BLOCKED -> {
+                securityEvents.record(SecurityEventType.LOGIN_BLOCKED_ACCOUNT, user, client, null);
+                throw new AccountBlockedException();
+            }
+            case PENDING_VERIFICATION -> throw new EmailNotVerifiedException();
+            default -> throw new AccountNotActiveException();
+        }
     }
 
     private List<String> rolesOf(User user) {

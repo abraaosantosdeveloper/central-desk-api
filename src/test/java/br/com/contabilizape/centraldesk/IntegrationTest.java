@@ -16,6 +16,9 @@ import java.lang.annotation.Target;
  * Todas as classes anotadas com ela têm as mesmas propriedades, então o Spring reaproveita
  * um único contexto (e um único contêiner) entre elas. Para mudar uma propriedade numa classe,
  * use @TestPropertySource, que tem precedência sobre as daqui (mas cria outro contexto).
+ *
+ * As exigências de segurança das contas ficam relaxadas aqui (RelaxedSecurityTestConfiguration); os testes
+ * delas usam {@link SecurityIntegrationTest}, com a política de produção.
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
@@ -34,7 +37,7 @@ import java.lang.annotation.Target;
         "app.security.cookie.secure=true"
 })
 @AutoConfigureMockMvc
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class, TestEmailConfiguration.class, RelaxedSecurityTestConfiguration.class})
 public @interface IntegrationTest {
 
     /** Chave dos tokens nos testes (base64 de 33 bytes). A real fica só no .env (JWT_SECRET). */

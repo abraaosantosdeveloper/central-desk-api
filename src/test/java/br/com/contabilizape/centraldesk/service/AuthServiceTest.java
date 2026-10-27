@@ -1,5 +1,20 @@
 package br.com.contabilizape.centraldesk.service;
 
+import br.com.contabilizape.centraldesk.exception.AccountBlockedException;
+import br.com.contabilizape.centraldesk.exception.EmailNotVerifiedException;
+import br.com.contabilizape.centraldesk.exception.LoginRateLimitException;
+import br.com.contabilizape.centraldesk.model.SecurityEventType;
+import br.com.contabilizape.centraldesk.security.ClientInfo;
+import br.com.contabilizape.centraldesk.security.LoginAttemptLimiter;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verifyNoInteractions;
 import br.com.contabilizape.centraldesk.dto.CurrentUserResponse;
 import br.com.contabilizape.centraldesk.dto.LoginRequest;
 import br.com.contabilizape.centraldesk.dto.PasswordChangeRequest;
@@ -48,6 +63,8 @@ class AuthServiceTest {
     private static final String EMAIL = "maria.silva@contabilizape.com.br";
     private static final String PASSWORD = "senhaForte123";
     private static final String DUMMY_HASH = "hash-ficticio";
+    private static final Instant NOW = Instant.parse("2026-10-27T12:00:00Z");
+    private static final ClientInfo CLIENT = new ClientInfo("203.0.113.7", "Mozilla/5.0 (Windows NT 10.0) Chrome/130");
 
     @Mock private UserRepository userRepository;
     @Mock private AdminRepository adminRepository;
@@ -55,6 +72,9 @@ class AuthServiceTest {
     @Mock private TokenService tokenService;
     @Mock private UserService userService;
     @Mock private RefreshTokenService refreshTokenService;
+    @Mock private LoginAttemptLimiter loginAttemptLimiter;
+    @Mock private LoginLockout loginLockout;
+    @Mock private SecurityEventService securityEvents;
 
     private AuthService authService;
 
@@ -63,20 +83,21 @@ class AuthServiceTest {
         // O AuthService gera um hash fictício ao ser criado (usado quando o e-mail não existe)
         when(passwordEncoder.encode(anyString())).thenReturn(DUMMY_HASH);
         authService = new AuthService(userRepository, adminRepository, passwordEncoder,
-                tokenService, userService, refreshTokenService, INNOVATION_ID);
+                tokenService, userService, refreshTokenService, loginAttemptLimiter, loginLockout, securityEvents,
+                Clock.fixed(NOW, ZoneOffset.UTC), INNOVATION_ID);
     }
 
     @Test
     void validCredentialsReturnTokenAndCurrentUser() {
         User maria = user(GENERAL_ID, UserStatus.ACTIVE);
         CurrentUserResponse current = currentUser(List.of());
-        when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(maria));
+        when(userRepository.findByEmailForUpdate(EMAIL)).thenReturn(Optional.of(maria));
         when(passwordEncoder.matches(PASSWORD, "hash-da-maria")).thenReturn(true);
         when(tokenService.issueAccessToken(USER_ID, EMAIL, List.of())).thenReturn("jwt-123");
         when(userService.getCurrentUser(USER_ID, List.of())).thenReturn(current);
         when(refreshTokenService.issue(maria)).thenReturn("refresh-123");
 
-        AuthenticatedSession session = authService.login(new LoginRequest(EMAIL, PASSWORD));
+        AuthenticatedSession session = authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT);
 
         assertThat(session.accessToken()).isEqualTo("jwt-123");
         assertThat(session.refreshToken()).isEqualTo("refresh-123");
@@ -85,18 +106,18 @@ class AuthServiceTest {
 
     @Test
     void normalizesEmailBeforeSearching() {
-        when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.empty());
+        when(userRepository.findByEmailForUpdate(EMAIL)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> authService.login(new LoginRequest("  Maria.Silva@ContabilizaPE.com.br ", PASSWORD)))
+        assertThatThrownBy(() -> authService.login(new LoginRequest("  Maria.Silva@ContabilizaPE.com.br ", PASSWORD), CLIENT))
                 .isInstanceOf(InvalidCredentialsException.class);
-        verify(userRepository).findByEmail(EMAIL);
+        verify(userRepository).findByEmailForUpdate(EMAIL);
     }
 
     @Test
     void unknownEmailIsRejectedAfterComparingWithDummyHash() {
-        when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.empty());
+        when(userRepository.findByEmailForUpdate(EMAIL)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD)))
+        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT))
                 .isInstanceOf(InvalidCredentialsException.class);
         // Compara mesmo assim: a resposta leva o mesmo tempo de uma senha errada
         verify(passwordEncoder).matches(PASSWORD, DUMMY_HASH);
@@ -107,10 +128,10 @@ class AuthServiceTest {
     void wrongPasswordIsRejectedWithTheSameException() {
         // Criado fora do thenReturn: user() configura um mock (ver execução 4 no registro de testes)
         User maria = user(GENERAL_ID, UserStatus.ACTIVE);
-        when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(maria));
+        when(userRepository.findByEmailForUpdate(EMAIL)).thenReturn(Optional.of(maria));
         when(passwordEncoder.matches(PASSWORD, "hash-da-maria")).thenReturn(false);
 
-        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD)))
+        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT))
                 .isInstanceOf(InvalidCredentialsException.class)
                 .hasMessage(new InvalidCredentialsException().getMessage());
         verify(tokenService, never()).issueAccessToken(any(), any(), any());
@@ -120,12 +141,103 @@ class AuthServiceTest {
     void inactiveAccountIsRejectedEvenWithCorrectPassword() {
         // Criado fora do thenReturn: user() configura um mock (ver execução 4 no registro de testes)
         User maria = user(GENERAL_ID, UserStatus.DEACTIVATED);
-        when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(maria));
+        when(userRepository.findByEmailForUpdate(EMAIL)).thenReturn(Optional.of(maria));
         when(passwordEncoder.matches(PASSWORD, "hash-da-maria")).thenReturn(true);
 
-        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD)))
+        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT))
                 .isInstanceOf(AccountNotActiveException.class);
         verify(tokenService, never()).issueAccessToken(any(), any(), any());
+    }
+
+    // ---------- SCRUM-202: bloqueio por tentativas e limite por IP ----------
+
+    @Test
+    void ipOverTheLimitIsRefusedBeforeLookingAtTheAccount() {
+        doThrow(new LoginRateLimitException(Duration.ofMinutes(3))).when(loginAttemptLimiter).ensureAllowed(CLIENT.ip());
+
+        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT))
+                .isInstanceOf(LoginRateLimitException.class);
+        verifyNoInteractions(userRepository);
+    }
+
+    @Test
+    void wrongPasswordOnAnActiveAccountIsCountedForTheLockoutAndForTheIp() {
+        User maria = user(GENERAL_ID, UserStatus.ACTIVE);
+        when(userRepository.findByEmailForUpdate(EMAIL)).thenReturn(Optional.of(maria));
+        when(passwordEncoder.matches(PASSWORD, "hash-da-maria")).thenReturn(false);
+
+        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT))
+                .isInstanceOf(InvalidCredentialsException.class);
+        verify(loginLockout).registerFailure(maria, CLIENT, SecurityEventType.LOGIN_FAILED);
+        verify(loginAttemptLimiter).recordFailure(CLIENT.ip());
+    }
+
+    @Test
+    void unknownEmailIsCountedForTheIpAndAudited() {
+        when(userRepository.findByEmailForUpdate(EMAIL)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT))
+                .isInstanceOf(InvalidCredentialsException.class);
+        verify(loginAttemptLimiter).recordFailure(CLIENT.ip());
+        verify(securityEvents).record(eq(SecurityEventType.LOGIN_UNKNOWN_EMAIL), isNull(), eq(CLIENT), anyString());
+    }
+
+    @Test
+    void wrongPasswordOnABlockedAccountIsNotCountedAgain() {
+        User maria = user(GENERAL_ID, UserStatus.BLOCKED);
+        when(userRepository.findByEmailForUpdate(EMAIL)).thenReturn(Optional.of(maria));
+        when(passwordEncoder.matches(PASSWORD, "hash-da-maria")).thenReturn(false);
+
+        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT))
+                .isInstanceOf(InvalidCredentialsException.class);
+        verify(loginLockout, never()).registerFailure(any(), any(), any());
+    }
+
+    @Test
+    void rightPasswordOnABlockedAccountSaysItIsBlocked() {
+        User maria = user(GENERAL_ID, UserStatus.BLOCKED);
+        when(userRepository.findByEmailForUpdate(EMAIL)).thenReturn(Optional.of(maria));
+        when(passwordEncoder.matches(PASSWORD, "hash-da-maria")).thenReturn(true);
+
+        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT))
+                .isInstanceOf(AccountBlockedException.class);
+        verify(tokenService, never()).issueAccessToken(any(), any(), any());
+    }
+
+    @Test
+    void rightPasswordOnAnUnconfirmedAccountAsksForTheEmailConfirmation() {
+        User maria = user(GENERAL_ID, UserStatus.PENDING_VERIFICATION);
+        when(userRepository.findByEmailForUpdate(EMAIL)).thenReturn(Optional.of(maria));
+        when(passwordEncoder.matches(PASSWORD, "hash-da-maria")).thenReturn(true);
+
+        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT))
+                .isInstanceOf(EmailNotVerifiedException.class);
+        verify(tokenService, never()).issueAccessToken(any(), any(), any());
+    }
+
+    @Test
+    void expiredTemporaryPasswordLooksLikeAWrongPassword() {
+        User maria = user(GENERAL_ID, UserStatus.ACTIVE);
+        maria.resetPasswordByAdmin("hash-da-maria", NOW.atOffset(ZoneOffset.UTC).minusMinutes(1));
+        when(userRepository.findByEmailForUpdate(EMAIL)).thenReturn(Optional.of(maria));
+        when(passwordEncoder.matches(PASSWORD, "hash-da-maria")).thenReturn(true);
+
+        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT))
+                .isInstanceOf(InvalidCredentialsException.class);
+        verify(tokenService, never()).issueAccessToken(any(), any(), any());
+    }
+
+    @Test
+    void successfulLoginClearsThePreviousMistakes() {
+        User maria = user(GENERAL_ID, UserStatus.ACTIVE);
+        maria.registerFailedLogin(NOW.atOffset(ZoneOffset.UTC), 5);
+        when(userRepository.findByEmailForUpdate(EMAIL)).thenReturn(Optional.of(maria));
+        when(passwordEncoder.matches(PASSWORD, "hash-da-maria")).thenReturn(true);
+        when(userService.getCurrentUser(USER_ID, List.of())).thenReturn(currentUser(List.of()));
+
+        authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT);
+
+        assertThat(maria.getFailedLoginAttempts()).isZero();
     }
 
     @Test
@@ -245,13 +357,13 @@ class AuthServiceTest {
 
     private void loginReturnsRolesFor(User user, boolean isAdmin, List<String> expectedRoles) {
         CurrentUserResponse current = currentUser(expectedRoles);
-        when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user));
+        when(userRepository.findByEmailForUpdate(EMAIL)).thenReturn(Optional.of(user));
         when(passwordEncoder.matches(PASSWORD, "hash-da-maria")).thenReturn(true);
         when(adminRepository.existsById(USER_ID)).thenReturn(isAdmin);
         when(tokenService.issueAccessToken(USER_ID, EMAIL, expectedRoles)).thenReturn("jwt-123");
         when(userService.getCurrentUser(USER_ID, expectedRoles)).thenReturn(current);
 
-        AuthenticatedSession session = authService.login(new LoginRequest(EMAIL, PASSWORD));
+        AuthenticatedSession session = authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT);
 
         assertThat(session.user().roles()).isEqualTo(expectedRoles);
     }

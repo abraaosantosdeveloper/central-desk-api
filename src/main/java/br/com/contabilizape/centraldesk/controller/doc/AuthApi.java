@@ -13,6 +13,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ProblemDetail;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 
 /**
@@ -87,11 +88,19 @@ public interface AuthApi {
                     examples = @ExampleObject(name = "Credenciais inválidas", value = ProblemExamples.INVALID_CREDENTIALS)))
     @ApiResponse(
             responseCode = "403",
-            description = "Senha correta, mas a conta não está ativa.",
+            description = """
+                    Senha correta, mas a conta não pode entrar. O campo `code` diz o motivo: \
+                    `account-blocked` (5 tentativas erradas seguidas; só um administrador libera), \
+                    `email-not-verified` (cadastro sem o e-mail confirmado) ou `account-not-active` (desativada).
+                    Com a senha errada, a resposta é sempre o 401: só quem sabe a senha descobre o estado da conta.""",
             content = @Content(mediaType = ProblemExamples.MEDIA_TYPE,
                     schema = @Schema(implementation = ProblemDetail.class),
                     examples = @ExampleObject(name = "Conta inativa", value = ProblemExamples.ACCOUNT_NOT_ACTIVE)))
-    ResponseEntity<CurrentUserResponse> login(LoginRequest request);
+    @ApiResponse(
+            responseCode = "429",
+            description = "Tentativas erradas demais a partir desta rede (20 em 15 minutos). O cabeçalho `Retry-After` diz quantos segundos esperar.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    ResponseEntity<CurrentUserResponse> login(LoginRequest request, @Parameter(hidden = true) HttpServletRequest httpRequest);
 
     @Operation(
             summary = "Renova a sessão",

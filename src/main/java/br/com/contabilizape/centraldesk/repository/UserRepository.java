@@ -10,6 +10,8 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -22,6 +24,14 @@ public interface UserRepository extends JpaRepository<User, UUID>, JpaSpecificat
     boolean existsByEmail(String email);
 
     Optional<User> findByEmail(String email);
+
+    /**
+     * Login: a linha fica travada até o fim da transação, para que tentativas simultâneas contem uma
+     * a uma e o bloqueio aconteça uma vez só.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from User u where u.email = :email")
+    Optional<User> findByEmailForUpdate(@Param("email") String email);
 
     boolean existsByCpf(String cpf);
 

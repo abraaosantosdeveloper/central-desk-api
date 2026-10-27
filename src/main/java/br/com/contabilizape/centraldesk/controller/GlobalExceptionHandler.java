@@ -35,6 +35,11 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import br.com.contabilizape.centraldesk.exception.AccountBlockedException;
+import br.com.contabilizape.centraldesk.exception.CodeRequestLimitException;
+import br.com.contabilizape.centraldesk.exception.EmailNotVerifiedException;
+import br.com.contabilizape.centraldesk.exception.LoginRateLimitException;
+import java.time.Duration;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
@@ -131,7 +136,42 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(AccountNotActiveException.class)
     public ProblemDetail handleAccountNotActive(AccountNotActiveException exception) {
-        return problem(HttpStatus.FORBIDDEN, "Conta inativa", exception.getMessage());
+        return coded(problem(HttpStatus.FORBIDDEN, "Conta inativa", exception.getMessage()), "account-not-active");
+    }
+
+    // ---------- segurança das contas (PLANO-SEGURANCA-CONTAS-E-EMAILS.md) ----------
+    // O campo "code" deixa o front decidir a tela sem depender do texto da mensagem
+
+    @ExceptionHandler(AccountBlockedException.class)
+    public ProblemDetail handleAccountBlocked(AccountBlockedException exception) {
+        return coded(problem(HttpStatus.FORBIDDEN, "Conta bloqueada", exception.getMessage()), "account-blocked");
+    }
+
+    @ExceptionHandler(EmailNotVerifiedException.class)
+    public ProblemDetail handleEmailNotVerified(EmailNotVerifiedException exception) {
+        return coded(problem(HttpStatus.FORBIDDEN, "E-mail não confirmado", exception.getMessage()), "email-not-verified");
+    }
+
+    @ExceptionHandler(LoginRateLimitException.class)
+    public ResponseEntity<ProblemDetail> handleLoginRateLimit(LoginRateLimitException exception) {
+        return tooManyRequests(exception.getMessage(), exception.getRetryAfter());
+    }
+
+    @ExceptionHandler(CodeRequestLimitException.class)
+    public ResponseEntity<ProblemDetail> handleCodeRequestLimit(CodeRequestLimitException exception) {
+        return tooManyRequests(exception.getMessage(), exception.getRetryAfter());
+    }
+
+    private static ResponseEntity<ProblemDetail> tooManyRequests(String detail, Duration retryAfter) {
+        long seconds = Math.max(1, (retryAfter.toMillis() + 999) / 1000);
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(seconds))
+                .body(problem(HttpStatus.TOO_MANY_REQUESTS, "Muitas tentativas", detail));
+    }
+
+    private static ProblemDetail coded(ProblemDetail problem, String code) {
+        problem.setProperty("code", code);
+        return problem;
     }
 
     @ExceptionHandler(InvalidFieldException.class)

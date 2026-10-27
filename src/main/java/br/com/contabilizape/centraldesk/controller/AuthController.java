@@ -10,6 +10,8 @@ import br.com.contabilizape.centraldesk.security.RefreshTokenCookie;
 import br.com.contabilizape.centraldesk.service.AuthService;
 import br.com.contabilizape.centraldesk.service.AuthenticatedSession;
 import br.com.contabilizape.centraldesk.service.UserService;
+import br.com.contabilizape.centraldesk.security.ClientInfo;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -49,8 +51,9 @@ public class AuthController implements AuthApi {
 
     @Override
     @PostMapping("/login")
-    public ResponseEntity<CurrentUserResponse> login(@RequestBody @Valid LoginRequest request) {
-        return withSessionCookies(authService.login(request));
+    public ResponseEntity<CurrentUserResponse> login(@RequestBody @Valid LoginRequest request,
+                                                     HttpServletRequest httpRequest) {
+        return withSessionCookies(authService.login(request, ClientInfo.from(httpRequest)));
     }
 
     @Override
