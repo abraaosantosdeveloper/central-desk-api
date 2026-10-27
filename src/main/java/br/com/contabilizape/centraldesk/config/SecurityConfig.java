@@ -32,6 +32,9 @@ public class SecurityConfig {
     static final RequestMatcher PUBLIC_ENDPOINTS = new OrRequestMatcher(
             PATHS.matcher(HttpMethod.POST, "/auth/register"),
             PATHS.matcher(HttpMethod.POST, "/auth/login"),
+            // Segunda etapa do login: ainda não há sessão, só o cookie do desafio
+            PATHS.matcher(HttpMethod.POST, "/auth/login/tfa"),
+            PATHS.matcher(HttpMethod.POST, "/auth/login/tfa/resend"),
             // Chamado justamente quando o access token venceu; o refresh token vem no próprio cookie
             PATHS.matcher(HttpMethod.POST, "/auth/refresh"),
             // Público de propósito: com a sessão vencida, o logout ainda precisa apagar o cookie

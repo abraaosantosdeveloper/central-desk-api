@@ -7,6 +7,7 @@ import br.com.contabilizape.centraldesk.model.User;
 import br.com.contabilizape.centraldesk.model.UserStatus;
 import br.com.contabilizape.centraldesk.realtime.SessionsEndedEvent;
 import br.com.contabilizape.centraldesk.repository.RefreshTokenRepository;
+import br.com.contabilizape.centraldesk.repository.TrustedDeviceRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -39,16 +40,19 @@ public class RefreshTokenService {
     private final Clock clock;
     private final Duration ttl;
     private final ApplicationEventPublisher events;
+    private final TrustedDeviceRepository trustedDevices;
     private final SecureRandom random = new SecureRandom();
 
     public RefreshTokenService(RefreshTokenRepository repository,
                                Clock clock,
                                @Value("${app.security.refresh-token.ttl}") Duration ttl,
-                               ApplicationEventPublisher events) {
+                               ApplicationEventPublisher events,
+                               TrustedDeviceRepository trustedDevices) {
         this.repository = repository;
         this.clock = clock;
         this.ttl = ttl;
         this.events = events;
+        this.trustedDevices = trustedDevices;
     }
 
     /** Cria uma sessão nova e devolve o token em claro (vai só para o cookie). */
@@ -98,14 +102,16 @@ public class RefreshTokenService {
         repository.findByTokenHash(hash(rawToken)).ifPresent(token -> token.revoke(now()));
     }
 
-    /** Encerra todas as sessões do usuário (troca de senha). */
+    /** Encerra todas as sessões do usuário (desativação, anonimização); os navegadores confiáveis caem junto. */
     @Transactional
     public void revokeAll(UUID userId) {
-        repository.revokeAllActiveByUserId(userId, now());
+        OffsetDateTime now = now();
+        repository.revokeAllActiveByUserId(userId, now);
+        trustedDevices.revokeAllActiveByUserId(userId, now);
     }
 
     /**
-     * Encerra todas as sessões NA HORA (troca de senha, e-mail de login trocado pelo admin): além dos
+     * Encerra todas as sessões NA HORA (troca de senha, e-mail de login trocado pelo admin, bloqueio): além dos
      * refresh tokens, grava o corte que faz os access tokens em uso serem recusados e avisa os streams
      * em tempo real abertos (depois do commit). Tokens emitidos a seguir, na mesma transação, valem.
      */
@@ -114,6 +120,8 @@ public class RefreshTokenService {
         OffsetDateTime now = now();
         user.endSessions(now);
         repository.revokeAllActiveByUserId(user.getId(), now);
+        // Nenhum navegador continua dispensado do código (B9)
+        trustedDevices.revokeAllActiveByUserId(user.getId(), now);
         events.publishEvent(new SessionsEndedEvent(user.getId()));
     }
 

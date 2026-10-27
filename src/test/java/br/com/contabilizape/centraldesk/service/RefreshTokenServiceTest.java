@@ -8,6 +8,7 @@ import br.com.contabilizape.centraldesk.model.User;
 import br.com.contabilizape.centraldesk.model.UserStatus;
 import br.com.contabilizape.centraldesk.realtime.SessionsEndedEvent;
 import br.com.contabilizape.centraldesk.repository.RefreshTokenRepository;
+import br.com.contabilizape.centraldesk.repository.TrustedDeviceRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -44,12 +45,13 @@ class RefreshTokenServiceTest {
 
     @Mock private RefreshTokenRepository repository;
     @Mock private ApplicationEventPublisher events;
+    @Mock private TrustedDeviceRepository trustedDevices;
 
     private RefreshTokenService service;
 
     @BeforeEach
     void setUp() {
-        service = new RefreshTokenService(repository, Clock.fixed(NOW, ZoneOffset.UTC), TTL, events);
+        service = new RefreshTokenService(repository, Clock.fixed(NOW, ZoneOffset.UTC), TTL, events, trustedDevices);
     }
 
     // ---------- emissão ----------
@@ -192,4 +194,15 @@ class RefreshTokenServiceTest {
         ReflectionTestUtils.setField(user, "status", status);
         return user;
     }
+    @Test
+    void endingAllSessionsAlsoForgetsTheTrustedBrowsers() {
+        User user = mock(User.class);
+        UUID id = UUID.randomUUID();
+        when(user.getId()).thenReturn(id);
+
+        service.endAllSessions(user);
+
+        verify(trustedDevices).revokeAllActiveByUserId(id, NOW.atOffset(ZoneOffset.UTC));
+    }
+
 }

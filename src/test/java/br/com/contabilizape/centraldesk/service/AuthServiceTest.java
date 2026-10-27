@@ -1,5 +1,7 @@
 package br.com.contabilizape.centraldesk.service;
 
+import br.com.contabilizape.centraldesk.exception.InvalidVerificationCodeException;
+import br.com.contabilizape.centraldesk.security.AccountSecurityPolicy;
 import br.com.contabilizape.centraldesk.exception.AccountBlockedException;
 import br.com.contabilizape.centraldesk.exception.EmailNotVerifiedException;
 import br.com.contabilizape.centraldesk.exception.LoginRateLimitException;
@@ -78,6 +80,9 @@ class AuthServiceTest {
     @Mock private SecurityEventService securityEvents;
     @Mock private AccountEmails accountEmails;
     @Mock private VerificationCodeService codes;
+    @Mock private AccountSecurityPolicy policy;
+    @Mock private TrustedDeviceService trustedDevices;
+    @Mock private LoginChallengeService loginChallenges;
 
     private AuthService authService;
 
@@ -86,7 +91,7 @@ class AuthServiceTest {
         // O AuthService gera um hash fictício ao ser criado (usado quando o e-mail não existe)
         when(passwordEncoder.encode(anyString())).thenReturn(DUMMY_HASH);
         authService = new AuthService(userRepository, adminRepository, passwordEncoder,
-                tokenService, userService, refreshTokenService, loginAttemptLimiter, loginLockout, securityEvents, accountEmails, codes,
+                tokenService, userService, refreshTokenService, loginAttemptLimiter, loginLockout, securityEvents, accountEmails, codes, policy, trustedDevices, loginChallenges,
                 Clock.fixed(NOW, ZoneOffset.UTC), INNOVATION_ID);
     }
 
@@ -100,7 +105,7 @@ class AuthServiceTest {
         when(userService.getCurrentUser(USER_ID, List.of())).thenReturn(current);
         when(refreshTokenService.issue(maria)).thenReturn("refresh-123");
 
-        AuthenticatedSession session = authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT);
+        AuthenticatedSession session = authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT, null).session();
 
         assertThat(session.accessToken()).isEqualTo("jwt-123");
         assertThat(session.refreshToken()).isEqualTo("refresh-123");
@@ -111,7 +116,7 @@ class AuthServiceTest {
     void normalizesEmailBeforeSearching() {
         when(userRepository.findByEmailForUpdate(EMAIL)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> authService.login(new LoginRequest("  Maria.Silva@ContabilizaPE.com.br ", PASSWORD), CLIENT))
+        assertThatThrownBy(() -> authService.login(new LoginRequest("  Maria.Silva@ContabilizaPE.com.br ", PASSWORD), CLIENT, null))
                 .isInstanceOf(InvalidCredentialsException.class);
         verify(userRepository).findByEmailForUpdate(EMAIL);
     }
@@ -120,7 +125,7 @@ class AuthServiceTest {
     void unknownEmailIsRejectedAfterComparingWithDummyHash() {
         when(userRepository.findByEmailForUpdate(EMAIL)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT))
+        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT, null))
                 .isInstanceOf(InvalidCredentialsException.class);
         // Compara mesmo assim: a resposta leva o mesmo tempo de uma senha errada
         verify(passwordEncoder).matches(PASSWORD, DUMMY_HASH);
@@ -134,7 +139,7 @@ class AuthServiceTest {
         when(userRepository.findByEmailForUpdate(EMAIL)).thenReturn(Optional.of(maria));
         when(passwordEncoder.matches(PASSWORD, "hash-da-maria")).thenReturn(false);
 
-        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT))
+        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT, null))
                 .isInstanceOf(InvalidCredentialsException.class)
                 .hasMessage(new InvalidCredentialsException().getMessage());
         verify(tokenService, never()).issueAccessToken(any(), any(), any());
@@ -147,7 +152,7 @@ class AuthServiceTest {
         when(userRepository.findByEmailForUpdate(EMAIL)).thenReturn(Optional.of(maria));
         when(passwordEncoder.matches(PASSWORD, "hash-da-maria")).thenReturn(true);
 
-        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT))
+        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT, null))
                 .isInstanceOf(AccountNotActiveException.class);
         verify(tokenService, never()).issueAccessToken(any(), any(), any());
     }
@@ -158,7 +163,7 @@ class AuthServiceTest {
     void ipOverTheLimitIsRefusedBeforeLookingAtTheAccount() {
         doThrow(new LoginRateLimitException(Duration.ofMinutes(3))).when(loginAttemptLimiter).ensureAllowed(CLIENT.ip());
 
-        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT))
+        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT, null))
                 .isInstanceOf(LoginRateLimitException.class);
         verifyNoInteractions(userRepository);
     }
@@ -169,7 +174,7 @@ class AuthServiceTest {
         when(userRepository.findByEmailForUpdate(EMAIL)).thenReturn(Optional.of(maria));
         when(passwordEncoder.matches(PASSWORD, "hash-da-maria")).thenReturn(false);
 
-        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT))
+        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT, null))
                 .isInstanceOf(InvalidCredentialsException.class);
         verify(loginLockout).registerFailure(maria, CLIENT, SecurityEventType.LOGIN_FAILED);
         verify(loginAttemptLimiter).recordFailure(CLIENT.ip());
@@ -179,7 +184,7 @@ class AuthServiceTest {
     void unknownEmailIsCountedForTheIpAndAudited() {
         when(userRepository.findByEmailForUpdate(EMAIL)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT))
+        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT, null))
                 .isInstanceOf(InvalidCredentialsException.class);
         verify(loginAttemptLimiter).recordFailure(CLIENT.ip());
         verify(securityEvents).record(eq(SecurityEventType.LOGIN_UNKNOWN_EMAIL), isNull(), eq(CLIENT), anyString());
@@ -191,7 +196,7 @@ class AuthServiceTest {
         when(userRepository.findByEmailForUpdate(EMAIL)).thenReturn(Optional.of(maria));
         when(passwordEncoder.matches(PASSWORD, "hash-da-maria")).thenReturn(false);
 
-        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT))
+        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT, null))
                 .isInstanceOf(InvalidCredentialsException.class);
         verify(loginLockout, never()).registerFailure(any(), any(), any());
     }
@@ -202,7 +207,7 @@ class AuthServiceTest {
         when(userRepository.findByEmailForUpdate(EMAIL)).thenReturn(Optional.of(maria));
         when(passwordEncoder.matches(PASSWORD, "hash-da-maria")).thenReturn(true);
 
-        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT))
+        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT, null))
                 .isInstanceOf(AccountBlockedException.class);
         verify(tokenService, never()).issueAccessToken(any(), any(), any());
     }
@@ -213,7 +218,7 @@ class AuthServiceTest {
         when(userRepository.findByEmailForUpdate(EMAIL)).thenReturn(Optional.of(maria));
         when(passwordEncoder.matches(PASSWORD, "hash-da-maria")).thenReturn(true);
 
-        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT))
+        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT, null))
                 .isInstanceOf(EmailNotVerifiedException.class);
         verify(tokenService, never()).issueAccessToken(any(), any(), any());
         // Quem esqueceu de confirmar recebe outro código
@@ -227,7 +232,7 @@ class AuthServiceTest {
         when(userRepository.findByEmailForUpdate(EMAIL)).thenReturn(Optional.of(maria));
         when(passwordEncoder.matches(PASSWORD, "hash-da-maria")).thenReturn(true);
 
-        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT))
+        assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT, null))
                 .isInstanceOf(InvalidCredentialsException.class);
         verify(tokenService, never()).issueAccessToken(any(), any(), any());
     }
@@ -240,7 +245,7 @@ class AuthServiceTest {
         when(passwordEncoder.matches(PASSWORD, "hash-da-maria")).thenReturn(true);
         when(userService.getCurrentUser(USER_ID, List.of())).thenReturn(currentUser(List.of()));
 
-        authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT);
+        authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT, null);
 
         assertThat(maria.getFailedLoginAttempts()).isZero();
     }
@@ -250,6 +255,55 @@ class AuthServiceTest {
         User maria = user(GENERAL_ID, UserStatus.ACTIVE);
         maria.resetPasswordByAdmin("hash-da-maria", NOW.atOffset(ZoneOffset.UTC).plusHours(24));
         loginReturnsRolesFor(maria, false, List.of(Roles.PASSWORD_CHANGE_REQUIRED));
+    }
+
+    // ---------- SCRUM-206: verificação em duas etapas ----------
+
+    @Test
+    void withTwoFactorTheRightPasswordOnlyStartsTheChallenge() {
+        User maria = user(GENERAL_ID, UserStatus.ACTIVE);
+        when(userRepository.findByEmailForUpdate(EMAIL)).thenReturn(Optional.of(maria));
+        when(passwordEncoder.matches(PASSWORD, "hash-da-maria")).thenReturn(true);
+        when(policy.twoFactorRequired(maria, false)).thenReturn(true);
+        when(loginChallenges.start(maria, CLIENT)).thenReturn("desafio-123");
+
+        LoginOutcome outcome = authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT, null);
+
+        assertThat(outcome.isTwoFactorRequired()).isTrue();
+        assertThat(outcome.challengeToken()).isEqualTo("desafio-123");
+        assertThat(outcome.session()).isNull();
+        verify(tokenService, never()).issueAccessToken(any(), any(), any());
+        verify(refreshTokenService, never()).issue(any());
+    }
+
+    @Test
+    void trustedBrowserSkipsTheCode() {
+        User maria = user(GENERAL_ID, UserStatus.ACTIVE);
+        when(userRepository.findByEmailForUpdate(EMAIL)).thenReturn(Optional.of(maria));
+        when(passwordEncoder.matches(PASSWORD, "hash-da-maria")).thenReturn(true);
+        when(policy.twoFactorRequired(maria, false)).thenReturn(true);
+        when(trustedDevices.isTrusted(maria, "navegador-confiavel")).thenReturn(true);
+        when(userService.getCurrentUser(USER_ID, List.of())).thenReturn(currentUser(List.of()));
+
+        LoginOutcome outcome = authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT, "navegador-confiavel");
+
+        assertThat(outcome.isTwoFactorRequired()).isFalse();
+        verify(loginChallenges, never()).start(any(), any());
+    }
+
+    @Test
+    void changingThePasswordWithTwoFactorRequiresTheCode() {
+        User maria = user(GENERAL_ID, UserStatus.ACTIVE);
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(maria));
+        when(passwordEncoder.matches(PASSWORD, "hash-da-maria")).thenReturn(true);
+        when(passwordEncoder.matches("novaSenha456", "hash-da-maria")).thenReturn(false);
+        when(policy.twoFactorRequired(maria, false)).thenReturn(true);
+        when(codes.verify(USER_ID, CodePurpose.PASSWORD_CHANGE, "111111")).thenReturn(false);
+
+        assertThatThrownBy(() -> authService.changePassword(USER_ID, new PasswordChangeRequest(PASSWORD, "novaSenha456", "111111")))
+                .isInstanceOf(InvalidVerificationCodeException.class);
+        assertThat(maria.getPasswordHash()).isEqualTo("hash-da-maria");
+        verify(refreshTokenService, never()).endAllSessions(any());
     }
 
     @Test
@@ -378,7 +432,7 @@ class AuthServiceTest {
         when(tokenService.issueAccessToken(USER_ID, EMAIL, expectedRoles)).thenReturn("jwt-123");
         when(userService.getCurrentUser(USER_ID, expectedRoles)).thenReturn(current);
 
-        AuthenticatedSession session = authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT);
+        AuthenticatedSession session = authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT, null).session();
 
         assertThat(session.user().roles()).isEqualTo(expectedRoles);
     }

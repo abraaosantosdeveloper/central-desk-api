@@ -7,6 +7,8 @@ import br.com.contabilizape.centraldesk.dto.ResendCodeRequest;
 import br.com.contabilizape.centraldesk.dto.LoginRequest;
 import br.com.contabilizape.centraldesk.dto.MessageResponse;
 import br.com.contabilizape.centraldesk.dto.PasswordResetRequest;
+import br.com.contabilizape.centraldesk.dto.TwoFactorChallengeResponse;
+import br.com.contabilizape.centraldesk.dto.TwoFactorCodeRequest;
 import br.com.contabilizape.centraldesk.dto.UserCreateRequest;
 import br.com.contabilizape.centraldesk.dto.UserResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -76,8 +78,15 @@ public interface AuthApi {
                     O navegador envia os cookies sozinho, inclusive aqui no Swagger: depois do login, \
                     `GET /users/me` já funciona.""")
     @ApiResponse(
+            responseCode = "202",
+            description = """
+                    Senha certa, mas a conta usa a verificação em duas etapas e este navegador não é confiável: \
+                    **nenhum token de sessão** é emitido. Vai o cookie `tfa_challenge` (5 minutos, `Path=/auth`) e \
+                    um código de 6 dígitos por e-mail; conclua em `POST /auth/login/tfa`.""",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = TwoFactorChallengeResponse.class)))
+    @ApiResponse(
             responseCode = "200",
-            description = "Login feito.",
+            description = "Login feito (verificação em duas etapas desligada, ou navegador confiável pelo cookie `trusted_device`).",
             headers = @Header(name = "Set-Cookie", description = "Dois cookies: access_token (JWT) e refresh_token",
                     schema = @Schema(type = "string",
                             example = "access_token=eyJhbGciOiJIUzI1NiJ9...; Path=/; Max-Age=900; Secure; HttpOnly; SameSite=Strict")),
@@ -108,7 +117,8 @@ public interface AuthApi {
             responseCode = "429",
             description = "Tentativas erradas demais a partir desta rede (20 em 15 minutos). O cabeçalho `Retry-After` diz quantos segundos esperar.",
             content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
-    ResponseEntity<CurrentUserResponse> login(LoginRequest request, @Parameter(hidden = true) HttpServletRequest httpRequest);
+    ResponseEntity<?> login(LoginRequest request, @Parameter(hidden = true) HttpServletRequest httpRequest,
+                            @Parameter(hidden = true) String trustedDevice);
 
     @Operation(
             summary = "Renova a sessão",
@@ -202,4 +212,36 @@ public interface AuthApi {
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = MessageResponse.class)))
     ResponseEntity<MessageResponse> resendVerificationCode(ResendCodeRequest request,
                                                            @Parameter(hidden = true) HttpServletRequest httpRequest);
+
+    @Operation(
+            summary = "Conclui o login com o código do e-mail",
+            description = """
+                    Endpoint público, com o cookie `tfa_challenge` do login. Código certo: abre a sessão (mesmos cookies \
+                    do login) e, com `trustThisBrowser`, grava o cookie `trusted_device` (30 dias fixos, `Path=/auth`): \
+                    o login neste navegador deixa de pedir o código. O dono recebe um e-mail de novo acesso. \
+                    Código errado conta para o bloqueio da conta (5 falhas seguidas, somando senha e código) e o dono \
+                    é avisado de que alguém acertou a senha.""")
+    @ApiResponse(responseCode = "200", description = "Login concluído.",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = CurrentUserResponse.class)))
+    @ApiResponse(responseCode = "400", description = "Código inválido ou vencido (`errors.code`).",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    @ApiResponse(responseCode = "401", description = "Sem o cookie do desafio, ou desafio vencido, usado ou esgotado: entre de novo.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    @ApiResponse(responseCode = "403", description = "A conta foi bloqueada (`account-blocked`).",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    ResponseEntity<CurrentUserResponse> completeLogin(TwoFactorCodeRequest request,
+                                                      @Parameter(hidden = true) HttpServletRequest httpRequest,
+                                                      @Parameter(hidden = true) String challenge);
+
+    @Operation(
+            summary = "Reenvia o código de acesso",
+            description = "Com o cookie `tfa_challenge`. No máximo um código a cada 60 segundos e 5 por hora.")
+    @ApiResponse(responseCode = "202", description = "Código reenviado.",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = MessageResponse.class)))
+    @ApiResponse(responseCode = "401", description = "Sem desafio válido: entre de novo.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    @ApiResponse(responseCode = "429", description = "Pedido cedo demais (`Retry-After`).",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    ResponseEntity<MessageResponse> resendLoginCode(@Parameter(hidden = true) HttpServletRequest httpRequest,
+                                                    @Parameter(hidden = true) String challenge);
 }

@@ -38,6 +38,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import br.com.contabilizape.centraldesk.exception.AccountBlockedException;
 import br.com.contabilizape.centraldesk.exception.CodeRequestLimitException;
 import br.com.contabilizape.centraldesk.exception.EmailNotVerifiedException;
+import br.com.contabilizape.centraldesk.exception.InvalidLoginChallengeException;
 import br.com.contabilizape.centraldesk.exception.LoginRateLimitException;
 import java.time.Duration;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -150,6 +151,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(EmailNotVerifiedException.class)
     public ProblemDetail handleEmailNotVerified(EmailNotVerifiedException exception) {
         return coded(problem(HttpStatus.FORBIDDEN, "E-mail não confirmado", exception.getMessage()), "email-not-verified");
+    }
+
+    @ExceptionHandler(InvalidLoginChallengeException.class)
+    public ProblemDetail handleInvalidLoginChallenge(InvalidLoginChallengeException exception) {
+        return coded(problem(HttpStatus.UNAUTHORIZED, "Verificação expirada", exception.getMessage()), "login-challenge-expired");
     }
 
     @ExceptionHandler(LoginRateLimitException.class)

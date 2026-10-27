@@ -10,7 +10,13 @@ import br.com.contabilizape.centraldesk.dto.LoginRequest;
 import br.com.contabilizape.centraldesk.dto.MessageResponse;
 import br.com.contabilizape.centraldesk.dto.PasswordResetRequest;
 import br.com.contabilizape.centraldesk.service.PasswordRecoveryService;
+import br.com.contabilizape.centraldesk.dto.TwoFactorChallengeResponse;
+import br.com.contabilizape.centraldesk.dto.TwoFactorCodeRequest;
 import br.com.contabilizape.centraldesk.dto.UserCreateRequest;
+import br.com.contabilizape.centraldesk.security.AuthFlowCookies;
+import br.com.contabilizape.centraldesk.service.LoginChallengeService;
+import br.com.contabilizape.centraldesk.service.LoginOutcome;
+import br.com.contabilizape.centraldesk.service.TwoFactorLoginService;
 import br.com.contabilizape.centraldesk.dto.UserResponse;
 import br.com.contabilizape.centraldesk.security.AccessTokenCookie;
 import br.com.contabilizape.centraldesk.security.RefreshTokenCookie;
@@ -40,11 +46,19 @@ public class AuthController implements AuthApi {
     private final RefreshTokenCookie refreshTokenCookie;
     private final PasswordRecoveryService passwordRecoveryService;
     private final EmailVerificationService emailVerificationService;
+    private final TwoFactorLoginService twoFactorLoginService;
+    private final LoginChallengeService loginChallengeService;
+    private final AuthFlowCookies authFlowCookies;
 
     public AuthController(UserService userService, AuthService authService,
                           AccessTokenCookie accessTokenCookie, RefreshTokenCookie refreshTokenCookie,
                           PasswordRecoveryService passwordRecoveryService,
-                          EmailVerificationService emailVerificationService) {
+                          EmailVerificationService emailVerificationService,
+                          TwoFactorLoginService twoFactorLoginService, LoginChallengeService loginChallengeService,
+                          AuthFlowCookies authFlowCookies) {
+        this.twoFactorLoginService = twoFactorLoginService;
+        this.loginChallengeService = loginChallengeService;
+        this.authFlowCookies = authFlowCookies;
         this.passwordRecoveryService = passwordRecoveryService;
         this.emailVerificationService = emailVerificationService;
         this.userService = userService;
@@ -65,9 +79,44 @@ public class AuthController implements AuthApi {
 
     @Override
     @PostMapping("/login")
-    public ResponseEntity<CurrentUserResponse> login(@RequestBody @Valid LoginRequest request,
-                                                     HttpServletRequest httpRequest) {
-        return withSessionCookies(authService.login(request, ClientInfo.from(httpRequest)));
+    public ResponseEntity<?> login(@RequestBody @Valid LoginRequest request, HttpServletRequest httpRequest,
+                                   @CookieValue(name = AuthFlowCookies.TRUSTED_DEVICE, required = false) String trustedDevice) {
+        LoginOutcome outcome = authService.login(request, ClientInfo.from(httpRequest), trustedDevice);
+        if (outcome.isTwoFactorRequired()) {
+            // Nenhum token de sessão: só o desafio, até o código do e-mail ser confirmado
+            return ResponseEntity.accepted()
+                    .header(HttpHeaders.SET_COOKIE, authFlowCookies.challenge(outcome.challengeToken()).toString())
+                    .body(new TwoFactorChallengeResponse(true));
+        }
+        return withSessionCookies(outcome.session());
+    }
+
+    /** Segunda etapa do login (SCRUM-206): o código do e-mail, com o cookie do desafio. */
+    @Override
+    @PostMapping("/login/tfa")
+    public ResponseEntity<CurrentUserResponse> completeLogin(
+            @RequestBody @Valid TwoFactorCodeRequest request, HttpServletRequest httpRequest,
+            @CookieValue(name = AuthFlowCookies.CHALLENGE, required = false) String challenge) {
+        TwoFactorLoginService.Completed completed = twoFactorLoginService.complete(
+                challenge, request.code(), request.trustThisBrowser(), ClientInfo.from(httpRequest));
+        var response = ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE,
+                        accessTokenCookie.create(completed.session().accessToken()).toString(),
+                        refreshTokenCookie.create(completed.session().refreshToken()).toString(),
+                        authFlowCookies.clearChallenge().toString());
+        if (completed.trustedDeviceToken() != null) {
+            response.header(HttpHeaders.SET_COOKIE, authFlowCookies.trustedDevice(completed.trustedDeviceToken()).toString());
+        }
+        return response.body(completed.session().user());
+    }
+
+    @Override
+    @PostMapping("/login/tfa/resend")
+    public ResponseEntity<MessageResponse> resendLoginCode(
+            HttpServletRequest httpRequest,
+            @CookieValue(name = AuthFlowCookies.CHALLENGE, required = false) String challenge) {
+        loginChallengeService.resend(challenge, ClientInfo.from(httpRequest));
+        return ResponseEntity.accepted().body(new MessageResponse("Enviamos um novo código para o seu e-mail."));
     }
 
     @Override
@@ -92,7 +141,13 @@ public class AuthController implements AuthApi {
     @PostMapping("/email/verify")
     public ResponseEntity<CurrentUserResponse> verifyEmail(@RequestBody @Valid EmailVerificationRequest request,
                                                            HttpServletRequest httpRequest) {
-        return withSessionCookies(emailVerificationService.verify(request, ClientInfo.from(httpRequest)).session());
+        EmailVerificationService.ConfirmedAccount confirmed = emailVerificationService.verify(request, ClientInfo.from(httpRequest));
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE,
+                        accessTokenCookie.create(confirmed.session().accessToken()).toString(),
+                        refreshTokenCookie.create(confirmed.session().refreshToken()).toString(),
+                        authFlowCookies.trustedDevice(confirmed.trustedDeviceToken()).toString())
+                .body(confirmed.session().user());
     }
 
     @Override

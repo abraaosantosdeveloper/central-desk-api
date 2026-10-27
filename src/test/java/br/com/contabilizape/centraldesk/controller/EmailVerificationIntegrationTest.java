@@ -89,6 +89,10 @@ class EmailVerificationIntegrationTest {
 
         Cookie session = TestAccounts.cookie(response, "access_token");
         mockMvc.perform(get("/tickets/mine").cookie(session)).andExpect(status().isOk());
+        // O código chegou na caixa de entrada: a confirmação já vale como verificação deste navegador
+        Cookie trusted = TestAccounts.cookie(response, "trusted_device");
+        assertThat(trusted).isNotNull();
+        login(mockMvc, MARIA, PASSWORD, trusted).andExpect(status().isOk());
         assertThat(jdbc.queryForObject("SELECT email_verified_at FROM users WHERE id = ?", Object.class, maria)).isNotNull();
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM security_events WHERE user_id = ? AND type = 'EMAIL_VERIFIED'",
                 Integer.class, maria)).isEqualTo(1);
@@ -132,7 +136,8 @@ class EmailVerificationIntegrationTest {
             verify(MARIA, firstCode).andExpect(status().isBadRequest());
         }
         verify(MARIA, secondCode).andExpect(status().isOk());
-        login(mockMvc, MARIA, "outraSenha77").andExpect(status().isOk());
+        // Senha nova vale; o login pede o código (TFA ligada por padrão) porque não há navegador confiável aqui
+        login(mockMvc, MARIA, "outraSenha77").andExpect(status().isAccepted());
     }
 
     @Test

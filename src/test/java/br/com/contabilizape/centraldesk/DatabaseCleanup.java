@@ -19,6 +19,8 @@ public final class DatabaseCleanup {
         jdbc.update("DELETE FROM tickets");
         jdbc.update("DELETE FROM refresh_tokens");
         jdbc.update("DELETE FROM verification_codes");
+        jdbc.update("DELETE FROM login_challenges");
+        jdbc.update("DELETE FROM trusted_devices");
         jdbc.update("DELETE FROM security_events");
         jdbc.update("DELETE FROM department_requests");
         jdbc.update("DELETE FROM users WHERE id NOT IN (SELECT user_id FROM admins)");

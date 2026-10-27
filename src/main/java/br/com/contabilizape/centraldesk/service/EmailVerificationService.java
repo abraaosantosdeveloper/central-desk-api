@@ -32,20 +32,26 @@ public class EmailVerificationService {
     private final UserService userService;
     private final AuthService authService;
     private final SecurityEventService securityEvents;
+    private final TrustedDeviceService trustedDevices;
     private final Clock clock;
 
     public EmailVerificationService(UserRepository userRepository, VerificationCodeService codes,
                                     UserService userService, AuthService authService,
-                                    SecurityEventService securityEvents, Clock clock) {
+                                    SecurityEventService securityEvents, TrustedDeviceService trustedDevices,
+                                    Clock clock) {
         this.userRepository = userRepository;
         this.codes = codes;
         this.userService = userService;
         this.authService = authService;
         this.securityEvents = securityEvents;
+        this.trustedDevices = trustedDevices;
         this.clock = clock;
     }
 
-    /** Código certo: ativa a conta, cria o pedido da Inovação (se houve) e abre a sessão. */
+    /**
+     * Código certo: ativa a conta, cria o pedido da Inovação (se houve) e abre a sessão. Como o código
+     * chegou na caixa de entrada, a confirmação vale como verificação deste navegador, que fica confiável.
+     */
     @Transactional
     public ConfirmedAccount verify(EmailVerificationRequest request, ClientInfo client) {
         User user = userRepository.findByEmail(Emails.normalize(request.email()))
@@ -60,7 +66,8 @@ public class EmailVerificationService {
             userService.createDepartmentRequest(user, requested);
         }
         securityEvents.record(SecurityEventType.EMAIL_VERIFIED, user, client, null);
-        return new ConfirmedAccount(user, authService.startSession(user));
+        String deviceToken = trustedDevices.trust(user, client.userAgent());
+        return new ConfirmedAccount(user, authService.startSession(user), deviceToken);
     }
 
     /** Sempre a mesma resposta; só cadastros pendentes recebem um código novo. */
@@ -84,7 +91,7 @@ public class EmailVerificationService {
                 OffsetDateTime.now(clock).minus(PENDING_LIFETIME));
     }
 
-    /** A conta confirmada e a sessão aberta para ela (o controller grava os cookies). */
-    public record ConfirmedAccount(User user, AuthenticatedSession session) {
+    /** A conta confirmada, a sessão aberta e o navegador confiável (o controller grava os cookies). */
+    public record ConfirmedAccount(User user, AuthenticatedSession session, String trustedDeviceToken) {
     }
 }

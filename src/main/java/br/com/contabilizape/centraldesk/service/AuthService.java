@@ -9,12 +9,14 @@ import br.com.contabilizape.centraldesk.exception.CodeRequestLimitException;
 import br.com.contabilizape.centraldesk.exception.CurrentPasswordMismatchException;
 import br.com.contabilizape.centraldesk.exception.InvalidCredentialsException;
 import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
+import br.com.contabilizape.centraldesk.exception.InvalidVerificationCodeException;
 import br.com.contabilizape.centraldesk.exception.NewPasswordSameAsCurrentException;
 import br.com.contabilizape.centraldesk.model.CodePurpose;
 import br.com.contabilizape.centraldesk.model.SecurityEventType;
 import br.com.contabilizape.centraldesk.model.User;
 import br.com.contabilizape.centraldesk.repository.AdminRepository;
 import br.com.contabilizape.centraldesk.repository.UserRepository;
+import br.com.contabilizape.centraldesk.security.AccountSecurityPolicy;
 import br.com.contabilizape.centraldesk.security.ClientInfo;
 import br.com.contabilizape.centraldesk.security.LoginAttemptLimiter;
 import br.com.contabilizape.centraldesk.security.Roles;
@@ -44,6 +46,9 @@ public class AuthService {
     private final SecurityEventService securityEvents;
     private final AccountEmails accountEmails;
     private final VerificationCodeService codes;
+    private final AccountSecurityPolicy policy;
+    private final TrustedDeviceService trustedDevices;
+    private final LoginChallengeService loginChallenges;
     private final Clock clock;
     private final UUID handlerDepartmentId;
 
@@ -61,6 +66,9 @@ public class AuthService {
                        SecurityEventService securityEvents,
                        AccountEmails accountEmails,
                        VerificationCodeService codes,
+                       AccountSecurityPolicy policy,
+                       TrustedDeviceService trustedDevices,
+                       LoginChallengeService loginChallenges,
                        Clock clock,
                        @Value("${app.tickets.handler-department-id}") UUID handlerDepartmentId) {
         this.userRepository = userRepository;
@@ -74,6 +82,9 @@ public class AuthService {
         this.securityEvents = securityEvents;
         this.accountEmails = accountEmails;
         this.codes = codes;
+        this.policy = policy;
+        this.trustedDevices = trustedDevices;
+        this.loginChallenges = loginChallenges;
         this.clock = clock;
         this.handlerDepartmentId = handlerDepartmentId;
         this.dummyPasswordHash = passwordEncoder.encode("senha-ficticia-" + UUID.randomUUID());
@@ -85,15 +96,23 @@ public class AuthService {
      *
      * Senha errada → 401 genérico, em qualquer estado da conta (conta ativa soma uma falha; na 5ª, bloqueia).
      * Senha certa → aí sim o estado decide: bloqueada (403), e-mail não confirmado (403), inativa (403).
+     * Conta ativa com verificação em duas etapas, fora de um navegador confiável: nenhuma sessão ainda,
+     * só o desafio; a sessão sai em POST /auth/login/tfa, com o código do e-mail (PLANO-SEGURANCA §9).
+     *
+     * @param trustedDeviceToken cookie trusted_device deste navegador, se houver
      */
     @Transactional(noRollbackFor = {InvalidCredentialsException.class, AccountBlockedException.class,
-            EmailNotVerifiedException.class, AccountNotActiveException.class})
-    public AuthenticatedSession login(LoginRequest request, ClientInfo client) {
+            EmailNotVerifiedException.class, AccountNotActiveException.class, CodeRequestLimitException.class})
+    public LoginOutcome login(LoginRequest request, ClientInfo client, String trustedDeviceToken) {
         loginAttemptLimiter.ensureAllowed(client.ip());
         User user = authenticate(Emails.normalize(request.email()), request.password(), client);
         ensureCanEnter(user, client);
+        boolean admin = adminRepository.existsById(user.getId());
+        if (policy.twoFactorRequired(user, admin) && !trustedDevices.isTrusted(user, trustedDeviceToken)) {
+            return LoginOutcome.twoFactorRequired(loginChallenges.start(user, client));
+        }
         user.resetFailedLogins();
-        return openSession(user, refreshTokenService.issue(user));
+        return LoginOutcome.opened(openSession(user, refreshTokenService.issue(user)));
     }
 
     /**
@@ -132,6 +151,12 @@ public class AuthService {
         if (passwordEncoder.matches(request.newPassword(), user.getPasswordHash())) {
             throw new NewPasswordSameAsCurrentException();
         }
+        // Com a verificação em duas etapas, a troca pede também o código do e-mail (S6). Na troca obrigatória
+        // (senha temporária), não: a pessoa acabou de entrar com a senha que o administrador entregou.
+        if (!user.isPasswordChangeRequired() && policy.twoFactorRequired(user, adminRepository.existsById(userId))
+                && !codes.verify(userId, CodePurpose.PASSWORD_CHANGE, request.code())) {
+            throw new InvalidVerificationCodeException();
+        }
 
         user.changePasswordHash(passwordEncoder.encode(request.newPassword()));
         // As outras sessões (e os navegadores confiáveis) caem na hora; a atual é reaberta logo abaixo com tokens novos
@@ -141,7 +166,17 @@ public class AuthService {
         return openSession(user, refreshTokenService.issue(user));
     }
 
-    /** Abre a sessão de quem acabou de provar a identidade por outro caminho (confirmação do e-mail). */
+    /** Código para trocar a senha no perfil (POST /users/me/password/code). */
+    @Transactional
+    public void sendPasswordChangeCode(UUID userId, ClientInfo client) {
+        User user = userRepository.findById(userId).orElseThrow(InvalidSessionException::new);
+        if (!user.isActive()) {
+            throw new AccountNotActiveException();
+        }
+        codes.send(user, CodePurpose.PASSWORD_CHANGE, client.ip());
+    }
+
+    /** Abre a sessão de quem acabou de provar a identidade por outro caminho (código do e-mail). */
     @Transactional
     public AuthenticatedSession startSession(User user) {
         return openSession(user, refreshTokenService.issue(user));
