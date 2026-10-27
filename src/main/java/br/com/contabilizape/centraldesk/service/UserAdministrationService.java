@@ -75,7 +75,7 @@ public class UserAdministrationService {
         this.handlerDepartmentId = handlerDepartmentId;
     }
 
-    /** Ordem alfabética fixa; sem filtro de status, as contas anonimizadas ficam de fora. */
+    /** Ordem alfabética fixa; sem filtro de status, ficam de fora as anonimizadas e os cadastros não confirmados. */
     @Transactional(readOnly = true)
     public PageResponse<AdminUserResponse> list(UserFilter filter, Pageable pageable) {
         Pageable page = PageRequest.of(pageable.getPageNumber(), Math.min(pageable.getPageSize(), MAX_PAGE_SIZE), BY_NAME);
@@ -140,8 +140,8 @@ public class UserAdministrationService {
             throw new SelfDeactivationException();
         }
         User user = findUser(userId);
-        if (user.getStatus() != UserStatus.ACTIVE) {
-            throw new InvalidAccountStatusException("Só contas ativas podem ser desativadas.");
+        if (user.getStatus() != UserStatus.ACTIVE && user.getStatus() != UserStatus.BLOCKED) {
+            throw new InvalidAccountStatusException("Só contas ativas ou bloqueadas podem ser desativadas.");
         }
         offboarding.ensureNotLastActiveAdmin(userId);
 
@@ -266,7 +266,7 @@ public class UserAdministrationService {
             if (filter.status() != null) {
                 predicates.add(cb.equal(user.get("status"), filter.status()));
             } else {
-                predicates.add(cb.notEqual(user.get("status"), UserStatus.ANONYMIZED));
+                predicates.add(cb.not(user.get("status").in(UserStatus.ANONYMIZED, UserStatus.PENDING_VERIFICATION)));
             }
             if (filter.search() != null && !filter.search().isBlank()) {
                 String pattern = "%" + filter.search().trim().toLowerCase(Locale.ROOT) + "%";

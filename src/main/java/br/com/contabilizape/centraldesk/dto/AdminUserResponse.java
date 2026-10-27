@@ -23,7 +23,9 @@ public record AdminUserResponse(
     boolean departmentApprovalPending,
     OffsetDateTime createdAt,
     @Schema(description = "Quando a conta foi desativada; vazio se estiver ativa")
-    OffsetDateTime deactivatedAt
+    OffsetDateTime deactivatedAt,
+    @Schema(description = "Quando a conta foi bloqueada por tentativas erradas; vazio se não estiver bloqueada")
+    OffsetDateTime blockedAt
 ) {
 
     public static AdminUserResponse from(User user, boolean admin, boolean ticketHandler, boolean approvalPending) {
@@ -38,7 +40,8 @@ public record AdminUserResponse(
             ticketHandler,
             approvalPending,
             user.getCreatedAt(),
-            user.getDeactivatedAt()
+            user.getDeactivatedAt(),
+            user.getBlockedAt()
         );
     }
 }

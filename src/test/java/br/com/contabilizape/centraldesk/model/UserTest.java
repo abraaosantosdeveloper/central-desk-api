@@ -40,7 +40,7 @@ class UserTest {
     }
 
     @Test
-    void onlyActiveAccountsCanBeDeactivated() {
+    void onlyActiveOrBlockedAccountsCanBeDeactivated() {
         assertThatThrownBy(() -> user(UserStatus.DEACTIVATED).deactivate(NOW))
                 .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> user(UserStatus.ANONYMIZED).deactivate(NOW))
@@ -83,6 +83,121 @@ class UserTest {
 
         // O "iat" do JWT não tem fração de segundo: o corte também não pode ter
         assertThat(user.getSessionsValidFrom()).isEqualTo(NOW);
+    }
+
+    // ---------- SCRUM-200: bloqueio, verificação do e-mail e troca obrigatória de senha ----------
+
+    @Test
+    void fifthConsecutiveFailureBlocksTheAccount() {
+        User user = user(UserStatus.ACTIVE);
+
+        for (int i = 1; i <= 4; i++) {
+            assertThat(user.registerFailedLogin(NOW, 5)).isFalse();
+        }
+        assertThat(user.getFailedLoginAttempts()).isEqualTo(4);
+        assertThat(user.registerFailedLogin(NOW, 5)).isTrue();
+
+        assertThat(user.getStatus()).isEqualTo(UserStatus.BLOCKED);
+        assertThat(user.getBlockedAt()).isEqualTo(NOW);
+        assertThat(user.isActive()).isFalse();
+    }
+
+    @Test
+    void successfulLoginResetsTheCounter() {
+        User user = user(UserStatus.ACTIVE);
+        user.registerFailedLogin(NOW, 5);
+        user.registerFailedLogin(NOW, 5);
+
+        user.resetFailedLogins();
+
+        assertThat(user.getFailedLoginAttempts()).isZero();
+    }
+
+    @Test
+    void onlyActiveAccountsCountFailures() {
+        User blocked = user(UserStatus.BLOCKED);
+
+        assertThatThrownBy(() -> blocked.registerFailedLogin(NOW, 5)).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void confirmingTheEmailActivatesAPendingAccount() {
+        User user = user(UserStatus.PENDING_VERIFICATION);
+
+        user.confirmEmail(NOW);
+
+        assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
+        assertThat(user.getEmailVerifiedAt()).isEqualTo(NOW);
+        assertThatThrownBy(() -> user(UserStatus.BLOCKED).confirmEmail(NOW)).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void newAccountsWaitForTheEmailConfirmation() {
+        User user = new User("Maria da Silva", "52998224725", "maria.silva@contabilizape.com.br", "hash",
+                mock(Department.class));
+
+        user.awaitEmailConfirmation();
+
+        assertThat(user.getStatus()).isEqualTo(UserStatus.PENDING_VERIFICATION);
+        assertThat(user.getEmailVerifiedAt()).isNull();
+        assertThat(user.isTwoFactorEnabled()).isTrue();
+    }
+
+    @Test
+    void adminResetUnblocksAndRequiresANewPassword() {
+        User user = user(UserStatus.ACTIVE);
+        for (int i = 0; i < 5; i++) {
+            user.registerFailedLogin(NOW, 5);
+        }
+
+        user.resetPasswordByAdmin("hash-temporario", NOW.plusHours(24));
+
+        assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
+        assertThat(user.getBlockedAt()).isNull();
+        assertThat(user.getFailedLoginAttempts()).isZero();
+        assertThat(user.getPasswordHash()).isEqualTo("hash-temporario");
+        assertThat(user.isPasswordChangeRequired()).isTrue();
+        assertThat(user.isTemporaryPasswordExpiredAt(NOW.plusHours(23))).isFalse();
+        assertThat(user.isTemporaryPasswordExpiredAt(NOW.plusHours(25))).isTrue();
+    }
+
+    @Test
+    void adminCannotResetThePasswordOfDeactivatedOrPendingAccounts() {
+        assertThatThrownBy(() -> user(UserStatus.DEACTIVATED).resetPasswordByAdmin("h", NOW))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> user(UserStatus.PENDING_VERIFICATION).resetPasswordByAdmin("h", NOW))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void choosingANewPasswordEndsTheTemporaryOne() {
+        User user = user(UserStatus.ACTIVE);
+        user.resetPasswordByAdmin("hash-temporario", NOW.plusHours(24));
+
+        user.changePasswordHash("hash-novo");
+
+        assertThat(user.isPasswordChangeRequired()).isFalse();
+        assertThat(user.isTemporaryPasswordExpiredAt(NOW.plusDays(30))).isFalse();
+        assertThat(user.getFailedLoginAttempts()).isZero();
+    }
+
+    @Test
+    void blockedAccountCanBeDeactivated() {
+        User user = user(UserStatus.BLOCKED);
+
+        user.deactivate(NOW);
+
+        assertThat(user.getStatus()).isEqualTo(UserStatus.DEACTIVATED);
+    }
+
+    @Test
+    void twoFactorCanBeTurnedOffAndOn() {
+        User user = user(UserStatus.ACTIVE);
+
+        user.disableTwoFactor();
+        assertThat(user.isTwoFactorEnabled()).isFalse();
+        user.enableTwoFactor();
+        assertThat(user.isTwoFactorEnabled()).isTrue();
     }
 
     private static User user(UserStatus status) {
