@@ -2,7 +2,11 @@ package br.com.contabilizape.centraldesk.controller;
 
 import br.com.contabilizape.centraldesk.controller.doc.AuthApi;
 import br.com.contabilizape.centraldesk.dto.CurrentUserResponse;
+import br.com.contabilizape.centraldesk.dto.ForgotPasswordRequest;
 import br.com.contabilizape.centraldesk.dto.LoginRequest;
+import br.com.contabilizape.centraldesk.dto.MessageResponse;
+import br.com.contabilizape.centraldesk.dto.PasswordResetRequest;
+import br.com.contabilizape.centraldesk.service.PasswordRecoveryService;
 import br.com.contabilizape.centraldesk.dto.UserCreateRequest;
 import br.com.contabilizape.centraldesk.dto.UserResponse;
 import br.com.contabilizape.centraldesk.security.AccessTokenCookie;
@@ -31,9 +35,12 @@ public class AuthController implements AuthApi {
     private final AuthService authService;
     private final AccessTokenCookie accessTokenCookie;
     private final RefreshTokenCookie refreshTokenCookie;
+    private final PasswordRecoveryService passwordRecoveryService;
 
     public AuthController(UserService userService, AuthService authService,
-                          AccessTokenCookie accessTokenCookie, RefreshTokenCookie refreshTokenCookie) {
+                          AccessTokenCookie accessTokenCookie, RefreshTokenCookie refreshTokenCookie,
+                          PasswordRecoveryService passwordRecoveryService) {
+        this.passwordRecoveryService = passwordRecoveryService;
         this.userService = userService;
         this.authService = authService;
         this.accessTokenCookie = accessTokenCookie;
@@ -71,6 +78,24 @@ public class AuthController implements AuthApi {
         return ResponseEntity.noContent()
                 .header(HttpHeaders.SET_COOKIE, accessTokenCookie.clear().toString(), refreshTokenCookie.clear().toString())
                 .build();
+    }
+
+    /** Sempre 202 com a mesma mensagem, exista a conta ou não (SCRUM-204). */
+    @Override
+    @PostMapping("/password/forgot")
+    public ResponseEntity<MessageResponse> forgotPassword(@RequestBody @Valid ForgotPasswordRequest request,
+                                                          HttpServletRequest httpRequest) {
+        passwordRecoveryService.requestReset(request.email(), ClientInfo.from(httpRequest));
+        return ResponseEntity.accepted().body(new MessageResponse(
+                "Se o e-mail estiver cadastrado, você vai receber um código para redefinir a senha."));
+    }
+
+    @Override
+    @PostMapping("/password/reset")
+    public ResponseEntity<Void> resetPassword(@RequestBody @Valid PasswordResetRequest request,
+                                              HttpServletRequest httpRequest) {
+        passwordRecoveryService.reset(request, ClientInfo.from(httpRequest));
+        return ResponseEntity.noContent().build();
     }
 
     // O access token vai primeiro: quem lê só o primeiro Set-Cookie recebe o token da API

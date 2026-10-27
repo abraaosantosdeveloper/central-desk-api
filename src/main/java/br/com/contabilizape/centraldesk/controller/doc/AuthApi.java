@@ -1,7 +1,10 @@
 package br.com.contabilizape.centraldesk.controller.doc;
 
 import br.com.contabilizape.centraldesk.dto.CurrentUserResponse;
+import br.com.contabilizape.centraldesk.dto.ForgotPasswordRequest;
 import br.com.contabilizape.centraldesk.dto.LoginRequest;
+import br.com.contabilizape.centraldesk.dto.MessageResponse;
+import br.com.contabilizape.centraldesk.dto.PasswordResetRequest;
 import br.com.contabilizape.centraldesk.dto.UserCreateRequest;
 import br.com.contabilizape.centraldesk.dto.UserResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -146,4 +149,32 @@ public interface AuthApi {
                             example = "access_token=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Secure; HttpOnly; SameSite=Strict")),
             content = @Content)
     ResponseEntity<Void> logout(@Parameter(hidden = true) String refreshToken);
+
+    @Operation(
+            summary = "Esqueci minha senha: pede o código por e-mail",
+            description = """
+                    Endpoint público. A resposta é **sempre** 202 com a mesma mensagem, exista a conta ou não. \
+                    Conta ativa recebe um código de 6 dígitos (vale 10 minutos); conta bloqueada recebe um aviso \
+                    para procurar a equipe de Inovação (só um administrador libera); nos outros casos, nada é enviado. \
+                    Um novo pedido em menos de 60 segundos não envia outro código.""")
+    @ApiResponse(responseCode = "202", description = "Pedido recebido.",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = MessageResponse.class)))
+    @ApiResponse(responseCode = "400", description = "E-mail em branco.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    @ApiResponse(responseCode = "429", description = "Pedidos demais a partir desta rede (`Retry-After`).",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    ResponseEntity<MessageResponse> forgotPassword(ForgotPasswordRequest request,
+                                                   @Parameter(hidden = true) HttpServletRequest httpRequest);
+
+    @Operation(
+            summary = "Esqueci minha senha: redefine com o código",
+            description = """
+                    Endpoint público. Confere o código e grava a senha nova (mesmas regras do cadastro). \
+                    Todas as sessões e navegadores confiáveis da conta caem, e o dono recebe um e-mail. \
+                    Código errado não conta para o bloqueio da conta, mas cada código aceita só 5 tentativas.""")
+    @ApiResponse(responseCode = "204", description = "Senha redefinida. Entre de novo com a senha nova.")
+    @ApiResponse(responseCode = "400", description = """
+            Código inválido, vencido ou já usado (`errors.code`, sem dizer qual), ou senha fora das regras (`errors.newPassword`).""",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    ResponseEntity<Void> resetPassword(PasswordResetRequest request, @Parameter(hidden = true) HttpServletRequest httpRequest);
 }

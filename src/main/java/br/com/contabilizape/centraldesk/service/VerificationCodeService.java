@@ -51,9 +51,10 @@ public class VerificationCodeService {
     /**
      * Gera um código novo, invalida os anteriores da mesma finalidade e manda o e-mail (depois do commit).
      *
-     * @throws CodeRequestLimitException pedido cedo demais ou acima dos limites; nada é enviado
+     * @throws CodeRequestLimitException pedido cedo demais ou acima dos limites; nada é enviado (a recusa
+     *         não marca a transação de quem chamou para desfazer: ele pode ignorá-la em silêncio)
      */
-    @Transactional
+    @Transactional(noRollbackFor = CodeRequestLimitException.class)
     public void send(User user, CodePurpose purpose, String ip) {
         OffsetDateTime now = now();
         ensureWithinLimits(user.getId(), purpose, ip, now);

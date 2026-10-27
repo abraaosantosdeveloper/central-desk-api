@@ -9,5 +9,7 @@ import java.util.UUID;
 
 public interface SecurityEventRepository extends JpaRepository<SecurityEvent, UUID> {
 
+    long countByIpAndTypeAndCreatedAtAfter(String ip, SecurityEventType type, OffsetDateTime since);
+
     long countByUserIdAndTypeAndCreatedAtAfter(UUID userId, SecurityEventType type, OffsetDateTime since);
 }

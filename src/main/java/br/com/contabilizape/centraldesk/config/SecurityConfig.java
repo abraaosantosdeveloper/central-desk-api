@@ -36,6 +36,9 @@ public class SecurityConfig {
             PATHS.matcher(HttpMethod.POST, "/auth/refresh"),
             // Público de propósito: com a sessão vencida, o logout ainda precisa apagar o cookie
             PATHS.matcher(HttpMethod.POST, "/auth/logout"),
+            // "Esqueci minha senha": quem não lembra a senha não tem sessão
+            PATHS.matcher(HttpMethod.POST, "/auth/password/forgot"),
+            PATHS.matcher(HttpMethod.POST, "/auth/password/reset"),
             PATHS.matcher(HttpMethod.GET, "/departments"),
             // O Spring encaminha os erros para /error; protegida, ela esconderia o erro real atrás de um 401
             PATHS.matcher("/error"),
