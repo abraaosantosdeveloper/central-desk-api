@@ -6,6 +6,7 @@ import br.com.contabilizape.centraldesk.dto.AdminUserResponse;
 import br.com.contabilizape.centraldesk.dto.AdminUserUpdateRequest;
 import br.com.contabilizape.centraldesk.dto.DepartmentChangeRequest;
 import br.com.contabilizape.centraldesk.dto.PageResponse;
+import br.com.contabilizape.centraldesk.dto.TemporaryPasswordResponse;
 import br.com.contabilizape.centraldesk.dto.UserFilter;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -15,6 +16,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ProblemDetail;
@@ -193,4 +195,25 @@ public interface AdminUserApi {
                     schema = @Schema(implementation = ProblemDetail.class),
                     examples = @ExampleObject(name = "Último administrador", value = ProblemExamples.LAST_ADMIN)))
     AdminUserResponse revokeAdmin(@Parameter(hidden = true) Jwt jwt, @Parameter(description = "Id do usuário") UUID id);
+
+    @Operation(
+            summary = "Redefine a senha de uma conta (senha temporária)",
+            description = """
+                    Só administradores, para contas ativas ou bloqueadas de outras pessoas (é o único jeito de \
+                    liberar uma conta bloqueada por 5 tentativas erradas). O sistema gera uma senha temporária de \
+                    16 caracteres, que aparece **só nesta resposta**: entregue-a pessoalmente, depois de confirmar \
+                    a identidade de quem pediu. Ela vale 24 horas e, no primeiro acesso, a pessoa só consegue \
+                    definir uma senha nova (as outras rotas respondem 403 `password-change-required`). \
+                    As sessões e os navegadores confiáveis da conta caem na hora, e o dono recebe um e-mail.""",
+            security = @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH))
+    @ApiResponse(responseCode = "200", description = "Senha redefinida; a conta volta a ACTIVE.",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = TemporaryPasswordResponse.class)))
+    @ApiResponse(responseCode = "401", description = "Sem sessão.", content = @Content)
+    @ApiResponse(responseCode = "403", description = "Quem chamou não é administrador.", content = @Content)
+    @ApiResponse(responseCode = "404", description = "Conta inexistente.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    @ApiResponse(responseCode = "409", description = "A própria conta, ou conta desativada, anonimizada ou com cadastro não confirmado.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    TemporaryPasswordResponse resetPassword(@Parameter(hidden = true) Jwt jwt, @Parameter(description = "Id do usuário") UUID id,
+                                            @Parameter(hidden = true) HttpServletRequest request);
 }

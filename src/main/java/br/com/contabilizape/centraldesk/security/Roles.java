@@ -11,6 +11,12 @@ public final class Roles {
     /** Membro do departamento que atende os chamados (Inovação). */
     public static final String TICKET_HANDLER = "TICKET_HANDLER";
 
+    /**
+     * Senha temporária dada por um administrador: enquanto a pessoa não escolhe a dela, a API só aceita
+     * ver o perfil, trocar a senha e sair (PasswordChangeRequiredFilter).
+     */
+    public static final String PASSWORD_CHANGE_REQUIRED = "PASSWORD_CHANGE_REQUIRED";
+
     private Roles() {
     }
 }

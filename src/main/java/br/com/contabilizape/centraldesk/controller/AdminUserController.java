@@ -13,6 +13,10 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import br.com.contabilizape.centraldesk.dto.DepartmentChangeRequest;
 import jakarta.validation.Valid;
+import br.com.contabilizape.centraldesk.dto.TemporaryPasswordResponse;
+import br.com.contabilizape.centraldesk.security.ClientInfo;
+import br.com.contabilizape.centraldesk.service.AdminPasswordResetService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -34,7 +38,11 @@ public class AdminUserController implements AdminUserApi {
 
     private final UserAdministrationService userAdministrationService;
 
-    public AdminUserController(UserAdministrationService userAdministrationService) {
+    private final AdminPasswordResetService adminPasswordResetService;
+
+    public AdminUserController(UserAdministrationService userAdministrationService,
+                               AdminPasswordResetService adminPasswordResetService) {
+        this.adminPasswordResetService = adminPasswordResetService;
         this.userAdministrationService = userAdministrationService;
     }
 
@@ -73,6 +81,14 @@ public class AdminUserController implements AdminUserApi {
     @PatchMapping("/{id}/department")
     public AdminUserResponse changeDepartment(@PathVariable UUID id, @Valid @RequestBody DepartmentChangeRequest request) {
         return userAdministrationService.changeDepartment(id, request.departmentId());
+    }
+
+    /** Senha temporária mostrada uma vez ao admin, para entregar pessoalmente (SCRUM-203). */
+    @Override
+    @PutMapping("/{id}/password-reset")
+    public TemporaryPasswordResponse resetPassword(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id,
+                                                   HttpServletRequest request) {
+        return adminPasswordResetService.reset(id, UUID.fromString(jwt.getSubject()), ClientInfo.from(request));
     }
 
     @Override

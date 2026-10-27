@@ -40,6 +40,7 @@ public class AuthService {
     private final LoginAttemptLimiter loginAttemptLimiter;
     private final LoginLockout loginLockout;
     private final SecurityEventService securityEvents;
+    private final AccountEmails accountEmails;
     private final Clock clock;
     private final UUID handlerDepartmentId;
 
@@ -55,6 +56,7 @@ public class AuthService {
                        LoginAttemptLimiter loginAttemptLimiter,
                        LoginLockout loginLockout,
                        SecurityEventService securityEvents,
+                       AccountEmails accountEmails,
                        Clock clock,
                        @Value("${app.tickets.handler-department-id}") UUID handlerDepartmentId) {
         this.userRepository = userRepository;
@@ -66,6 +68,7 @@ public class AuthService {
         this.loginAttemptLimiter = loginAttemptLimiter;
         this.loginLockout = loginLockout;
         this.securityEvents = securityEvents;
+        this.accountEmails = accountEmails;
         this.clock = clock;
         this.handlerDepartmentId = handlerDepartmentId;
         this.dummyPasswordHash = passwordEncoder.encode("senha-ficticia-" + UUID.randomUUID());
@@ -126,8 +129,10 @@ public class AuthService {
         }
 
         user.changePasswordHash(passwordEncoder.encode(request.newPassword()));
-        // As outras sessões caem na hora; a atual é reaberta logo abaixo com tokens novos
+        // As outras sessões (e os navegadores confiáveis) caem na hora; a atual é reaberta logo abaixo com tokens novos
         refreshTokenService.endAllSessions(user);
+        securityEvents.record(SecurityEventType.PASSWORD_CHANGED, user, null, null);
+        accountEmails.passwordChanged(user);
         return openSession(user, refreshTokenService.issue(user));
     }
 
@@ -184,6 +189,9 @@ public class AuthService {
         }
         if (user.getDepartment().getId().equals(handlerDepartmentId)) {
             roles.add(Roles.TICKET_HANDLER);
+        }
+        if (user.isPasswordChangeRequired()) {
+            roles.add(Roles.PASSWORD_CHANGE_REQUIRED);
         }
         return List.copyOf(roles);
     }

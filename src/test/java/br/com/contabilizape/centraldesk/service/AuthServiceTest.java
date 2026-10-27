@@ -75,6 +75,7 @@ class AuthServiceTest {
     @Mock private LoginAttemptLimiter loginAttemptLimiter;
     @Mock private LoginLockout loginLockout;
     @Mock private SecurityEventService securityEvents;
+    @Mock private AccountEmails accountEmails;
 
     private AuthService authService;
 
@@ -83,7 +84,7 @@ class AuthServiceTest {
         // O AuthService gera um hash fictício ao ser criado (usado quando o e-mail não existe)
         when(passwordEncoder.encode(anyString())).thenReturn(DUMMY_HASH);
         authService = new AuthService(userRepository, adminRepository, passwordEncoder,
-                tokenService, userService, refreshTokenService, loginAttemptLimiter, loginLockout, securityEvents,
+                tokenService, userService, refreshTokenService, loginAttemptLimiter, loginLockout, securityEvents, accountEmails,
                 Clock.fixed(NOW, ZoneOffset.UTC), INNOVATION_ID);
     }
 
@@ -241,6 +242,13 @@ class AuthServiceTest {
     }
 
     @Test
+    void temporaryPasswordAddsTheRoleThatOnlyAllowsChangingIt() {
+        User maria = user(GENERAL_ID, UserStatus.ACTIVE);
+        maria.resetPasswordByAdmin("hash-da-maria", NOW.atOffset(ZoneOffset.UTC).plusHours(24));
+        loginReturnsRolesFor(maria, false, List.of(Roles.PASSWORD_CHANGE_REQUIRED));
+    }
+
+    @Test
     void adminReceivesRoleAdmin() {
         loginReturnsRolesFor(user(GENERAL_ID, UserStatus.ACTIVE), true, List.of(Roles.ADMIN));
     }
@@ -309,6 +317,9 @@ class AuthServiceTest {
 
         assertThat(maria.getPasswordHash()).isEqualTo("hash-novo");
         verify(refreshTokenService).endAllSessions(maria);
+        // O dono é avisado: se não foi ele, sabe na hora
+        verify(accountEmails).passwordChanged(maria);
+        verify(securityEvents).record(SecurityEventType.PASSWORD_CHANGED, maria, null, null);
         assertThat(session.refreshToken()).isEqualTo("refresh-novo");
         assertThat(session.accessToken()).isEqualTo("jwt-novo");
     }

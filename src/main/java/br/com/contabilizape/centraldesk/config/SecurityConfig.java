@@ -6,6 +6,8 @@ import br.com.contabilizape.centraldesk.security.TokenService;
 import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import br.com.contabilizape.centraldesk.security.PasswordChangeRequiredFilter;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -56,7 +58,7 @@ public class SecurityConfig {
                 .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                 // O próprio perfil vale para qualquer usuário logado; precisa vir antes da regra de /users/**
                 .requestMatchers(PATHS.matcher("/users/me"), PATHS.matcher("/users/me/**")).authenticated()
-                // Painel do administrador: contas (inclui anonimizar) e pedidos de departamento
+                // Painel do administrador: contas (inclui anonimizar e redefinir senha) e pedidos de departamento
                 .requestMatchers(PATHS.matcher("/users"), PATHS.matcher("/users/**"),
                         PATHS.matcher("/department-requests"), PATHS.matcher("/department-requests/**"))
                     .hasAuthority(Roles.ADMIN)
@@ -75,7 +77,9 @@ public class SecurityConfig {
             .oauth2ResourceServer(oauth2 -> oauth2
                 .bearerTokenResolver(new CookieBearerTokenResolver(PUBLIC_ENDPOINTS))
                 .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
-            );
+            )
+            // Senha temporária: só perfil, troca de senha e logout até a pessoa escolher a dela
+            .addFilterAfter(new PasswordChangeRequiredFilter(), BearerTokenAuthenticationFilter.class);
         return http.build();
     }
 

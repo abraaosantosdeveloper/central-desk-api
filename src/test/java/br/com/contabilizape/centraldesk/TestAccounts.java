@@ -69,6 +69,26 @@ public final class TestAccounts {
         return mockMvc.perform(request);
     }
 
+    /**
+     * Entra e devolve o cookie do access token. Se o login pedir o código (TFA), lê o código no e-mail
+     * gravado pelo {@link RecordingEmailSender} e conclui o acesso.
+     */
+    public static Cookie signIn(MockMvc mockMvc, RecordingEmailSender emails, String email, String password)
+            throws Exception {
+        MockHttpServletResponse response = login(mockMvc, email, password).andReturn().getResponse();
+        if (response.getStatus() == 202) {
+            Cookie challenge = cookie(response, "tfa_challenge");
+            response = mockMvc.perform(post("/auth/login/tfa").cookie(challenge)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{ \"code\": \"%s\", \"trustThisBrowser\": false }".formatted(emails.lastCodeTo(email))))
+                    .andReturn().getResponse();
+        }
+        if (response.getStatus() != 200) {
+            throw new AssertionError("Login de " + email + " falhou: " + response.getStatus() + " " + response.getContentAsString());
+        }
+        return cookie(response, "access_token");
+    }
+
     /** Cookie de nome {@code name} gravado pela resposta (Set-Cookie), ou null. */
     public static Cookie cookie(MockHttpServletResponse response, String name) {
         return response.getHeaders(HttpHeaders.SET_COOKIE).stream()
