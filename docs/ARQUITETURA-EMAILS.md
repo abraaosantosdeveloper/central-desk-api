@@ -1,5 +1,9 @@
 # CentralDesk — Arquitetura dos e-mails de chamado (Resend → Gmail)
 
+> **Atualização (27/10/2026):** a matriz de destinatários (seção 2) foi revista: encerrar avisa solicitante e
+> responsável, reatribuir avisa também o responsável anterior, e há o e-mail de reabertura. A matriz em vigor
+> está em `ADR-SEGURANCA-CONTAS.md` §8. A infraestrutura descrita aqui continua valendo.
+
 Documento de orientação para implementar o **RF14 (notificações por e-mail)**. Escrito em
 23/10/2026 a partir do código da `main` (último merge: PR #28) e da branch
 `chore/SCRUM-178-ci-github-actions`. Segue o `GUIA-DE-DESENVOLVIMENTO.md` (padrões, TDD,
@@ -92,8 +96,9 @@ Observações que saem do código atual:
   e-mail (não há para quem mandar). A fila já avisa a Inovação pelo SSE.
 - **Linha 4 após reatribuição:** o responsável é lido **dentro da transação do comentário** e
   gravado no evento. O responsável anterior não recebe mais nada, exatamente como pedido.
-- **Solicitante = responsável** é impossível hoje (`SelfAssignmentException` e
-  `InvalidAssigneeException`), então o comentário sempre tem um único "outro lado".
+- **Solicitante = responsável** passou a existir com a SCRUM-207 (admin que assume a própria demanda):
+  o comentário nesse caso não tem outro lado e não gera e-mail. A matriz em vigor é a do
+  `ADR-SEGURANCA-CONTAS.md` §8 (PLANO-SEGURANCA §13.1), que substitui a tabela acima.
 - **Encerramento por um admin que não é o responsável:** o e-mail diz "encerrado por
   <nome de quem encerrou>" (`closedBy`), não pelo responsável. É o que aconteceu de fato.
 - **1b quando o solicitante é admin da Inovação:** ele recebe só a versão de solicitante (1a).

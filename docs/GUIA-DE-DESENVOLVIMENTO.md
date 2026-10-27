@@ -158,6 +158,16 @@ aponte para `users` entra na ordem).
 - Chave de conteúdo (`CONTENT_ENCRYPTION_KEY`) e chave de token (`JWT_SECRET`) são distintas
   por ambiente, ficam só em variável de ambiente e **a de conteúdo nunca muda** — sem ela, os
   comentários gravados não podem ser lidos.
+- **Segurança das contas** (ADR `docs/ADR-SEGURANCA-CONTAS.md`): bloqueio após 5 falhas seguidas,
+  códigos por e-mail guardados só como HMAC (`OTP_HMAC_KEY`, terceira chave, também só em variável
+  de ambiente), verificação em duas etapas ligada por padrão (obrigatória para admins), navegadores
+  confiáveis por cookie, confirmação do e-mail no cadastro. Regras novas de conta entram na
+  `AccountSecurityPolicy` (produção: `StrictAccountSecurityPolicy`); **nenhuma propriedade desliga essas
+  regras em produção**. Testes de segurança usam `@SecurityIntegrationTest`.
+- Respostas que não podem vazar informação: senha errada é sempre o 401 genérico; "esqueci minha senha"
+  e "reenviar código" respondem sempre igual; código errado não diz se venceu ou nunca existiu.
+- Nunca colocar código, senha ou texto digitado por usuário no **assunto** de e-mail; nunca logar o
+  corpo de e-mail confidencial em nível acima de DEBUG.
 
 ## 5. Roteiro a partir de agora
 

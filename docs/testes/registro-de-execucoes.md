@@ -403,3 +403,43 @@ Modelo de entrada:
 - **Comando:** `.\mvnw clean test` (Docker ligado)
 - **Situação:** os testes e o código foram escritos sem acesso ao Maven, ao Docker e ao Maven Central, então **nada foi compilado nem executado**. Rodar a suíte e preencher aqui: comando, total, resultado e, nas falhas, causa raiz e correção (subtarefa `[BUG]` no Jira).
 - **Resultado:** _a preencher_
+
+### Mudanças entre a execução 25 e a 26 (segurança das contas, e-mails dos chamados e reabertura)
+
+- SCRUM-207 (admin assume a própria demanda): `TicketAssignIntegrationTest` (+2), `TicketCloseIntegrationTest` (+2),
+  `TicketManagementIntegrationTest` (+3), `TicketServiceTest` (+3), `TicketReassignmentServiceTest` (+2).
+- SCRUM-183 (templates e renderer): `EmailTemplateTest`, `EmailRendererTest` (motor Thymeleaf real, todos os
+  templates, escape de `<script>`), `EmailFormatsTest`, `EmailDispatcherTest` (novos); `EmailConfigTest` (+3),
+  `LoggingEmailSenderTest` (+1).
+- SCRUM-200 a 206 (segurança das contas): `UserTest` (+10), `AccountStatusIntegrationTest`, `OneTimeCodeHasherTest`,
+  `VerificationCodeServiceTest`, `LoginAttemptLimiterTest`, `LoginLockoutIntegrationTest`, `AdminRecoveryTest`,
+  `AdminPasswordResetIntegrationTest`, `PasswordRecoveryIntegrationTest`, `EmailVerificationIntegrationTest`,
+  `TwoFactorIntegrationTest` (novos); `AuthServiceTest`, `UserServiceTest` e `RefreshTokenServiceTest` ampliados.
+  Infraestrutura de teste: `@SecurityIntegrationTest` (política de produção), `RelaxedSecurityTestConfiguration`,
+  `RecordingEmailSender`, `TestAccounts`.
+- SCRUM-184 (e-mails dos chamados): `TicketEmailIntegrationTest` (14, a matriz inteira), `CommentServiceTest`,
+  `TicketReassignmentServiceTest`.
+- SCRUM-208 (reabertura): `TicketReopenIntegrationTest` (7), `TicketTest` (+4), `QueueRealtimeListenerTest` (+2).
+
+## Execução 26 — 2026-10-27 — por fatia, no Windows do desenvolvedor (Java 25, Docker)
+
+- **Comando:** `.\mvnw test "-Dtest=..."` a cada fatia, com as classes da fatia e as vizinhas; testes unitários
+  também rodados fora do Maven (JUnit Platform Launcher) durante o desenvolvimento.
+- **Falhas encontradas e corrigidas no caminho:**
+  - `EmailRendererTest`: o teste procurava `th:` no HTML e achava `max-width:` do CSS — passou a procurar atributos
+    `th:*` de verdade.
+  - `AdminPasswordResetIntegrationTest.resetEndsTheSessionsOfTheAccount` e
+    `PasswordRecoveryIntegrationTest.rightCodeSetsTheNewPasswordAndEndsEverySession` (intermitentes): o token
+    emitido no mesmo segundo do corte de sessões continua valendo (regra do `SessionCutoffValidator`); os testes
+    esperam 1,1 s entre o login e a redefinição.
+  - `TwoFactorIntegrationTest` (2 erros): `UnexpectedRollbackException` — a recusa do desafio vencido marcava a
+    transação para desfazer; `LoginChallengeService.findUsableForUpdate` passou a ter `noRollbackFor`.
+- **Falha de ambiente (não é do código):** `EmailConfigTest.withApiKeyEmailsGoThroughResend` e
+  `onRailwayEmailIsAlwaysRequired` falham só no terminal usado pelo assistente nesta máquina:
+  `HttpClient.newHttpClient()` do JDK lança "Unable to establish loopback connection" (reproduzido fora do projeto,
+  com um `HttpClient` vazio). Conferir no terminal do VS Code e na CI (Linux).
+
+## Execução 27 — suíte completa depois de todas as fatias
+
+- **Comando:** `.\mvnw clean test` (Docker ligado)
+- **Resultado:** _ver a mensagem de entrega; preencher aqui o total depois de rodar no seu terminal_

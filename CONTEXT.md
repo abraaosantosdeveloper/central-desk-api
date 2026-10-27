@@ -81,6 +81,10 @@ CONTENT_ENCRYPTION_KEY=...
 SHOW_SQL=true
 RESEND_API_KEY=...
 EMAIL_FROM=...
+OTP_HMAC_KEY=...
+FRONT_BASE_URL=...
+# EMAIL_REQUIRED=true
+# ADMIN_RECOVERY_EMAIL=   (só na recuperação de emergência)
 ```
 
 O compose lê o `.env` automaticamente. O Spring também o lê, pelo `spring.config.import` do `application.properties` — então a aplicação recebe as variáveis tanto pelo VS Code quanto por `.\mvnw spring-boot:run`. Os testes que sobem o Spring usam a anotação `@IntegrationTest`, que zera `app.bootstrap.admin.*`, fixa `API_DOCS_ENABLED=false` e usa uma chave JWT própria (`IntegrationTest.JWT_SECRET`) e uma chave de comentários própria, para não depender do `.env` local.
@@ -89,7 +93,7 @@ O compose lê o `.env` automaticamente. O Spring também o lê, pelo `spring.con
 
 `API_DOCS_ENABLED=true` liga a documentação da API (Swagger). Sem a variável, ela fica desligada: é o caso de produção.
 
-`CONTENT_ENCRYPTION_KEY` é a chave que cifra os comentários dos chamados: base64 de 32 bytes aleatórios, gerada como a `JWT_SECRET`. Sem ela, a aplicação não sobe, e **ela nunca muda**: sem a chave, os comentários gravados não podem ser lidos (guardar uma cópia em cofre de senhas). `SHOW_SQL=true` (só em desenvolvimento) mostra o SQL no log; sem a variável, fica desligado. `PORT` é informada pelo Railway; sem ela, a porta é 8080. `RESEND_API_KEY` é a chave da API do Resend (permissão só de envio): sem ela, os e-mails não saem e só aparecem no log (`LoggingEmailSender`), que é o comportamento de desenvolvimento e da CI. `EMAIL_FROM` (opcional) é o remetente, no formato `Nome <endereco@dominio>`, e o domínio precisa estar verificado no Resend; o padrão é `CentralDesk <centraldesk@notificacoes.contabilizape.com.br>`. O `.env.example` da raiz lista todas as variáveis.
+`CONTENT_ENCRYPTION_KEY` é a chave que cifra os comentários dos chamados: base64 de 32 bytes aleatórios, gerada como a `JWT_SECRET`. Sem ela, a aplicação não sobe, e **ela nunca muda**: sem a chave, os comentários gravados não podem ser lidos (guardar uma cópia em cofre de senhas). `SHOW_SQL=true` (só em desenvolvimento) mostra o SQL no log; sem a variável, fica desligado. `PORT` é informada pelo Railway; sem ela, a porta é 8080. `RESEND_API_KEY` é a chave da API do Resend (permissão só de envio): sem ela, os e-mails não saem e só aparecem no log (`LoggingEmailSender`), que é o comportamento de desenvolvimento e da CI. `EMAIL_FROM` (opcional) é o remetente, no formato `Nome <endereco@dominio>`, e o domínio precisa estar verificado no Resend; o padrão é `CentralDesk <centraldesk@notificacoes.contabilizape.com.br>`. `OTP_HMAC_KEY` é a chave dos códigos enviados por e-mail (HMAC-SHA256; base64 de 32 bytes, diferente das outras chaves): sem ela, a aplicação não sobe. `FRONT_BASE_URL` é o endereço do front usado nos links dos e-mails (padrão `http://localhost:5173`). `EMAIL_REQUIRED=true` faz a aplicação não subir sem `RESEND_API_KEY`; **no Railway isso vale sempre** (a presença de `RAILWAY_ENVIRONMENT_NAME` basta), porque sem a chave os códigos de acesso iriam para o log. Em desenvolvimento, sem a chave, o código aparece no log só com `LOGGING_LEVEL_BR_COM_CONTABILIZAPE_CENTRALDESK_EMAIL_LOGGINGEMAILSENDER=DEBUG`. `ADMIN_RECOVERY_EMAIL` só existe na recuperação de emergência (seção 7). O `.env.example` da raiz lista todas as variáveis.
 
 **Acentos no `.env`:** pelo `spring.config.import`, o Spring lê o `.env` como `.properties`, em **ISO-8859-1**. Um valor acentuado salvo em UTF-8 chega corrompido ("Abraão" vira "AbraÃ£o"). Nas variáveis lidas pelo Spring, escreva acentos como escape Unicode: `ADMIN_NAME=Abra\u00e3o ...` (ã = `\u00e3`, ç = `\u00e7`, é = `\u00e9`). Senhas: prefira só ASCII; um acento corrompido mudaria o hash gravado. As variáveis `ADMIN_*` definem o **primeiro administrador**, criado pela aplicação ao subir (ver seção 5).
 
@@ -207,6 +211,11 @@ Formato obrigatório: `V<n>__<descricao>.sql` — **`V` maiúsculo** e dois unde
 | `V15__add_ticket_resolution.sql` | `tickets.resolution`: o que foi feito, obrigatório ao encerrar (até 2000 caracteres) (SCRUM-174) |
 | `V16__add_users_sessions_valid_from.sql` | `users.sessions_valid_from`: corte de sessões; access tokens emitidos antes dele deixam de valer (PR #26) |
 | `V17__add_ticket_number.sql` | `tickets.ticket_number`: número sequencial do chamado (`#n`), identity gerado pelo banco; os chamados existentes foram numerados por ordem de abertura (SCRUM-181) |
+| `V18__add_user_security_fields.sql` | `users`: status `PENDING_VERIFICATION` e `BLOCKED`, `failed_login_attempts`, `blocked_at`, `email_verified_at` (contas existentes marcadas como confirmadas), `two_factor_enabled` (padrão `true`), `password_change_required`, `temporary_password_expires_at`, `requested_department_id` (SCRUM-200) |
+| `V19__create_verification_codes.sql` | `verification_codes`: códigos de 6 dígitos por e-mail, só o HMAC (SCRUM-201) |
+| `V20__create_security_events.sql` | `security_events`: trilha de auditoria da segurança das contas (SCRUM-202) |
+| `V21__create_trusted_devices_and_login_challenges.sql` | `trusted_devices` (navegadores confiáveis, 30 dias) e `login_challenges` (etapa entre a senha e o código) (SCRUM-206) |
+| `V22__create_ticket_closures.sql` | `ticket_closures`: encerramentos desfeitos por reabertura (SCRUM-208) |
 
 A V11 e a V12 já estão na `main` (PR #10, 20/10) e rodam em toda a suíte de integração, então valem como aplicadas e **não se editam mais**: qualquer ajuste vira V17 em diante. O código que as usa (entidades, services, endpoints) ainda não existe (SCRUM-152 e SCRUM-150).
 
@@ -223,7 +232,17 @@ Os UUIDs são fixos porque a aplicação os referencia por configuração: assim
 
 **departments** — `id` UUID PK · `name` VARCHAR(120) UNIQUE · `created_at` · `updated_at`
 
-**users** — `id` UUID PK · `full_name` VARCHAR(150) · `cpf` CHAR(11) UNIQUE, nulo após anonimização · `email` VARCHAR(255) UNIQUE (login) · `password_hash` VARCHAR(255) · `status` (`ACTIVE`, `DEACTIVATED`, `ANONYMIZED`) · `department_id` FK · `created_at` · `updated_at` · `validated_at` · `deactivated_at` · `deleted_at` · `sessions_valid_from` TIMESTAMPTZ nullable (V16: corte de sessões; vazio = nenhum corte)
+**users** — `id` UUID PK · `full_name` VARCHAR(150) · `cpf` CHAR(11) UNIQUE, nulo após anonimização · `email` VARCHAR(255) UNIQUE (login) · `password_hash` VARCHAR(255) · `status` (`ACTIVE`, `DEACTIVATED`, `ANONYMIZED`, `PENDING_VERIFICATION`, `BLOCKED`) · `department_id` FK · `created_at` · `updated_at` · `validated_at` · `deactivated_at` · `deleted_at` · `sessions_valid_from` TIMESTAMPTZ nullable (V16: corte de sessões; vazio = nenhum corte) · V18: `failed_login_attempts` SMALLINT · `blocked_at` · `email_verified_at` · `two_factor_enabled` BOOLEAN · `password_change_required` BOOLEAN · `temporary_password_expires_at` · `requested_department_id` FK nullable (departamento pedido no cadastro, até a confirmação do e-mail)
+
+**verification_codes** (V19) — `id` · `user_id` FK (CASCADE) · `purpose` (`EMAIL_VERIFICATION`, `PASSWORD_RESET`, `LOGIN_TFA`, `TFA_DISABLE`, `PASSWORD_CHANGE`) · `code_hmac` CHAR(64) · `expires_at` · `attempts` · `consumed_at` · `created_at` · `request_ip`. Nunca o código em claro.
+
+**security_events** (V20) — `id` · `user_id` FK nullable (CASCADE) · `type` (CHECK com os tipos de `SecurityEventType`) · `ip` · `user_agent` · `details` VARCHAR(500) · `created_at`. Só inserção.
+
+**trusted_devices** (V21) — `id` · `user_id` FK · `token_hash` CHAR(64) UNIQUE (SHA-256 do cookie) · `label` ("Chrome no Windows") · `created_at` · `expires_at` (30 dias fixos) · `last_used_at` · `revoked_at`
+
+**login_challenges** (V21) — `id` · `user_id` FK · `token_hash` CHAR(64) UNIQUE · `expires_at` (5 min) · `failed_attempts` · `failure_notified` · `consumed_at` · `created_at` · `ip`
+
+**ticket_closures** (V22) — `id` · `ticket_id` FK · `closed_by_id` · `closed_at` · `resolution` · `reopened_by_id` · `reopened_at` · `reopen_reason`
 
 **admins** — `user_id` UUID PK e FK para `users` (1:1) · `granted_by_id` FK para `users`, nullable (o primeiro admin não tem) · `granted_at`
 
@@ -304,14 +323,14 @@ O admin age sobre a conta de outra pessoa por **ações pontuais**, cada uma com
 3. O usuário escolhe qualquer departamento.
    - **Qualquer departamento exceto Inovação**: o usuário é criado nele.
    - **Inovação**: o usuário é criado no **Geral** e, na mesma transação, ganha um `department_request` `PENDING` para a Inovação. Os **administradores ativos** são notificados.
-4. A conta nasce `ACTIVE`, sem confirmação de e-mail. `validated_at` fica nulo (significado ainda a definir — ver pendências).
+4. A conta nasce `PENDING_VERIFICATION`, **sem sessão**, e recebe um código por e-mail (SCRUM-205). `POST /auth/email/verify` ativa a conta, cria o pedido da Inovação (só agora) e abre a sessão; o navegador fica confiável. Cadastro pendente com o mesmo e-mail ou CPF é substituído pelo novo (quem tem a caixa de e-mail ganha); contas confirmadas nunca. Pendente há mais de 24 h é apagado pela faxina diária. `validated_at` segue sem uso.
 5. A senha é gravada com bcrypt; a resposta nunca traz `password_hash` nem `cpf`.
 6. **Validações do DTO** (`UserCreateRequest`): nome até 150 caracteres; **CPF com `@Cpf`** (11 dígitos sem pontuação, dígitos verificadores pelo módulo 11, recusa sequências como `11111111111`); e-mail válido até 255; **senha de 8 a 72 caracteres com ao menos uma letra e um número** (letras acentuadas valem); departamento obrigatório.
 7. O front envia o CPF só com dígitos: **não há normalização**, e pontuação é recusada com 400.
 
 ### Jornada de quem quer entrar na Inovação
 
-1. Cadastro escolhendo Inovação → fica no Geral, pedido `PENDING`, admins notificados.
+1. Cadastro escolhendo Inovação → fica no Geral; ao confirmar o e-mail, nasce o pedido `PENDING` e os admins são notificados.
 2. Um admin aprova → pedido `APPROVED`, `department_id` passa a ser o da Inovação; no próximo login recebe `TICKET_HANDLER`. Se recusar → `REJECTED`, continua no Geral.
 3. (Opcional, depois) um admin o torna administrador.
 
@@ -321,7 +340,9 @@ O status **não é editado livremente**: ele muda como consequência de ações.
 
 - Abrir → `OPEN`, sem responsável.
 - Assumir → `IN_PROGRESS`, preenche `assignee_id` e `assigned_at`.
-- Encerrar → `CLOSED`, preenche `closed_by_id`, `closed_at` e `resolution` (o que foi feito, obrigatório; SCRUM-174). Quem abriu o chamado não o encerra (403, decidido em 21/10).
+- Encerrar → `CLOSED`, preenche `closed_by_id`, `closed_at` e `resolution` (o que foi feito, obrigatório; SCRUM-174). Quem abriu o chamado não o encerra (403, decidido em 21/10), **a menos que seja também o responsável** (SCRUM-207).
+- **Admin e a própria demanda (SCRUM-207, decidido em 26/10):** um administrador — e só ele — pode assumir, receber por reatribuição e encerrar os chamados que ele mesmo abriu. A condição de admin vem do banco (`admins`), não do token. Para a Inovação que não é admin, quem abriu continua não atendendo.
+- **Reabrir (SCRUM-208):** o solicitante ou um admin, até 7 dias depois do encerramento, no máximo 3 vezes, com motivo (10 a 1.000 caracteres, registrado como comentário). Volta para o mesmo responsável (`IN_PROGRESS`) se ele ainda pode atender (ativo, da Inovação ou admin); senão, para a fila (`OPEN`). O encerramento desfeito vai para `ticket_closures`. `Ticket.reopen` é o único caminho para sair de `CLOSED`.
 - Cada ação é um endpoint próprio, e o service valida se a transição é permitida (máquina de estados).
 
 Os status continuam `OPEN`, `IN_PROGRESS` e `CLOSED` (enum `TicketStatus`). A separação entre *Concluído* e *Encerrado* segue como pendência (seção 12) e **não** foi adotada para a avaliação.
@@ -445,6 +466,19 @@ Revogar só os refresh tokens deixava o access token em uso valendo até 15 min.
 - O corte é truncado no segundo, como o `iat` do JWT: o token emitido logo depois dele continua valendo.
 - Desativar e anonimizar **não** usam o corte: seguem com `revokeAll` (só refresh tokens). O access token em uso vale até 15 min, mas as rotas conferem o status da conta e respondem 403.
 
+### Segurança das contas (SCRUM-198 a 206, decidida em 26/10)
+
+Detalhes e o porquê de cada regra: `docs/ADR-SEGURANCA-CONTAS.md` (e o plano `PLANO-SEGURANCA-CONTAS-E-EMAILS.md` no Projeto).
+
+- **Códigos por e-mail**: 6 dígitos (`SecureRandom`), guardados só como HMAC-SHA256 com `OTP_HMAC_KEY` sobre `finalidade|usuário|código`, comparação em tempo constante. 10 min de validade (`LOGIN_TFA`: 5), 5 tentativas, uso único, novo pedido invalida o anterior, 60 s entre pedidos, 5 por hora por conta e finalidade, 20 por hora por IP. Erro: 400 `errors.code` "Código inválido ou vencido.", sem dizer o motivo.
+- **Bloqueio**: 5 falhas seguidas (senha errada ou, com a senha certa, código de acesso errado) → `BLOCKED`, sessões e navegadores confiáveis revogados, e-mail ao dono e aos admins. Senha errada responde sempre o 401 genérico; senha certa em conta bloqueada → 403 `code: account-blocked`. Linha do usuário travada no login (`findByEmailForUpdate`).
+- **Limite por IP**: 20 tentativas **erradas** em 15 min por IP (em memória) → 429 com `Retry-After`. O IP vem do Tomcat (`server.forward-headers-strategy=native`), que só confia no `X-Forwarded-For` de proxies internos.
+- **Redefinição pelo admin** (`PUT /users/{id}/password-reset`): senha temporária de 16 caracteres mostrada só ao admin, 24 h, troca obrigatória. Enquanto isso o token leva o perfil `PASSWORD_CHANGE_REQUIRED` e o `PasswordChangeRequiredFilter` recusa tudo (403 `password-change-required`) menos `GET /users/me`, `PATCH /users/me/password` e `POST /auth/logout`. É o único caminho de volta para uma conta bloqueada.
+- **Recuperação de emergência**: `ADMIN_RECOVERY_EMAIL` + `ADMIN_PASSWORD` liberam, na subida, uma conta de admin **bloqueada ou desativada** com `ADMIN_PASSWORD` como senha temporária (`AdminRecovery`). Remover as variáveis depois.
+- **Esqueci minha senha**: `POST /auth/password/forgot` sempre 202 igual; conta bloqueada recebe aviso, não código; `POST /auth/password/reset` derruba tudo. Código errado aqui não conta para o bloqueio.
+- **Verificação em duas etapas**: ligada por padrão, obrigatória para admins. Login com a senha certa fora de navegador confiável → 202 `{ tfaRequired: true }`, cookie `tfa_challenge` (5 min, `Path=/auth`) e código por e-mail; **nenhum token**. `POST /auth/login/tfa` conclui e, com `trustThisBrowser`, grava `trusted_device` (30 dias fixos, `Path=/auth`, até 10 por conta). Troca de senha, bloqueio, desativação, redefinição e desligar a TFA revogam os navegadores confiáveis (junto com o fim das sessões, no `RefreshTokenService`). Desligar a TFA ou trocar a senha com ela ligada pede código.
+- **Testes**: `@SecurityIntegrationTest` usa a política de produção (`StrictAccountSecurityPolicy`); o `@IntegrationTest` das outras funcionalidades usa uma política relaxada que só existe no código de teste (sem confirmação de e-mail, sem TFA, sem limite por IP).
+
 ### Pendências de sessão
 
 - Limpeza periódica de `refresh_tokens` vencidos ou revogados (tarefa agendada).
@@ -452,7 +486,7 @@ Revogar só os refresh tokens deixava o access token em uso valendo até 15 min.
 
 ### `SecurityConfig` atual
 
-- `PUBLIC_ENDPOINTS` é a lista única de rotas sem login: `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `GET /departments`, `/error` e as rotas da documentação (`/v3/api-docs/**`, `/swagger-ui/**`, `/swagger-ui.html`). A mesma lista libera o acesso e faz o cookie ser ignorado. Todo o resto exige um JWT válido.
+- `PUBLIC_ENDPOINTS` é a lista única de rotas sem login: `POST /auth/register`, `POST /auth/login`, `POST /auth/login/tfa`, `POST /auth/login/tfa/resend`, `POST /auth/refresh`, `POST /auth/logout`, `POST /auth/password/forgot`, `POST /auth/password/reset`, `POST /auth/email/verify`, `POST /auth/email/resend`, `GET /departments`, `/error` e as rotas da documentação (`/v3/api-docs/**`, `/swagger-ui/**`, `/swagger-ui.html`). A mesma lista libera o acesso e faz o cookie ser ignorado. Todo o resto exige um JWT válido.
 - `/error` precisa estar liberado: o Spring encaminha os erros para lá, e se a rota estiver protegida o cliente recebe um 401 que esconde o erro real.
 - Com a documentação desligada, as rotas dela respondem 404 (não existem), e não 401.
 - CSRF desligado: o `SameSite=Strict` do cookie impede que outro site envie requisições com ele. Rever se o front-end passar a ficar em outro domínio (no deploy, front e API ficam em subdomínios do mesmo domínio; guia, seção 6, item 1.3).
@@ -483,7 +517,18 @@ Revogar só os refresh tokens deixava o access token em uso valendo até 15 min.
 | POST | `/auth/login` | login (público): usuário + permissões no corpo, JWT no cookie `access_token` | **implementado** |
 | POST | `/auth/refresh` | renovação da sessão (público): rotação do refresh token, cookies novos | **implementado** |
 | POST | `/auth/logout` | logout (público): revoga o refresh token e apaga os dois cookies (204) | **implementado** |
+| POST | `/auth/login/tfa` | segunda etapa do login com o código do e-mail e o cookie `tfa_challenge` (SCRUM-206) | **implementado** |
+| POST | `/auth/login/tfa/resend` | reenvia o código de acesso (SCRUM-206) | **implementado** |
+| POST | `/auth/email/verify` | confirma o e-mail do cadastro e abre a sessão (SCRUM-205) | **implementado** |
+| POST | `/auth/email/resend` | reenvia o código de confirmação; sempre 202 (SCRUM-205) | **implementado** |
+| POST | `/auth/password/forgot` | esqueci minha senha; sempre 202 (SCRUM-204) | **implementado** |
+| POST | `/auth/password/reset` | redefine com o código (SCRUM-204) | **implementado** |
 | GET | `/users/me` | dados e permissões do usuário logado | **implementado** |
+| GET/PUT | `/users/me/two-factor` | ver, ligar e desligar a verificação em duas etapas (desligar: senha + código; admin → 409) (SCRUM-206) | **implementado** |
+| POST | `/users/me/two-factor/code` · `/users/me/password/code` | códigos para desligar a TFA e para trocar a senha (SCRUM-206) | **implementado** |
+| GET/DELETE | `/users/me/trusted-devices[/{id}]` | navegadores confiáveis: listar, remover um, remover todos (SCRUM-206) | **implementado** |
+| PUT | `/users/{id}/password-reset` | redefinição pelo admin com senha temporária (SCRUM-203) | **implementado** |
+| PATCH | `/tickets/{id}/reopen` | reabrir chamado encerrado, corpo `{ reason }` (SCRUM-208) | **implementado** |
 | PUT | `/users/me` | edição do próprio perfil: **só o nome** (SCRUM-156) | **implementado** |
 | PATCH | `/users/me/password` | troca de senha: exige a atual, revoga todas as sessões, invalida na hora os access tokens antigos (PR #26) e reabre a atual com cookies novos (204) (SCRUM-157) | **implementado** |
 | DELETE | `/users/me` | encerramento da própria conta: confirma a senha, anonimiza e apaga os cookies (204); último admin → 409 (SCRUM-159) | **implementado** |
