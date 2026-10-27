@@ -27,6 +27,7 @@ import br.com.contabilizape.centraldesk.event.TicketClosedEvent;
 import br.com.contabilizape.centraldesk.event.TicketOpenedEvent;
 import br.com.contabilizape.centraldesk.realtime.TicketCreatedEvent;
 import br.com.contabilizape.centraldesk.model.UserStatus;
+import br.com.contabilizape.centraldesk.repository.AdminRepository;
 import br.com.contabilizape.centraldesk.repository.CategoryRepository;
 import br.com.contabilizape.centraldesk.repository.PriorityRepository;
 import br.com.contabilizape.centraldesk.repository.TicketRepository;
@@ -76,6 +77,7 @@ class TicketServiceTest {
 
     @Mock private TicketRepository ticketRepository;
     @Mock private UserRepository userRepository;
+    @Mock private AdminRepository adminRepository;
     @Mock private CategoryRepository categoryRepository;
     @Mock private PriorityRepository priorityRepository;
     @Mock private ApplicationEventPublisher eventPublisher;
@@ -88,7 +90,7 @@ class TicketServiceTest {
 
     @BeforeEach
     void setUp() {
-        ticketService = new TicketService(ticketRepository, userRepository, categoryRepository, priorityRepository,
+        ticketService = new TicketService(ticketRepository, userRepository, adminRepository, categoryRepository, priorityRepository,
                 eventPublisher, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -468,6 +470,22 @@ class TicketServiceTest {
     }
 
     @Test
+    void adminAssumesTicketHeOpened() {
+        User admin = user(OTHER_ID, UserStatus.ACTIVE);
+        Ticket ticket = new Ticket("Integração com o ERP", "Demanda interna", hardware, medium, admin);
+        when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(admin));
+        when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
+        when(adminRepository.existsById(OTHER_ID)).thenReturn(true);
+
+        ticketService.assign(TICKET_ID, OTHER_ID);
+
+        // Demandas internas costumam ser específicas: só o admin pode atender o que ele mesmo abriu
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+        assertThat(ticket.getAssignee()).isSameAs(admin);
+        assertThat(published(TicketAssignedEvent.class).assigneeId()).isEqualTo(OTHER_ID);
+    }
+
+    @Test
     void deactivatedHandlerCannotAssign() {
         User handler = user(OTHER_ID, UserStatus.DEACTIVATED);
         when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(handler));
@@ -486,10 +504,38 @@ class TicketServiceTest {
         when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(maria));
         when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
 
-        // Vale mesmo para quem é da Inovação ou admin: quem abriu não encerra
+        // Quem abriu só encerra se for também o responsável (admin que assumiu a própria demanda)
         assertThatThrownBy(() -> ticketService.close(TICKET_ID, REQUESTER_ID, List.of(Roles.ADMIN), "Troquei a fonte."))
                 .isInstanceOf(TicketCloseForbiddenException.class);
         assertThat(ticket.getStatus()).isEqualTo(TicketStatus.OPEN);
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
+    void adminClosesTicketHeOpenedWhenHeIsTheAssignee() {
+        User admin = user(OTHER_ID, UserStatus.ACTIVE);
+        Ticket ticket = new Ticket("Integração com o ERP", "Demanda interna", hardware, medium, admin);
+        ticket.assign(admin, NOW.atOffset(ZoneOffset.UTC));
+        when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(admin));
+        when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
+
+        ticketService.close(TICKET_ID, OTHER_ID, List.of(Roles.ADMIN), "Integração publicada.");
+
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.CLOSED);
+        assertThat(ticket.getClosedBy()).isSameAs(admin);
+    }
+
+    @Test
+    void requesterCannotCloseOwnTicketWhileSomeoneElseHandlesIt() {
+        User admin = user(OTHER_ID, UserStatus.ACTIVE);
+        Ticket ticket = new Ticket("Integração com o ERP", "Demanda interna", hardware, medium, admin);
+        ticket.assign(requester(UserStatus.ACTIVE), NOW.atOffset(ZoneOffset.UTC));
+        when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(admin));
+        when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
+
+        assertThatThrownBy(() -> ticketService.close(TICKET_ID, OTHER_ID, List.of(Roles.ADMIN), "Desisti."))
+                .isInstanceOf(TicketCloseForbiddenException.class);
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
         verifyNoInteractions(eventPublisher);
     }
 

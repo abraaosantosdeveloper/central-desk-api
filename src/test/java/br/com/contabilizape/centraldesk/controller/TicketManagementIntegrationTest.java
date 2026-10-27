@@ -163,6 +163,43 @@ class TicketManagementIntegrationTest {
         reassign(ticket, beatriz, login(CARLOS)).andExpect(status().isBadRequest());
     }
 
+    // ---------- SCRUM-207: o admin pode receber o chamado que ele mesmo abriu ----------
+
+    @Test
+    void ticketOpenedByAnAdminCanBeHandedBackToHim() throws Exception {
+        UUID ticket = jdbc.queryForObject("""
+                INSERT INTO tickets (title, description, status, category_id, priority_id, requester_id, assignee_id, assigned_at)
+                VALUES ('Integração com o ERP', 'Demanda interna', 'IN_PROGRESS', ?, 2, ?, ?, now()) RETURNING id
+                """, UUID.class, anyCategory(), admin, carlos);
+
+        reassign(ticket, admin, login(CARLOS))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.assigneeId").value(admin.toString()));
+    }
+
+    @Test
+    void adminTakesHisOwnTicketFromTheQueueThroughReassign() throws Exception {
+        UUID ticket = jdbc.queryForObject("""
+                INSERT INTO tickets (title, description, category_id, priority_id, requester_id)
+                VALUES ('Integração com o ERP', 'Demanda interna', ?, 2, ?) RETURNING id
+                """, UUID.class, anyCategory(), admin);
+
+        reassign(ticket, admin, login(ADMIN))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
+                .andExpect(jsonPath("$.assigneeId").value(admin.toString()));
+    }
+
+    @Test
+    void requesterAndAssigneeBeingTheSameAdminCanStillComment() throws Exception {
+        UUID ticket = jdbc.queryForObject("""
+                INSERT INTO tickets (title, description, status, category_id, priority_id, requester_id, assignee_id, assigned_at)
+                VALUES ('Integração com o ERP', 'Demanda interna', 'IN_PROGRESS', ?, 2, ?, ?, now()) RETURNING id
+                """, UUID.class, anyCategory(), admin, admin);
+
+        comment(ticket, login(ADMIN)).andExpect(status().isCreated());
+    }
+
     // ---------- SCRUM-168: busca, departamento e ordenação ----------
 
     @Test

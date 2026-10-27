@@ -133,6 +133,39 @@ class TicketReassignmentServiceTest {
     }
 
     @Test
+    void requesterWhoIsAdminCanReceiveHisOwnTicket() {
+        User adminRequester = user(REQUESTER_ID, UserStatus.ACTIVE, department(UUID.randomUUID()));
+        Ticket ticket = new Ticket("Integração", "Demanda interna", mock(Category.class), mock(Priority.class),
+                adminRequester);
+        ticket.assign(actor, OffsetDateTime.now(ZoneOffset.UTC));
+        when(userRepository.findById(ACTOR_ID)).thenReturn(Optional.of(actor));
+        when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
+        when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(adminRequester));
+        when(adminRepository.existsById(REQUESTER_ID)).thenReturn(true);
+
+        service.reassign(TICKET_ID, ACTOR_ID, List.of(Roles.TICKET_HANDLER), REQUESTER_ID);
+
+        assertThat(ticket.getAssignee()).isSameAs(adminRequester);
+        assertThat(published().newAssigneeId()).isEqualTo(REQUESTER_ID);
+    }
+
+    @Test
+    void requesterFromInnovationWhoIsNotAdminCannotReceiveHisOwnTicket() {
+        User handlerRequester = user(REQUESTER_ID, UserStatus.ACTIVE, innovation);
+        Ticket ticket = new Ticket("Notebook", "Não liga", mock(Category.class), mock(Priority.class), handlerRequester);
+        ticket.assign(actor, OffsetDateTime.now(ZoneOffset.UTC));
+        when(userRepository.findById(ACTOR_ID)).thenReturn(Optional.of(actor));
+        when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
+        when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(handlerRequester));
+
+        assertThatThrownBy(() -> service.reassign(TICKET_ID, ACTOR_ID, List.of(Roles.TICKET_HANDLER), REQUESTER_ID))
+                .isInstanceOf(InvalidAssigneeException.class)
+                .hasMessage("Quem abriu o chamado não pode atendê-lo.");
+        assertThat(ticket.getAssignee()).isSameAs(actor);
+        verifyNoInteractions(eventPublisher);
+    }
+
+    @Test
     void deactivatedDestinationIsRejectedAndNothingIsPublished() {
         Ticket ticket = ticketInProgressWith(actor);
         User deactivated = user(NEW_ASSIGNEE_ID, UserStatus.DEACTIVATED, innovation);

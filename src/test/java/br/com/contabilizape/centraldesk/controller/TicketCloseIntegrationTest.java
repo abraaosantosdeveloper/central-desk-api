@@ -113,6 +113,34 @@ class TicketCloseIntegrationTest {
                 .andExpect(jsonPath("$.status").value("CLOSED"));
     }
 
+    // ---------- SCRUM-207: o admin encerra o chamado que abriu e assumiu ----------
+
+    @Test
+    void adminClosesTicketHeOpenedAndAssumed() throws Exception {
+        Cookie session = adminSession();
+        UUID admin = userId(ADMIN);
+        UUID ticket = ticketRequestedBy(admin, "IN_PROGRESS", admin);
+
+        close(ticket, session, "Integração publicada.")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CLOSED"))
+                .andExpect(jsonPath("$.closedById").value(admin.toString()));
+    }
+
+    @Test
+    void adminCannotCloseTicketHeOpenedWhileItIsInTheQueueOrWithSomeoneElse() throws Exception {
+        Cookie session = adminSession();
+        UUID admin = userId(ADMIN);
+        UUID inQueue = ticketRequestedBy(admin, "OPEN", null);
+        UUID withHandler = ticketRequestedBy(admin, "IN_PROGRESS", handler);
+
+        // Como solicitante, ele pede o encerramento pela conversa; só encerra se for o responsável
+        close(inQueue, session, "Desisti").andExpect(status().isForbidden());
+        close(withHandler, session, "Desisti").andExpect(status().isForbidden());
+        assertThat(jdbc.queryForObject("SELECT status FROM tickets WHERE id = ?", String.class, withHandler))
+                .isEqualTo("IN_PROGRESS");
+    }
+
     @Test
     void anotherCollaboratorGetsNotFound() throws Exception {
         UUID ticket = ticket("OPEN", null);
@@ -161,6 +189,22 @@ class TicketCloseIntegrationTest {
     }
 
     // ---------- auxiliares ----------
+
+    private UUID userId(String email) {
+        return jdbc.queryForObject("SELECT id FROM users WHERE email = ?", UUID.class, email);
+    }
+
+    private UUID ticketRequestedBy(UUID requester, String status, UUID assignee) {
+        UUID category = jdbc.queryForObject("SELECT id FROM categories LIMIT 1", UUID.class);
+        UUID id = jdbc.queryForObject("""
+                INSERT INTO tickets (title, description, status, category_id, priority_id, requester_id)
+                VALUES ('Integração com o ERP', 'Demanda interna', ?, ?, 2, ?) RETURNING id
+                """, UUID.class, status, category, requester);
+        if (assignee != null) {
+            jdbc.update("UPDATE tickets SET assignee_id = ?, assigned_at = now() WHERE id = ?", assignee, id);
+        }
+        return id;
+    }
 
     private UUID register(String email, String cpf) throws Exception {
         mockMvc.perform(post("/auth/register").contentType(MediaType.APPLICATION_JSON).content("""

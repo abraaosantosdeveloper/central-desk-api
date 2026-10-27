@@ -81,7 +81,7 @@ public class TicketReassignmentService {
         return TicketResponse.from(ticket);
     }
 
-    // Destino: conta ativa da Inovação ou admin, e nunca quem abriu o chamado
+    // Destino: conta ativa da Inovação ou admin. Quem abriu o chamado só pode recebê-lo se for admin (SCRUM-207)
     private User findEligibleAssignee(UUID assigneeId, Ticket ticket) {
         User assignee = userRepository.findById(assigneeId)
                 .filter(User::isActive)
@@ -89,7 +89,7 @@ public class TicketReassignmentService {
                         || adminRepository.existsById(user.getId()))
                 .orElseThrow(() -> new InvalidAssigneeException(
                         "Escolha uma pessoa ativa da Inovação ou um administrador."));
-        if (assignee.getId().equals(ticket.getRequester().getId())) {
+        if (assignee.getId().equals(ticket.getRequester().getId()) && !adminRepository.existsById(assignee.getId())) {
             throw new InvalidAssigneeException("Quem abriu o chamado não pode atendê-lo.");
         }
         return assignee;

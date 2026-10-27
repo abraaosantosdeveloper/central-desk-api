@@ -133,6 +133,35 @@ class TicketAssignIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT status FROM tickets WHERE id = ?", String.class, ticket)).isEqualTo("OPEN");
     }
 
+    // ---------- SCRUM-207: o admin assume o próprio chamado (demanda interna) ----------
+
+    @Test
+    void adminAssumesTicketHeOpenedForAnInternalDemand() throws Exception {
+        Cookie session = adminSession();
+        UUID admin = userId(ADMIN);
+        UUID ticket = ticketRequestedBy(admin);
+
+        mockMvc.perform(patch("/tickets/" + ticket + "/assign").cookie(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
+                .andExpect(jsonPath("$.requesterId").value(admin.toString()))
+                .andExpect(jsonPath("$.assigneeId").value(admin.toString()));
+    }
+
+    @Test
+    void formerAdminCannotAssumeTicketHeOpenedEvenWithTheOldToken() throws Exception {
+        Cookie session = adminSession();
+        UUID admin = userId(ADMIN);
+        UUID ticket = ticketRequestedBy(admin);
+        // O token ainda diz ADMIN (vale até 15 min): a regra consulta o banco, não o token
+        jdbc.update("DELETE FROM admins WHERE user_id = ?", admin);
+
+        mockMvc.perform(patch("/tickets/" + ticket + "/assign").cookie(session))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.detail").value("Quem abriu o chamado não pode assumi-lo."));
+        assertThat(jdbc.queryForObject("SELECT status FROM tickets WHERE id = ?", String.class, ticket)).isEqualTo("OPEN");
+    }
+
     @Test
     void collaboratorCannotAssign() throws Exception {
         UUID ticket = ticket("OPEN", null);
@@ -179,6 +208,18 @@ class TicketAssignIntegrationTest {
         UUID admin = register(ADMIN, "71428793860");
         jdbc.update("INSERT INTO admins (user_id) VALUES (?)", admin);
         return login(ADMIN);
+    }
+
+    private UUID userId(String email) {
+        return jdbc.queryForObject("SELECT id FROM users WHERE email = ?", UUID.class, email);
+    }
+
+    private UUID ticketRequestedBy(UUID requester) {
+        UUID category = jdbc.queryForObject("SELECT id FROM categories LIMIT 1", UUID.class);
+        return jdbc.queryForObject("""
+                INSERT INTO tickets (title, description, status, category_id, priority_id, requester_id)
+                VALUES ('Integração com o ERP', 'Demanda interna', 'OPEN', ?, 2, ?) RETURNING id
+                """, UUID.class, category, requester);
     }
 
     private UUID ticket(String status, UUID assignee) {

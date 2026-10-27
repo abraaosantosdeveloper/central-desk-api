@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
+
+    <title>Two Factor Template</title>
+    <style>
+        :root{
+            --main-blue: #002068;
+            --orange: #FF5E33;
+            --blue-bg: hsla(200, 100%, 51%, 0.15);
+            --text-black: #1E1E1E;
+        }
+
+        *{
+            margin: 0 auto;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: Inter;
+        }
+
+        header{
+            width: 580px;
+            height: 120px;
+            align-content: center;
+            background-color: var(--main-blue);
+            border-bottom: 3px solid var(--orange);
+        }
+
+        p{
+            text-align: justify;
+        }
+
+        .logo{
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            width: fit-content;
+        }
+
+        header>.logo>img{
+            height: 60px;
+        }
+        header>.logo>h1{
+            color: #fff;
+        }
+
+        .main{
+            width: 580px;
+            padding: 24px 20px;
+            gap: 20px;
+        }
+
+        .main > * {
+            margin: 30px 0;
+        }
+
+        .ticket-info{
+            background-color: var(--blue-bg);
+            padding: 20px 25px;
+            border-radius: 5px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .ticket-info > * {
+            color: var(--main-blue);
+            width: 100%;
+        }
+
+        .access-account{
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .access-account>p{
+            width: 100%;
+            text-align: justify;
+        }
+
+        #access-btn{
+            padding: 6px 30px;
+            background-color: #2F66E3;
+            color: #fff;
+            border-radius: 5px;
+            text-align: center;
+            text-decoration: none;
+        }
+
+        footer{
+            width: 580px;
+            text-align: center;
+            height: 60px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            color: #858A9D;
+        }
+
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">
+            <img src="./assets/Logo.svg" alt="">
+            <h1>CentralDesk</h1>
+        </div>
+    </header>
+
+    <div class="main">
+        <h2>Template de Chamado</h2>
+
+        <p>
+            Caro <strong>usuário</strong>, este é um template que será usado para todos os e-mails e adaptado para cada situação e regra de negócio.
+            De acordo com a necessidade e contexto das notificações, cada campo abaixo será alterado e enviado de acordo com a necessidade.
+        </p>
+
+        <div class="ticket-info">
+            <p><strong>Número do Chamado: </strong> #1AB3C2</p>
+            <p><strong>Solicitante: </strong> Nome Sobrenome</p>
+            <p><strong>Data de Abertura: </strong> 12/11/1999 - 10:20</p>
+        </div>
+
+        <span style="margin: 20px 0;">Para verificar, faça login, clique em <strong>“chamados que abri”</strong> e pesquise pelo número do chamado mostrado acima.</span>
+
+        <section class="access-account">
+            <h3>Clique aqui para acessar sua conta</h3>
+            <a id="access-btn" href="https://chamados.contabilizapharma.com.br" target="_blank">Acessar</a>
+        </section>
+    </div>
+
+    <footer>
+        <span>Departamento de Inovação - Contabiliza Pharma</span>
+    </footer>
+</body>
+</html>

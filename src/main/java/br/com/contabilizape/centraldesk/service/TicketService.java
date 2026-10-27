@@ -25,6 +25,7 @@ import br.com.contabilizape.centraldesk.model.Ticket;
 import br.com.contabilizape.centraldesk.model.TicketStatus;
 import br.com.contabilizape.centraldesk.model.User;
 import br.com.contabilizape.centraldesk.model.UserStatus;
+import br.com.contabilizape.centraldesk.repository.AdminRepository;
 import br.com.contabilizape.centraldesk.repository.CategoryRepository;
 import br.com.contabilizape.centraldesk.repository.PriorityRepository;
 import br.com.contabilizape.centraldesk.repository.TicketRepository;
@@ -48,6 +49,7 @@ public class TicketService {
 
     private final TicketRepository ticketRepository;
     private final UserRepository userRepository;
+    private final AdminRepository adminRepository;
     private final CategoryRepository categoryRepository;
     private final PriorityRepository priorityRepository;
     private final ApplicationEventPublisher eventPublisher;
@@ -55,12 +57,14 @@ public class TicketService {
 
     public TicketService(TicketRepository ticketRepository,
                          UserRepository userRepository,
+                         AdminRepository adminRepository,
                          CategoryRepository categoryRepository,
                          PriorityRepository priorityRepository,
                          ApplicationEventPublisher eventPublisher,
                          Clock clock) {
         this.ticketRepository = ticketRepository;
         this.userRepository = userRepository;
+        this.adminRepository = adminRepository;
         this.categoryRepository = categoryRepository;
         this.priorityRepository = priorityRepository;
         this.eventPublisher = eventPublisher;
@@ -68,7 +72,8 @@ public class TicketService {
     }
 
     /**
-     * Encerra o chamado. Podem: a Inovação e os administradores; o solicitante não encerra o próprio (403).
+     * Encerra o chamado. Podem: a Inovação e os administradores; o solicitante não encerra o próprio (403),
+     * a menos que seja também o responsável (admin que assumiu a própria demanda, SCRUM-207).
      * Os demais recebem 404, como em GET /tickets/{id}.
      */
     @Transactional
@@ -77,7 +82,7 @@ public class TicketService {
         Ticket ticket = ticketRepository.findByIdForUpdate(ticketId)
                 .filter(found -> TicketAccess.canView(found, userId, roles))
                 .orElseThrow(() -> new TicketNotFoundException(ticketId));
-        if (ticket.getRequester().getId().equals(userId)) {
+        if (ticket.getRequester().getId().equals(userId) && !isAssignee(ticket, userId)) {
             throw new TicketCloseForbiddenException();
         }
         boolean wasOpen = ticket.isOpen(); // lido antes: encerrar muda o status
@@ -90,14 +95,15 @@ public class TicketService {
     /**
      * O usuário logado (Inovação ou admin, regra no SecurityConfig) assume o chamado: OPEN → IN_PROGRESS.
      * A linha fica travada até o fim da transação; se duas pessoas assumirem ao mesmo tempo,
-     * a segunda encontra IN_PROGRESS e recebe 409.
+     * a segunda encontra IN_PROGRESS e recebe 409. Quem abriu o chamado não o assume, exceto um administrador
+     * (demandas internas, SCRUM-207); a condição de admin vem do banco, não do token.
      */
     @Transactional
     public TicketResponse assign(UUID ticketId, UUID userId) {
         User assignee = findActiveRequester(userId);
         Ticket ticket = ticketRepository.findByIdForUpdate(ticketId)
                 .orElseThrow(() -> new TicketNotFoundException(ticketId));
-        if (ticket.getRequester().getId().equals(userId)) {
+        if (ticket.getRequester().getId().equals(userId) && !adminRepository.existsById(userId)) {
             throw new SelfAssignmentException();
         }
         ticket.assign(assignee, OffsetDateTime.now(clock));
@@ -207,6 +213,10 @@ public class TicketService {
 
     private Priority findPriority(Short priorityId) {
         return priorityRepository.findById(priorityId).orElseThrow(() -> new PriorityNotFoundException(priorityId));
+    }
+
+    private static boolean isAssignee(Ticket ticket, UUID userId) {
+        return ticket.getAssignee() != null && ticket.getAssignee().getId().equals(userId);
     }
 
     // O token vale até 15 min: a conta pode ter sido desativada nesse meio-tempo
