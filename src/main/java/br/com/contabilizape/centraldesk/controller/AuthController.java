@@ -2,7 +2,10 @@ package br.com.contabilizape.centraldesk.controller;
 
 import br.com.contabilizape.centraldesk.controller.doc.AuthApi;
 import br.com.contabilizape.centraldesk.dto.CurrentUserResponse;
+import br.com.contabilizape.centraldesk.dto.EmailVerificationRequest;
 import br.com.contabilizape.centraldesk.dto.ForgotPasswordRequest;
+import br.com.contabilizape.centraldesk.dto.ResendCodeRequest;
+import br.com.contabilizape.centraldesk.service.EmailVerificationService;
 import br.com.contabilizape.centraldesk.dto.LoginRequest;
 import br.com.contabilizape.centraldesk.dto.MessageResponse;
 import br.com.contabilizape.centraldesk.dto.PasswordResetRequest;
@@ -36,11 +39,14 @@ public class AuthController implements AuthApi {
     private final AccessTokenCookie accessTokenCookie;
     private final RefreshTokenCookie refreshTokenCookie;
     private final PasswordRecoveryService passwordRecoveryService;
+    private final EmailVerificationService emailVerificationService;
 
     public AuthController(UserService userService, AuthService authService,
                           AccessTokenCookie accessTokenCookie, RefreshTokenCookie refreshTokenCookie,
-                          PasswordRecoveryService passwordRecoveryService) {
+                          PasswordRecoveryService passwordRecoveryService,
+                          EmailVerificationService emailVerificationService) {
         this.passwordRecoveryService = passwordRecoveryService;
+        this.emailVerificationService = emailVerificationService;
         this.userService = userService;
         this.authService = authService;
         this.accessTokenCookie = accessTokenCookie;
@@ -49,8 +55,9 @@ public class AuthController implements AuthApi {
 
     @Override
     @PostMapping("/register")
-    public ResponseEntity<UserResponse> register(@RequestBody @Valid UserCreateRequest request) {
-        UserResponse response = userService.create(request);
+    public ResponseEntity<UserResponse> register(@RequestBody @Valid UserCreateRequest request,
+                                                 HttpServletRequest httpRequest) {
+        UserResponse response = userService.create(request, ClientInfo.from(httpRequest));
         // O recurso criado é um usuário, por isso o Location aponta para /users
         URI location = URI.create("/users/" + response.id());
         return ResponseEntity.created(location).body(response);
@@ -78,6 +85,23 @@ public class AuthController implements AuthApi {
         return ResponseEntity.noContent()
                 .header(HttpHeaders.SET_COOKIE, accessTokenCookie.clear().toString(), refreshTokenCookie.clear().toString())
                 .build();
+    }
+
+    /** Código certo: a conta é ativada e a sessão já é aberta (SCRUM-205). */
+    @Override
+    @PostMapping("/email/verify")
+    public ResponseEntity<CurrentUserResponse> verifyEmail(@RequestBody @Valid EmailVerificationRequest request,
+                                                           HttpServletRequest httpRequest) {
+        return withSessionCookies(emailVerificationService.verify(request, ClientInfo.from(httpRequest)).session());
+    }
+
+    @Override
+    @PostMapping("/email/resend")
+    public ResponseEntity<MessageResponse> resendVerificationCode(@RequestBody @Valid ResendCodeRequest request,
+                                                                  HttpServletRequest httpRequest) {
+        emailVerificationService.resend(request.email(), ClientInfo.from(httpRequest));
+        return ResponseEntity.accepted().body(new MessageResponse(
+                "Se houver um cadastro aguardando confirmação para este e-mail, enviamos um novo código."));
     }
 
     /** Sempre 202 com a mesma mensagem, exista a conta ou não (SCRUM-204). */

@@ -1,7 +1,9 @@
 package br.com.contabilizape.centraldesk.controller.doc;
 
 import br.com.contabilizape.centraldesk.dto.CurrentUserResponse;
+import br.com.contabilizape.centraldesk.dto.EmailVerificationRequest;
 import br.com.contabilizape.centraldesk.dto.ForgotPasswordRequest;
+import br.com.contabilizape.centraldesk.dto.ResendCodeRequest;
 import br.com.contabilizape.centraldesk.dto.LoginRequest;
 import br.com.contabilizape.centraldesk.dto.MessageResponse;
 import br.com.contabilizape.centraldesk.dto.PasswordResetRequest;
@@ -28,10 +30,13 @@ public interface AuthApi {
     @Operation(
             summary = "Cadastra um colaborador",
             description = """
-                    Endpoint público. A conta é criada como `ACTIVE`.
+                    Endpoint público. A conta é criada como `PENDING_VERIFICATION` e **não abre sessão**: um código \
+                    de 6 dígitos vai para o e-mail e precisa ser confirmado em `POST /auth/email/verify` (vale \
+                    10 minutos; o cadastro não confirmado é apagado em 24 horas). Um cadastro pendente com o mesmo \
+                    e-mail ou CPF é substituído por este.
 
-                    Quem escolhe **Inovação** é cadastrado em **Geral**, com pedido de entrada pendente \
-                    (`departmentApprovalPending = true`), e os administradores são avisados. \
+                    Quem escolhe **Inovação** é cadastrado em **Geral** (`departmentApprovalPending = true`); o pedido \
+                    de entrada é criado, e os administradores avisados, quando o e-mail é confirmado. \
                     Só um administrador aprova a entrada na Inovação.""")
     @ApiResponse(
             responseCode = "201",
@@ -57,7 +62,7 @@ public interface AuthApi {
                             @ExampleObject(name = "E-mail já cadastrado", value = ProblemExamples.EMAIL_TAKEN),
                             @ExampleObject(name = "CPF já cadastrado", value = ProblemExamples.CPF_TAKEN)
                     }))
-    ResponseEntity<UserResponse> register(UserCreateRequest request);
+    ResponseEntity<UserResponse> register(UserCreateRequest request, @Parameter(hidden = true) HttpServletRequest httpRequest);
 
     @Operation(
             summary = "Entra no sistema",
@@ -177,4 +182,24 @@ public interface AuthApi {
             Código inválido, vencido ou já usado (`errors.code`, sem dizer qual), ou senha fora das regras (`errors.newPassword`).""",
             content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
     ResponseEntity<Void> resetPassword(PasswordResetRequest request, @Parameter(hidden = true) HttpServletRequest httpRequest);
+
+    @Operation(
+            summary = "Confirma o e-mail do cadastro",
+            description = """
+                    Endpoint público. Com o código certo, a conta passa a `ACTIVE`, o pedido de entrada na Inovação \
+                    (se houver) é criado e a sessão é aberta (mesmos cookies do login).""")
+    @ApiResponse(responseCode = "200", description = "E-mail confirmado e sessão aberta.",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = CurrentUserResponse.class)))
+    @ApiResponse(responseCode = "400", description = "Código inválido, vencido ou já usado, ou e-mail sem cadastro pendente (`errors.code`).",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    ResponseEntity<CurrentUserResponse> verifyEmail(EmailVerificationRequest request,
+                                                    @Parameter(hidden = true) HttpServletRequest httpRequest);
+
+    @Operation(
+            summary = "Reenvia o código de confirmação do e-mail",
+            description = "Endpoint público. Sempre 202 com a mesma mensagem; no máximo um código a cada 60 segundos.")
+    @ApiResponse(responseCode = "202", description = "Pedido recebido.",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = MessageResponse.class)))
+    ResponseEntity<MessageResponse> resendVerificationCode(ResendCodeRequest request,
+                                                           @Parameter(hidden = true) HttpServletRequest httpRequest);
 }

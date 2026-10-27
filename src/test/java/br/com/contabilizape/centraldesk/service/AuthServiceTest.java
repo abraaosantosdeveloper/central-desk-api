@@ -3,6 +3,7 @@ package br.com.contabilizape.centraldesk.service;
 import br.com.contabilizape.centraldesk.exception.AccountBlockedException;
 import br.com.contabilizape.centraldesk.exception.EmailNotVerifiedException;
 import br.com.contabilizape.centraldesk.exception.LoginRateLimitException;
+import br.com.contabilizape.centraldesk.model.CodePurpose;
 import br.com.contabilizape.centraldesk.model.SecurityEventType;
 import br.com.contabilizape.centraldesk.security.ClientInfo;
 import br.com.contabilizape.centraldesk.security.LoginAttemptLimiter;
@@ -76,6 +77,7 @@ class AuthServiceTest {
     @Mock private LoginLockout loginLockout;
     @Mock private SecurityEventService securityEvents;
     @Mock private AccountEmails accountEmails;
+    @Mock private VerificationCodeService codes;
 
     private AuthService authService;
 
@@ -84,7 +86,7 @@ class AuthServiceTest {
         // O AuthService gera um hash fictício ao ser criado (usado quando o e-mail não existe)
         when(passwordEncoder.encode(anyString())).thenReturn(DUMMY_HASH);
         authService = new AuthService(userRepository, adminRepository, passwordEncoder,
-                tokenService, userService, refreshTokenService, loginAttemptLimiter, loginLockout, securityEvents, accountEmails,
+                tokenService, userService, refreshTokenService, loginAttemptLimiter, loginLockout, securityEvents, accountEmails, codes,
                 Clock.fixed(NOW, ZoneOffset.UTC), INNOVATION_ID);
     }
 
@@ -214,6 +216,8 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.login(new LoginRequest(EMAIL, PASSWORD), CLIENT))
                 .isInstanceOf(EmailNotVerifiedException.class);
         verify(tokenService, never()).issueAccessToken(any(), any(), any());
+        // Quem esqueceu de confirmar recebe outro código
+        verify(codes).send(maria, CodePurpose.EMAIL_VERIFICATION, CLIENT.ip());
     }
 
     @Test

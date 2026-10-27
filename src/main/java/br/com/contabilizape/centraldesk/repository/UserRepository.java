@@ -12,6 +12,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -34,6 +35,13 @@ public interface UserRepository extends JpaRepository<User, UUID>, JpaSpecificat
     Optional<User> findByEmailForUpdate(@Param("email") String email);
 
     boolean existsByCpf(String cpf);
+
+    Optional<User> findByCpf(String cpf);
+
+    /** Faxina diária: cadastros que não confirmaram o e-mail (códigos e auditoria saem junto, ON DELETE CASCADE). */
+    @Modifying
+    @Query("delete from User u where u.status = :status and u.createdAt < :before")
+    int deleteByStatusCreatedBefore(@Param("status") UserStatus status, @Param("before") OffsetDateTime before);
 
     /** Corte de sessões do usuário (lido a cada requisição autenticada); vazio quando não há corte. */
     @Query("select u.sessionsValidFrom from User u where u.id = :id")

@@ -39,6 +39,9 @@ public class SecurityConfig {
             // "Esqueci minha senha": quem não lembra a senha não tem sessão
             PATHS.matcher(HttpMethod.POST, "/auth/password/forgot"),
             PATHS.matcher(HttpMethod.POST, "/auth/password/reset"),
+            // Confirmação do e-mail do cadastro (a conta ainda não entra)
+            PATHS.matcher(HttpMethod.POST, "/auth/email/verify"),
+            PATHS.matcher(HttpMethod.POST, "/auth/email/resend"),
             PATHS.matcher(HttpMethod.GET, "/departments"),
             // O Spring encaminha os erros para /error; protegida, ela esconderia o erro real atrás de um 401
             PATHS.matcher("/error"),

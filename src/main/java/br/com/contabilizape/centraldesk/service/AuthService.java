@@ -5,10 +5,12 @@ import br.com.contabilizape.centraldesk.dto.PasswordChangeRequest;
 import br.com.contabilizape.centraldesk.exception.AccountBlockedException;
 import br.com.contabilizape.centraldesk.exception.AccountNotActiveException;
 import br.com.contabilizape.centraldesk.exception.EmailNotVerifiedException;
+import br.com.contabilizape.centraldesk.exception.CodeRequestLimitException;
 import br.com.contabilizape.centraldesk.exception.CurrentPasswordMismatchException;
 import br.com.contabilizape.centraldesk.exception.InvalidCredentialsException;
 import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
 import br.com.contabilizape.centraldesk.exception.NewPasswordSameAsCurrentException;
+import br.com.contabilizape.centraldesk.model.CodePurpose;
 import br.com.contabilizape.centraldesk.model.SecurityEventType;
 import br.com.contabilizape.centraldesk.model.User;
 import br.com.contabilizape.centraldesk.repository.AdminRepository;
@@ -41,6 +43,7 @@ public class AuthService {
     private final LoginLockout loginLockout;
     private final SecurityEventService securityEvents;
     private final AccountEmails accountEmails;
+    private final VerificationCodeService codes;
     private final Clock clock;
     private final UUID handlerDepartmentId;
 
@@ -57,6 +60,7 @@ public class AuthService {
                        LoginLockout loginLockout,
                        SecurityEventService securityEvents,
                        AccountEmails accountEmails,
+                       VerificationCodeService codes,
                        Clock clock,
                        @Value("${app.tickets.handler-department-id}") UUID handlerDepartmentId) {
         this.userRepository = userRepository;
@@ -69,6 +73,7 @@ public class AuthService {
         this.loginLockout = loginLockout;
         this.securityEvents = securityEvents;
         this.accountEmails = accountEmails;
+        this.codes = codes;
         this.clock = clock;
         this.handlerDepartmentId = handlerDepartmentId;
         this.dummyPasswordHash = passwordEncoder.encode("senha-ficticia-" + UUID.randomUUID());
@@ -136,6 +141,12 @@ public class AuthService {
         return openSession(user, refreshTokenService.issue(user));
     }
 
+    /** Abre a sessão de quem acabou de provar a identidade por outro caminho (confirmação do e-mail). */
+    @Transactional
+    public AuthenticatedSession startSession(User user) {
+        return openSession(user, refreshTokenService.issue(user));
+    }
+
     private AuthenticatedSession openSession(User user, String rawRefreshToken) {
         List<String> roles = rolesOf(user);
         String accessToken = tokenService.issueAccessToken(user.getId(), user.getEmail(), roles);
@@ -177,7 +188,15 @@ public class AuthService {
                 securityEvents.record(SecurityEventType.LOGIN_BLOCKED_ACCOUNT, user, client, null);
                 throw new AccountBlockedException();
             }
-            case PENDING_VERIFICATION -> throw new EmailNotVerifiedException();
+            case PENDING_VERIFICATION -> {
+                // Quem esqueceu de confirmar recebe outro código (se o anterior não foi pedido há pouco)
+                try {
+                    codes.send(user, CodePurpose.EMAIL_VERIFICATION, client.ip());
+                } catch (CodeRequestLimitException ignored) {
+                    // O código enviado há pouco continua valendo
+                }
+                throw new EmailNotVerifiedException();
+            }
             default -> throw new AccountNotActiveException();
         }
     }

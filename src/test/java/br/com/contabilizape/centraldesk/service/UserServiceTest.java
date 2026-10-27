@@ -1,5 +1,11 @@
 package br.com.contabilizape.centraldesk.service;
 
+import br.com.contabilizape.centraldesk.model.CodePurpose;
+import br.com.contabilizape.centraldesk.security.AccountSecurityPolicy;
+import br.com.contabilizape.centraldesk.security.ClientInfo;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import br.com.contabilizape.centraldesk.dto.CurrentUserResponse;
 import br.com.contabilizape.centraldesk.dto.UserCreateRequest;
 import br.com.contabilizape.centraldesk.dto.UserProfileUpdateRequest;
@@ -48,12 +54,16 @@ class UserServiceTest {
     private static final UUID INNOVATION_ID = UUID.fromString("e9790f1f-41df-4369-bfe7-1be4be535561");
     private static final UUID GENERAL_ID = UUID.fromString("3094ed3f-42ab-4bc0-9d8d-f6eb08891016");
     private static final UUID FINANCE_ID = UUID.randomUUID();
+    private static final Instant NOW = Instant.parse("2026-10-27T12:00:00Z");
+    private static final ClientInfo CLIENT = new ClientInfo("203.0.113.7", "Chrome");
 
     @Mock private UserRepository userRepository;
     @Mock private DepartmentRepository departmentRepository;
     @Mock private DepartmentRequestRepository departmentRequestRepository;
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private AccountSecurityPolicy policy;
+    @Mock private VerificationCodeService codes;
 
     private UserService userService;
 
@@ -65,7 +75,7 @@ class UserServiceTest {
     void setUp() {
         userService = new UserService(
                 userRepository, departmentRepository, departmentRequestRepository,
-                passwordEncoder, eventPublisher,
+                passwordEncoder, eventPublisher, policy, codes, Clock.fixed(NOW, ZoneOffset.UTC),
                 INNOVATION_ID, GENERAL_ID);
     }
 
@@ -77,7 +87,7 @@ class UserServiceTest {
         when(passwordEncoder.encode("senhaForte123")).thenReturn("hash-bcrypt");
         when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        UserResponse response = userService.create(request("maria.silva@contabilizape.com.br", FINANCE_ID));
+        UserResponse response = userService.create(request("maria.silva@contabilizape.com.br", FINANCE_ID), CLIENT);
 
         User saved = savedUser();
         assertThat(saved.getStatus()).isEqualTo(UserStatus.ACTIVE);
@@ -96,7 +106,7 @@ class UserServiceTest {
 
         userService.create(new UserCreateRequest(
                 "  Maria da Silva  ", "52998224725", "  Maria.Silva@ContabilizaPE.com.br ",
-                "senhaForte123", FINANCE_ID));
+                "senhaForte123", FINANCE_ID), CLIENT);
 
         User saved = savedUser();
         assertThat(saved.getEmail()).isEqualTo("maria.silva@contabilizape.com.br");
@@ -105,9 +115,10 @@ class UserServiceTest {
 
     @Test
     void checksDuplicateEmailUsingNormalizedValue() {
-        when(userRepository.existsByEmail("maria.silva@contabilizape.com.br")).thenReturn(true);
+        when(userRepository.findByEmail("maria.silva@contabilizape.com.br"))
+                .thenReturn(Optional.of(existingUser(UUID.randomUUID(), finance, UserStatus.ACTIVE)));
 
-        assertThatThrownBy(() -> userService.create(request("MARIA.SILVA@contabilizape.com.br", FINANCE_ID)))
+        assertThatThrownBy(() -> userService.create(request("MARIA.SILVA@contabilizape.com.br", FINANCE_ID), CLIENT))
                 .isInstanceOf(EmailAlreadyRegisteredException.class);
     }
 
@@ -121,7 +132,7 @@ class UserServiceTest {
         when(departmentRequestRepository.save(any(DepartmentRequest.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        UserResponse response = userService.create(request("joao.souza@contabilizape.com.br", INNOVATION_ID));
+        UserResponse response = userService.create(request("joao.souza@contabilizape.com.br", INNOVATION_ID), CLIENT);
 
         User saved = savedUser();
         assertThat(saved.getDepartment()).isSameAs(general);
@@ -144,7 +155,7 @@ class UserServiceTest {
         when(departmentRequestRepository.save(any(DepartmentRequest.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        userService.create(request("joao.souza@contabilizape.com.br", INNOVATION_ID));
+        userService.create(request("joao.souza@contabilizape.com.br", INNOVATION_ID), CLIENT);
 
         ArgumentCaptor<DepartmentRequestCreatedEvent> eventCaptor =
                 ArgumentCaptor.forClass(DepartmentRequestCreatedEvent.class);
@@ -158,7 +169,7 @@ class UserServiceTest {
         when(departmentRepository.findById(INNOVATION_ID)).thenReturn(Optional.of(innovation));
         when(departmentRepository.findById(GENERAL_ID)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> userService.create(request("joao.souza@contabilizape.com.br", INNOVATION_ID)))
+        assertThatThrownBy(() -> userService.create(request("joao.souza@contabilizape.com.br", INNOVATION_ID), CLIENT))
                 .isInstanceOf(IllegalStateException.class);
         verify(userRepository, never()).saveAndFlush(any());
     }
@@ -169,18 +180,20 @@ class UserServiceTest {
 
     @Test
     void rejectsDuplicateEmail() {
-        when(userRepository.existsByEmail("maria.silva@contabilizape.com.br")).thenReturn(true);
+        when(userRepository.findByEmail("maria.silva@contabilizape.com.br"))
+                .thenReturn(Optional.of(existingUser(UUID.randomUUID(), finance, UserStatus.ACTIVE)));
 
-        assertThatThrownBy(() -> userService.create(request("maria.silva@contabilizape.com.br", FINANCE_ID)))
+        assertThatThrownBy(() -> userService.create(request("maria.silva@contabilizape.com.br", FINANCE_ID), CLIENT))
                 .isInstanceOf(EmailAlreadyRegisteredException.class);
         verify(userRepository, never()).saveAndFlush(any());
     }
 
     @Test
     void rejectsDuplicateCpf() {
-        when(userRepository.existsByCpf("52998224725")).thenReturn(true);
+        when(userRepository.findByCpf("52998224725"))
+                .thenReturn(Optional.of(existingUser(UUID.randomUUID(), finance, UserStatus.DEACTIVATED)));
 
-        assertThatThrownBy(() -> userService.create(request("maria.silva@contabilizape.com.br", FINANCE_ID)))
+        assertThatThrownBy(() -> userService.create(request("maria.silva@contabilizape.com.br", FINANCE_ID), CLIENT))
                 .isInstanceOf(CpfAlreadyRegisteredException.class);
         verify(userRepository, never()).saveAndFlush(any());
     }
@@ -190,9 +203,85 @@ class UserServiceTest {
         UUID unknown = UUID.randomUUID();
         when(departmentRepository.findById(unknown)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> userService.create(request("maria.silva@contabilizape.com.br", unknown)))
+        assertThatThrownBy(() -> userService.create(request("maria.silva@contabilizape.com.br", unknown), CLIENT))
                 .isInstanceOf(DepartmentNotFoundException.class);
         verify(userRepository, never()).saveAndFlush(any());
+    }
+
+    // ---------- SCRUM-205: confirmação do e-mail no cadastro ----------
+
+    @Test
+    void withVerificationTheAccountWaitsForTheCodeAndNoRequestIsCreatedYet() {
+        when(policy.emailVerificationRequired()).thenReturn(true);
+        when(departmentRepository.findById(INNOVATION_ID)).thenReturn(Optional.of(innovation));
+        when(departmentRepository.findById(GENERAL_ID)).thenReturn(Optional.of(general));
+        when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        UserResponse response = userService.create(request("joao.souza@contabilizape.com.br", INNOVATION_ID), CLIENT);
+
+        User saved = savedUser();
+        assertThat(saved.getStatus()).isEqualTo(UserStatus.PENDING_VERIFICATION);
+        assertThat(response.status()).isEqualTo(UserStatus.PENDING_VERIFICATION);
+        assertThat(saved.getDepartment()).isSameAs(general);
+        // O pedido da Inovação só nasce depois da confirmação (não polui Aprovações com cadastros abandonados)
+        verify(departmentRequestRepository, never()).save(any());
+        verify(eventPublisher, never()).publishEvent(any(Object.class));
+        verify(codes).send(saved, CodePurpose.EMAIL_VERIFICATION, CLIENT.ip());
+        assertThat(saved.takeRequestedDepartment()).isSameAs(innovation);
+    }
+
+    @Test
+    void withoutVerificationTheAccountIsActiveAndConfirmedRightAway() {
+        when(departmentRepository.findById(FINANCE_ID)).thenReturn(Optional.of(finance));
+        when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        userService.create(request("maria.silva@contabilizape.com.br", FINANCE_ID), CLIENT);
+
+        assertThat(savedUser().getEmailVerifiedAt()).isEqualTo(NOW.atOffset(ZoneOffset.UTC));
+        verify(codes, never()).send(any(), any(), any());
+    }
+
+    @Test
+    void newRegistrationReplacesAPendingOneWithTheSameEmail() {
+        User pending = existingUser(UUID.randomUUID(), general, UserStatus.PENDING_VERIFICATION);
+        when(userRepository.findByEmail("maria.silva@contabilizape.com.br")).thenReturn(Optional.of(pending));
+        when(userRepository.findByCpf("52998224725")).thenReturn(Optional.of(pending));
+        when(departmentRepository.findById(FINANCE_ID)).thenReturn(Optional.of(finance));
+        when(passwordEncoder.encode("senhaForte123")).thenReturn("hash-novo");
+        when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        userService.create(request("maria.silva@contabilizape.com.br", FINANCE_ID), CLIENT);
+
+        // Quem tem acesso à caixa de e-mail ganha (B3): a senha e o departamento passam a ser os novos
+        assertThat(savedUser()).isSameAs(pending);
+        assertThat(pending.getPasswordHash()).isEqualTo("hash-novo");
+        assertThat(pending.getDepartment()).isSameAs(finance);
+        verify(codes).send(pending, CodePurpose.EMAIL_VERIFICATION, CLIENT.ip());
+    }
+
+    @Test
+    void pendingRegistrationWithTheSameCpfAndAnotherEmailIsDiscarded() {
+        User pendingByCpf = existingUser(UUID.randomUUID(), general, UserStatus.PENDING_VERIFICATION);
+        ReflectionTestUtils.setField(pendingByCpf, "email", "outro.email@contabilizape.com.br");
+        when(userRepository.findByEmail("maria.silva@contabilizape.com.br")).thenReturn(Optional.empty());
+        when(userRepository.findByCpf("52998224725")).thenReturn(Optional.of(pendingByCpf));
+        when(departmentRepository.findById(FINANCE_ID)).thenReturn(Optional.of(finance));
+        when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        userService.create(request("maria.silva@contabilizape.com.br", FINANCE_ID), CLIENT);
+
+        assertThat(savedUser()).isSameAs(pendingByCpf);
+        assertThat(pendingByCpf.getEmail()).isEqualTo("maria.silva@contabilizape.com.br");
+    }
+
+    @Test
+    void confirmedAccountsAreNeverReplaced() {
+        when(userRepository.findByEmail("maria.silva@contabilizape.com.br"))
+                .thenReturn(Optional.of(existingUser(UUID.randomUUID(), finance, UserStatus.BLOCKED)));
+
+        assertThatThrownBy(() -> userService.create(request("maria.silva@contabilizape.com.br", FINANCE_ID), CLIENT))
+                .isInstanceOf(EmailAlreadyRegisteredException.class);
+        verify(codes, never()).send(any(), any(), any());
     }
 
     // ---------- usuário logado (/users/me) ----------
