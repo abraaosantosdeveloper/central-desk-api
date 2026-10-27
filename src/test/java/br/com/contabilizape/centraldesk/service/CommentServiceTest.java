@@ -1,5 +1,6 @@
 package br.com.contabilizape.centraldesk.service;
 
+import br.com.contabilizape.centraldesk.event.TicketCommentedEvent;
 import br.com.contabilizape.centraldesk.dto.CommentCreateRequest;
 import br.com.contabilizape.centraldesk.dto.CommentResponse;
 import br.com.contabilizape.centraldesk.exception.AccountNotActiveException;
@@ -38,6 +39,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -95,10 +97,17 @@ class CommentServiceTest {
 
         commentService.create(TICKET_ID, HANDLER_ID, List.of(Roles.TICKET_HANDLER), new CommentCreateRequest("Estou indo aí"));
 
-        ArgumentCaptor<CommentCreatedEvent> event = ArgumentCaptor.forClass(CommentCreatedEvent.class);
-        verify(eventPublisher).publishEvent(event.capture());
-        assertThat(event.getValue().recipientIds()).containsExactlyInAnyOrder(REQUESTER_ID, HANDLER_ID);
-        assertThat(event.getValue().comment().content()).isEqualTo("Estou indo aí");
+        ArgumentCaptor<Object> events = ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher, times(2)).publishEvent(events.capture());
+        CommentCreatedEvent event = events.getAllValues().stream().filter(CommentCreatedEvent.class::isInstance)
+                .map(CommentCreatedEvent.class::cast).findFirst().orElseThrow();
+        assertThat(event.recipientIds()).containsExactlyInAnyOrder(REQUESTER_ID, HANDLER_ID);
+        assertThat(event.comment().content()).isEqualTo("Estou indo aí");
+        // E-mail: o outro lado no momento do comentário (o responsável comentou → o solicitante)
+        TicketCommentedEvent commented = events.getAllValues().stream().filter(TicketCommentedEvent.class::isInstance)
+                .map(TicketCommentedEvent.class::cast).findFirst().orElseThrow();
+        assertThat(commented.authorId()).isEqualTo(HANDLER_ID);
+        assertThat(commented.recipientId()).isEqualTo(REQUESTER_ID);
     }
 
     @Test

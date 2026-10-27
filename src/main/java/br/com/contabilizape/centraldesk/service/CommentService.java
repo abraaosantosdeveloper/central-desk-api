@@ -2,6 +2,7 @@ package br.com.contabilizape.centraldesk.service;
 
 import br.com.contabilizape.centraldesk.dto.CommentCreateRequest;
 import br.com.contabilizape.centraldesk.dto.CommentResponse;
+import br.com.contabilizape.centraldesk.event.TicketCommentedEvent;
 import br.com.contabilizape.centraldesk.exception.AccountNotActiveException;
 import br.com.contabilizape.centraldesk.exception.InvalidSessionException;
 import br.com.contabilizape.centraldesk.exception.CommentForbiddenException;
@@ -62,6 +63,8 @@ public class CommentService {
         CommentResponse response = CommentResponse.from(comment);
 
         eventPublisher.publishEvent(new CommentCreatedEvent(response, participants(ticket, author)));
+        // Fato de domínio, para o e-mail ao outro lado (o destinatário é decidido agora, não depois)
+        eventPublisher.publishEvent(TicketCommentedEvent.of(ticket, comment));
         return response;
     }
 

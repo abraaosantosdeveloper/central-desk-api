@@ -30,6 +30,11 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
     @Query("select t from Ticket t where t.id = :id")
     Optional<Ticket> findByIdForUpdate(@Param("id") UUID id);
 
+    /** E-mails: tudo o que os templates mostram, numa consulta. */
+    @EntityGraph(attributePaths = {"category", "priority", "requester", "assignee", "closedBy"})
+    @Query("select t from Ticket t where t.id = :id")
+    Optional<Ticket> findForEmail(@Param("id") UUID id);
+
     @Override
     @EntityGraph(attributePaths = {"category", "priority", "requester", "assignee"})
     Page<Ticket> findAll(Specification<Ticket> spec, Pageable pageable);

@@ -75,9 +75,10 @@ public class TicketReassignmentService {
         }
 
         boolean fromQueue = ticket.isOpen(); // lido antes: reatribuir um chamado da fila o coloca em atendimento
+        UUID previousAssigneeId = ticket.getAssignee() == null ? null : ticket.getAssignee().getId();
         ticket.reassign(findEligibleAssignee(newAssigneeId, ticket), OffsetDateTime.now(clock));
         ticketRepository.flush(); // grava agora e atualiza o updated_at
-        eventPublisher.publishEvent(TicketReassignedEvent.of(ticket, userId, fromQueue));
+        eventPublisher.publishEvent(TicketReassignedEvent.of(ticket, userId, fromQueue, previousAssigneeId));
         return TicketResponse.from(ticket);
     }
 

@@ -50,6 +50,10 @@ public interface UserRepository extends JpaRepository<User, UUID>, JpaSpecificat
     @Query("select a.user from Admin a where a.user.status = :status")
     List<User> findAdminsByStatus(@Param("status") UserStatus status);
 
+    /** Administradores do setor de destino (hoje sempre a Inovação; com a SCRUM-148, o setor do chamado). */
+    @Query("select a.user from Admin a where a.user.status = :status and a.user.department.id = :departmentId")
+    List<User> findAdminsInDepartment(@Param("departmentId") UUID departmentId, @Param("status") UserStatus status);
+
     /** Quem pode atender chamados (Inovação ou admin, conta ativa), com quantos tem em atendimento. */
     @Query("""
             select new br.com.contabilizape.centraldesk.dto.AssigneeResponse(u.id, u.fullName, u.department.name,

@@ -114,7 +114,8 @@ class QueueRealtimeListenerTest {
     }
 
     private static TicketReassignedEvent reassigned(boolean fromQueue) {
-        return new TicketReassignedEvent(UUID.randomUUID(), TICKET_ID, PERSON_ID, UUID.randomUUID(), UUID.randomUUID(), fromQueue);
+        return new TicketReassignedEvent(UUID.randomUUID(), TICKET_ID, PERSON_ID, UUID.randomUUID(), UUID.randomUUID(), fromQueue,
+                fromQueue ? null : UUID.randomUUID());
     }
 
     private static TicketClosedEvent closed(boolean wasOpen) {

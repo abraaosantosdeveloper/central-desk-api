@@ -84,6 +84,8 @@ class TicketReassignmentServiceTest {
         assertThat(event.newAssigneeId()).isEqualTo(NEW_ASSIGNEE_ID);
         assertThat(event.requesterId()).isEqualTo(REQUESTER_ID);
         assertThat(event.fromQueue()).isFalse();
+        // O responsável anterior também é avisado por e-mail
+        assertThat(event.previousAssigneeId()).isEqualTo(ACTOR_ID);
     }
 
     @Test
@@ -96,6 +98,7 @@ class TicketReassignmentServiceTest {
         assertThat(ticket.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
         // Para a fila isto equivale a "assumir": o contador dela cai
         assertThat(published().fromQueue()).isTrue();
+        assertThat(published().previousAssigneeId()).isNull();
     }
 
     @Test
