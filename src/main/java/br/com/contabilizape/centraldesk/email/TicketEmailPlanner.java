@@ -5,13 +5,16 @@ import br.com.contabilizape.centraldesk.event.TicketClosedEvent;
 import br.com.contabilizape.centraldesk.event.TicketCommentedEvent;
 import br.com.contabilizape.centraldesk.event.TicketOpenedEvent;
 import br.com.contabilizape.centraldesk.event.TicketReassignedEvent;
+import br.com.contabilizape.centraldesk.event.TicketReopenedEvent;
 import br.com.contabilizape.centraldesk.model.Comment;
 import br.com.contabilizape.centraldesk.model.Department;
 import br.com.contabilizape.centraldesk.model.Ticket;
+import br.com.contabilizape.centraldesk.model.TicketClosure;
 import br.com.contabilizape.centraldesk.model.User;
 import br.com.contabilizape.centraldesk.model.UserStatus;
 import br.com.contabilizape.centraldesk.repository.CommentRepository;
 import br.com.contabilizape.centraldesk.repository.DepartmentRepository;
+import br.com.contabilizape.centraldesk.repository.TicketClosureRepository;
 import br.com.contabilizape.centraldesk.repository.TicketRepository;
 import br.com.contabilizape.centraldesk.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Value;
@@ -45,6 +48,7 @@ public class TicketEmailPlanner {
     private final UserRepository userRepository;
     private final CommentRepository commentRepository;
     private final DepartmentRepository departmentRepository;
+    private final TicketClosureRepository closureRepository;
     private final EmailRenderer renderer;
     private final EmailFormats formats;
     private final Clock clock;
@@ -52,12 +56,13 @@ public class TicketEmailPlanner {
 
     public TicketEmailPlanner(TicketRepository ticketRepository, UserRepository userRepository,
                               CommentRepository commentRepository, DepartmentRepository departmentRepository,
-                              EmailRenderer renderer, EmailFormats formats, Clock clock,
+                              TicketClosureRepository closureRepository, EmailRenderer renderer, EmailFormats formats, Clock clock,
                               @Value("${app.tickets.handler-department-id}") UUID handlerDepartmentId) {
         this.ticketRepository = ticketRepository;
         this.userRepository = userRepository;
         this.commentRepository = commentRepository;
         this.departmentRepository = departmentRepository;
+        this.closureRepository = closureRepository;
         this.renderer = renderer;
         this.formats = formats;
         this.clock = clock;
@@ -165,6 +170,41 @@ public class TicketEmailPlanner {
             recipients.add(ticket.getRequester(), EmailTemplate.TICKET_CLOSED, variables);
             recipients.add(ticket.getAssignee(), EmailTemplate.TICKET_CLOSED, variables);
             recipients.remove(event.closedById());
+            return compose(ticket, event.eventId(), recipients);
+        });
+    }
+
+    /**
+     * Reabrir: quem volta a atender (o responsável, ou os admins do setor se voltou para a fila) e, se quem
+     * reabriu não foi o solicitante, também o solicitante. Quem reabriu não recebe.
+     */
+    @Transactional(readOnly = true, propagation = Propagation.REQUIRES_NEW)
+    public List<EmailMessage> plan(TicketReopenedEvent event) {
+        return withTicket(event.ticketId(), ticket -> {
+            TicketClosure closure = closureRepository.findById(event.closureId()).orElse(null);
+            if (closure == null) {
+                return List.<EmailMessage>of();
+            }
+            Map<String, Object> variables = new HashMap<>();
+            variables.put("reopenedByName", closure.getReopenedBy().getFullName());
+            variables.put("reopenedDate", formats.date(closure.getReopenedAt()));
+            variables.put("reopenedTime", formats.time(closure.getReopenedAt()));
+            variables.put("reasonLines", formats.lines(closure.getReopenReason()));
+            variables.put("backToQueue", event.backToQueue());
+            variables.put("assigneeName", ticket.getAssignee() == null ? null : ticket.getAssignee().getFullName());
+
+            Recipients recipients = new Recipients();
+            if (event.backToQueue()) {
+                for (User admin : userRepository.findAdminsInDepartment(handlerDepartmentId, UserStatus.ACTIVE)) {
+                    recipients.add(admin, EmailTemplate.TICKET_REOPENED, variables);
+                }
+            } else {
+                recipients.add(ticket.getAssignee(), EmailTemplate.TICKET_REOPENED, variables);
+            }
+            if (!ticket.getRequester().getId().equals(event.actorId())) {
+                recipients.add(ticket.getRequester(), EmailTemplate.TICKET_REOPENED, variables);
+            }
+            recipients.remove(event.actorId());
             return compose(ticket, event.eventId(), recipients);
         });
     }

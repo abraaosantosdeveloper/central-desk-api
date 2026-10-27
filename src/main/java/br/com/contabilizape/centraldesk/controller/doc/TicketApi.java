@@ -1,5 +1,6 @@
 package br.com.contabilizape.centraldesk.controller.doc;
 
+import br.com.contabilizape.centraldesk.dto.TicketReopenRequest;
 import br.com.contabilizape.centraldesk.config.OpenApiConfig;
 import br.com.contabilizape.centraldesk.dto.AssigneeResponse;
 import br.com.contabilizape.centraldesk.dto.PageResponse;
@@ -284,4 +285,26 @@ public interface TicketApi {
                     schema = @Schema(implementation = ProblemDetail.class),
                     examples = @ExampleObject(name = "Já assumido", value = ProblemExamples.TICKET_NOT_EDITABLE)))
     TicketResponse edit(@Parameter(hidden = true) Jwt jwt, UUID id, TicketUpdateRequest request);
+
+    @Operation(
+            summary = "Reabre um chamado encerrado",
+            description = """
+                    O solicitante ou um administrador, até 7 dias depois do encerramento e no máximo 3 vezes por \
+                    chamado. O motivo é obrigatório e entra na conversa. O chamado volta para o mesmo responsável \
+                    (`IN_PROGRESS`) se ele ainda pode atender; senão, para a fila (`OPEN`, evento `queue.changed`). \
+                    O encerramento anterior fica no histórico.""",
+            security = @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH))
+    @ApiResponse(responseCode = "200", description = "Chamado reaberto.",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = TicketResponse.class)))
+    @ApiResponse(responseCode = "400", description = "Motivo ausente, curto (menos de 10) ou longo demais (mais de 1.000).",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    @ApiResponse(responseCode = "401", description = "Sem sessão.", content = @Content)
+    @ApiResponse(responseCode = "403", description = "Quem chamou vê o chamado, mas não é o solicitante nem administrador.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    @ApiResponse(responseCode = "404", description = "Chamado inexistente ou que a pessoa não pode ver.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    @ApiResponse(responseCode = "409", description = "Chamado não encerrado, fora do prazo de 7 dias ou já reaberto 3 vezes.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    TicketResponse reopen(@Parameter(hidden = true) Jwt jwt, @Parameter(description = "Id do chamado") UUID id,
+                          TicketReopenRequest request);
 }

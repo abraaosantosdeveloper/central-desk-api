@@ -1,5 +1,7 @@
 package br.com.contabilizape.centraldesk.controller;
 
+import br.com.contabilizape.centraldesk.dto.TicketReopenRequest;
+import br.com.contabilizape.centraldesk.service.TicketReopenService;
 import br.com.contabilizape.centraldesk.controller.doc.TicketApi;
 import br.com.contabilizape.centraldesk.dto.AssigneeResponse;
 import br.com.contabilizape.centraldesk.dto.PageResponse;
@@ -40,9 +42,12 @@ public class TicketController implements TicketApi {
 
     private final TicketService ticketService;
     private final TicketReassignmentService reassignmentService;
+    private final TicketReopenService ticketReopenService;
 
-    public TicketController(TicketService ticketService, TicketReassignmentService reassignmentService) {
+    public TicketController(TicketService ticketService, TicketReassignmentService reassignmentService,
+                            TicketReopenService ticketReopenService) {
         this.reassignmentService = reassignmentService;
+        this.ticketReopenService = ticketReopenService;
         this.ticketService = ticketService;
     }
 
@@ -116,6 +121,15 @@ public class TicketController implements TicketApi {
                                 @RequestBody @Valid TicketCloseRequest request) {
         List<String> roles = Objects.requireNonNullElse(jwt.getClaimAsStringList(TokenService.ROLES_CLAIM), List.of());
         return ticketService.close(id, UUID.fromString(jwt.getSubject()), roles, request.resolution());
+    }
+
+    /** Solicitante e administradores, até 7 dias depois do encerramento (SCRUM-208). */
+    @Override
+    @PatchMapping("/{id}/reopen")
+    public TicketResponse reopen(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id,
+                                 @RequestBody @Valid TicketReopenRequest request) {
+        List<String> roles = Objects.requireNonNullElse(jwt.getClaimAsStringList(TokenService.ROLES_CLAIM), List.of());
+        return ticketReopenService.reopen(id, UUID.fromString(jwt.getSubject()), roles, request.reason());
     }
 
     @Override

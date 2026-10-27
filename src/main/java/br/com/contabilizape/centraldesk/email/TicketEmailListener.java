@@ -5,6 +5,7 @@ import br.com.contabilizape.centraldesk.event.TicketClosedEvent;
 import br.com.contabilizape.centraldesk.event.TicketCommentedEvent;
 import br.com.contabilizape.centraldesk.event.TicketOpenedEvent;
 import br.com.contabilizape.centraldesk.event.TicketReassignedEvent;
+import br.com.contabilizape.centraldesk.event.TicketReopenedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
@@ -61,6 +62,12 @@ public class TicketEmailListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void on(TicketClosedEvent event) {
         send("encerramento", event.ticketId().toString(), () -> planner.plan(event));
+    }
+
+    @Async(EmailConfig.EXECUTOR)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void on(TicketReopenedEvent event) {
+        send("reabertura", event.ticketId().toString(), () -> planner.plan(event));
     }
 
     private void send(String what, String ticketId, Supplier<List<EmailMessage>> plan) {

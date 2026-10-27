@@ -24,6 +24,8 @@ import br.com.contabilizape.centraldesk.exception.SelfAssignmentException;
 import br.com.contabilizape.centraldesk.exception.SelfDeactivationException;
 import br.com.contabilizape.centraldesk.exception.TicketClosedForCommentsException;
 import br.com.contabilizape.centraldesk.exception.TicketCloseForbiddenException;
+import br.com.contabilizape.centraldesk.exception.TicketReopenConflictException;
+import br.com.contabilizape.centraldesk.exception.TicketReopenForbiddenException;
 import br.com.contabilizape.centraldesk.exception.TicketEditForbiddenException;
 import br.com.contabilizape.centraldesk.exception.TicketNotEditableException;
 import br.com.contabilizape.centraldesk.exception.TicketNotFoundException;
@@ -83,7 +85,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return problem(HttpStatus.NOT_FOUND, "Chamado não encontrado", exception.getMessage());
     }
 
-    @ExceptionHandler({TicketEditForbiddenException.class, SelfAssignmentException.class, CommentForbiddenException.class, TicketCloseForbiddenException.class,
+    @ExceptionHandler({TicketEditForbiddenException.class, SelfAssignmentException.class, CommentForbiddenException.class, TicketCloseForbiddenException.class, TicketReopenForbiddenException.class,
             ReassignForbiddenException.class})
     public ProblemDetail handleTicketActionForbidden(RuntimeException exception) {
         return problem(HttpStatus.FORBIDDEN, "Acesso negado", exception.getMessage());
@@ -102,6 +104,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(ReassignConflictException.class)
     public ProblemDetail handleReassignConflict(ReassignConflictException exception) {
         return problem(HttpStatus.CONFLICT, "Reatribuição não permitida", exception.getMessage());
+    }
+
+    @ExceptionHandler(TicketReopenConflictException.class)
+    public ProblemDetail handleTicketReopenConflict(TicketReopenConflictException exception) {
+        return problem(HttpStatus.CONFLICT, "Reabertura não permitida", exception.getMessage());
     }
 
     @ExceptionHandler(TicketNotEditableException.class)

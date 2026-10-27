@@ -1,5 +1,6 @@
 package br.com.contabilizape.centraldesk.realtime;
 
+import br.com.contabilizape.centraldesk.event.TicketReopenedEvent;
 import br.com.contabilizape.centraldesk.event.TicketAssignedEvent;
 import br.com.contabilizape.centraldesk.event.TicketClosedEvent;
 import br.com.contabilizape.centraldesk.event.TicketOpenedEvent;
@@ -64,6 +65,25 @@ class QueueRealtimeListenerTest {
 
         verify(registry).sendToRoles(QUEUE_AUDIENCE, "queue.changed",
                 new QueueChangedPayload(2, TICKET_ID, QueueChangeReason.ASSIGNED));
+    }
+
+    @Test
+    void ticketReopenedToTheQueueSendsReasonReopened() {
+        when(ticketRepository.countByStatus(TicketStatus.OPEN)).thenReturn(4L);
+
+        listener.onTicketReopened(new TicketReopenedEvent(UUID.randomUUID(), TICKET_ID, UUID.randomUUID(), PERSON_ID,
+                PERSON_ID, null, true));
+
+        verify(registry).sendToRoles(QUEUE_AUDIENCE, "queue.changed",
+                new QueueChangedPayload(4, TICKET_ID, QueueChangeReason.REOPENED));
+    }
+
+    @Test
+    void ticketReopenedWithTheSameAssigneeDoesNotTouchTheQueue() {
+        listener.onTicketReopened(new TicketReopenedEvent(UUID.randomUUID(), TICKET_ID, UUID.randomUUID(), PERSON_ID,
+                PERSON_ID, UUID.randomUUID(), false));
+
+        verifyNoInteractions(registry);
     }
 
     @Test

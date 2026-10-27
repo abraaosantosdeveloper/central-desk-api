@@ -160,6 +160,55 @@ class TicketTest {
                 .isInstanceOf(InvalidTicketTransitionException.class);
     }
 
+    // ---------- reabrir (SCRUM-208) ----------
+
+    @Test
+    void reopeningWithTheSameAssigneeGoesBackToInProgress() {
+        Ticket ticket = ticket(TicketStatus.OPEN);
+        User assignee = mock(User.class);
+        ticket.assign(assignee, NOW);
+        ticket.close(assignee, "Troquei a fonte.", NOW.plusHours(1));
+
+        ticket.reopen(true);
+
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+        assertThat(ticket.getAssignee()).isSameAs(assignee);
+        assertThat(ticket.getClosedBy()).isNull();
+        assertThat(ticket.getClosedAt()).isNull();
+        assertThat(ticket.getResolution()).isNull();
+    }
+
+    @Test
+    void reopeningWithoutTheAssigneeGoesBackToTheQueue() {
+        Ticket ticket = ticket(TicketStatus.OPEN);
+        ticket.assign(mock(User.class), NOW);
+        ticket.close(mock(User.class), "Feito", NOW);
+
+        ticket.reopen(false);
+
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.OPEN);
+        assertThat(ticket.getAssignee()).isNull();
+        assertThat(ticket.getAssignedAt()).isNull();
+    }
+
+    @Test
+    void onlyClosedTicketsAreReopened() {
+        assertThatThrownBy(() -> ticket(TicketStatus.IN_PROGRESS).reopen(true))
+                .isInstanceOf(InvalidTicketTransitionException.class);
+        assertThatThrownBy(() -> ticket(TicketStatus.OPEN).reopen(false))
+                .isInstanceOf(InvalidTicketTransitionException.class);
+    }
+
+    @Test
+    void closedTicketWithoutAssigneeAlwaysGoesToTheQueue() {
+        Ticket ticket = ticket(TicketStatus.OPEN);
+        ticket.close(mock(User.class), "Duplicado", NOW);
+
+        ticket.reopen(true);
+
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.OPEN);
+    }
+
     private static Ticket ticket(TicketStatus status) {
         Ticket ticket = new Ticket("Impressora", "Sem papel", mock(Category.class), mock(Priority.class), mock(User.class));
         ReflectionTestUtils.setField(ticket, "status", status);

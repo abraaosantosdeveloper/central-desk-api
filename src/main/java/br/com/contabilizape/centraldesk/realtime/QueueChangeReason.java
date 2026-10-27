@@ -9,5 +9,7 @@ public enum QueueChangeReason {
     /** Chamado encerrado ainda na fila. */
     CLOSED,
     /** Chamados em atendimento voltaram à fila porque o responsável saiu. */
-    RETURNED
+    RETURNED,
+    /** Chamado encerrado foi reaberto e voltou para a fila (o responsável não pode mais atender). */
+    REOPENED
 }

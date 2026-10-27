@@ -1,5 +1,6 @@
 package br.com.contabilizape.centraldesk.realtime;
 
+import br.com.contabilizape.centraldesk.event.TicketReopenedEvent;
 import br.com.contabilizape.centraldesk.event.TicketAssignedEvent;
 import br.com.contabilizape.centraldesk.event.TicketClosedEvent;
 import br.com.contabilizape.centraldesk.event.TicketOpenedEvent;
@@ -56,6 +57,14 @@ public class QueueRealtimeListener {
     public void onTicketClosed(TicketClosedEvent event) {
         if (event.wasOpen()) {
             publish(event.ticketId(), QueueChangeReason.CLOSED);
+        }
+    }
+
+    /** Reaberto para a fila: ela ganhou um item. Reaberto com o mesmo responsável, a fila não muda. */
+    @TransactionalEventListener
+    public void onTicketReopened(TicketReopenedEvent event) {
+        if (event.backToQueue()) {
+            publish(event.ticketId(), QueueChangeReason.REOPENED);
         }
     }
 

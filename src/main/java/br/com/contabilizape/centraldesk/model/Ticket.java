@@ -125,6 +125,29 @@ public class Ticket {
         this.resolution = resolution;
     }
 
+    /**
+     * Reabre um chamado encerrado (SCRUM-208). É o único caminho para sair de CLOSED: a tabela de
+     * transições continua dizendo que CLOSED é final, e quem pode reabrir é decidido no TicketReopenService.
+     * O encerramento atual vai para o histórico (ticket_closures) antes desta chamada.
+     *
+     * @param keepAssignee volta para o mesmo responsável (IN_PROGRESS); senão, ou sem responsável, vai para a fila
+     */
+    public void reopen(boolean keepAssignee) {
+        if (status != TicketStatus.CLOSED) {
+            throw new InvalidTicketTransitionException(status, TicketStatus.OPEN);
+        }
+        if (keepAssignee && assignee != null) {
+            this.status = TicketStatus.IN_PROGRESS;
+        } else {
+            this.status = TicketStatus.OPEN;
+            this.assignee = null;
+            this.assignedAt = null;
+        }
+        this.closedBy = null;
+        this.closedAt = null;
+        this.resolution = null;
+    }
+
     /** Devolve à fila um chamado em atendimento (o responsável saiu: conta desativada ou anonimizada). */
     public void returnToQueue() {
         moveTo(TicketStatus.OPEN);

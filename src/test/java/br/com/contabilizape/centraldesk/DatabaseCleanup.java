@@ -16,6 +16,7 @@ public final class DatabaseCleanup {
         jdbc.update("DELETE FROM notifications");
         jdbc.update("DELETE FROM ticket_ratings");
         jdbc.update("DELETE FROM comments");
+        jdbc.update("DELETE FROM ticket_closures");
         jdbc.update("DELETE FROM tickets");
         jdbc.update("DELETE FROM refresh_tokens");
         jdbc.update("DELETE FROM verification_codes");
