@@ -35,4 +35,15 @@ class LoggingEmailSenderTest {
 
         assertThat(output).doesNotContain("corpo secreto do comentário");
     }
+
+    @Test
+    void confidentialEmailHidesTheBodyAndMasksTheRecipient(CapturedOutput output) {
+        EmailMessage message = new EmailMessage("maria.souza@contabilizape.com.br", "Seu código de acesso",
+                "<p>Seu código: 042917</p>", "login-code/1/2", Map.of(), true);
+
+        new LoggingEmailSender().send(message);
+
+        assertThat(output).contains("Seu código de acesso", "m***@contabilizape.com.br");
+        assertThat(output).doesNotContain("042917").doesNotContain("maria.souza@");
+    }
 }

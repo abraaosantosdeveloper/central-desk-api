@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="pt-BR" th:replace="~{email/layout :: layout(~{::title}, ~{::content})}">
+<head>
+    <title>Chamado Encerrado</title>
+</head>
+<body>
+<div th:fragment="content">
+    <p th:replace="~{email/parts :: greeting}">Olá.</p>
+    <p style="margin:0 0 16px;">O chamado <strong th:text="|#${ticketNumber}|">#123</strong> foi encerrado por <strong th:text="${closedByName}">Nome</strong> às <span th:text="${closedTime}">14:30</span> de <span th:text="${closedDate}">23/10/2026</span>.</p>
+    <p style="margin:0 0 6px;font-size:14px;font-weight:bold;color:#002169;">O que foi feito</p>
+    <div style="margin:0 0 20px;padding:12px 14px;border-left:4px solid #0069A8;background-color:#F8FAFC;">
+        <p th:replace="~{email/parts :: lines(${resolutionLines})}">texto</p>
+    </div>
+    <p style="margin:0 0 16px;">Se o problema voltar em até 7 dias, quem abriu o chamado pode reabri-lo no CentralDesk.</p>
+    <table th:replace="~{email/parts :: ticketCard}"></table>
+    <table th:replace="~{email/parts :: ticketButton}"></table>
+</div>
+</body>
+</html>

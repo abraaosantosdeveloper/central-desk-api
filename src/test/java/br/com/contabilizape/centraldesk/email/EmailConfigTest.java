@@ -50,4 +50,29 @@ class EmailConfigTest {
         runner.withPropertyValues("app.email.resend.api-key=", "app.email.async=false").run(context ->
                 assertThat(context.getBean(EmailConfig.EXECUTOR)).isInstanceOf(SyncTaskExecutor.class));
     }
+
+    @Test
+    void securityEmailsHaveTheirOwnQueue() {
+        runner.withPropertyValues("app.email.resend.api-key=").run(context -> {
+            assertThat(context.getBean(EmailConfig.PRIORITY_EXECUTOR)).isInstanceOf(ThreadPoolTaskExecutor.class);
+            assertThat(context.getBean(EmailConfig.PRIORITY_EXECUTOR)).isNotSameAs(context.getBean(EmailConfig.EXECUTOR));
+        });
+        runner.withPropertyValues("app.email.resend.api-key=", "app.email.async=false").run(context ->
+                assertThat(context.getBean(EmailConfig.PRIORITY_EXECUTOR)).isInstanceOf(SyncTaskExecutor.class));
+    }
+
+    // B6: sem a chave, os códigos iriam para o log do servidor; em produção a aplicação não pode subir assim
+    @Test
+    void whenEmailIsRequiredTheApplicationDoesNotStartWithoutTheKey() {
+        runner.withPropertyValues("app.email.resend.api-key=", "app.email.required=true").run(context ->
+                assertThat(context).hasFailed());
+    }
+
+    @Test
+    void onRailwayEmailIsAlwaysRequired() {
+        runner.withPropertyValues("app.email.resend.api-key=", "RAILWAY_ENVIRONMENT_NAME=production").run(context ->
+                assertThat(context).hasFailed());
+        runner.withPropertyValues("app.email.resend.api-key=re_x", "RAILWAY_ENVIRONMENT_NAME=production").run(context ->
+                assertThat(context).hasNotFailed());
+    }
 }

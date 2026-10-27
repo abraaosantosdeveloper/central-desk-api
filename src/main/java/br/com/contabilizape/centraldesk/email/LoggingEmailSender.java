@@ -4,8 +4,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Usado quando não há RESEND_API_KEY: o e-mail só aparece no log. O corpo (que pode ter o texto de um
- * comentário) fica no nível DEBUG, para não ir parar nos logs de produção por engano.
+ * Usado quando não há RESEND_API_KEY (desenvolvimento e CI; em produção a aplicação não sobe assim,
+ * ver EmailConfig). O e-mail só aparece no log. O corpo fica no nível DEBUG, para não ir parar nos
+ * logs por engano; nos e-mails confidenciais (códigos, segurança da conta), o destinatário aparece
+ * mascarado. Para ler um código em desenvolvimento:
+ * {@code logging.level.br.com.contabilizape.centraldesk.email.LoggingEmailSender=DEBUG}.
  */
 public class LoggingEmailSender implements EmailSender {
 
@@ -13,8 +16,9 @@ public class LoggingEmailSender implements EmailSender {
 
     @Override
     public void send(EmailMessage message) {
+        String recipient = message.confidential() ? message.maskedRecipient() : message.to();
         log.info("E-mail não enviado (sem chave do Resend): para={} assunto=\"{}\" chave={}",
-                message.to(), message.subject(), message.idempotencyKey());
+                recipient, message.subject(), message.idempotencyKey());
         log.debug("Corpo do e-mail {}:\n{}", message.idempotencyKey(), message.html());
     }
 }

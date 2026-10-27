@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="pt-BR" th:replace="~{email/layout :: layout(~{::title}, ~{::content})}">
+<head>
+    <title>Chamado reaberto</title>
+</head>
+<body>
+<div th:fragment="content">
+    <p th:replace="~{email/parts :: greeting}">Olá.</p>
+    <p style="margin:0 0 16px;"><strong th:text="${reopenedByName}">Nome</strong> reabriu o chamado <strong th:text="|#${ticketNumber}|">#123</strong> às <span th:text="${reopenedTime}">14:30</span> de <span th:text="${reopenedDate}">23/10/2026</span>.</p>
+    <p style="margin:0 0 6px;font-size:14px;font-weight:bold;color:#002169;">Motivo</p>
+    <div style="margin:0 0 20px;padding:12px 14px;border-left:4px solid #0069A8;background-color:#F8FAFC;">
+        <p th:replace="~{email/parts :: lines(${reasonLines})}">texto</p>
+    </div>
+    <p th:if="${backToQueue}" style="margin:0 0 16px;">O chamado voltou para a fila e espera alguém assumir.</p>
+    <p th:unless="${backToQueue}" style="margin:0 0 16px;">O atendimento continua com <strong th:text="${assigneeName}">Carlos</strong>.</p>
+    <table th:replace="~{email/parts :: ticketCard}"></table>
+    <table th:replace="~{email/parts :: ticketButton}"></table>
+</div>
+</body>
+</html>

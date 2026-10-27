@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="pt-BR" th:replace="~{email/layout :: layout(~{::title}, ~{::content})}">
+<head>
+    <title>Sua conta está bloqueada</title>
+</head>
+<body>
+<div th:fragment="content">
+    <p th:replace="~{email/parts :: greeting}">Olá.</p>
+    <p style="margin:0 0 16px;">Recebemos um pedido de "Esqueci minha senha" para a sua conta, mas ela está bloqueada depois de várias tentativas de acesso sem sucesso.</p>
+    <p style="margin:0 0 16px;">Por segurança, a senha de uma conta bloqueada só pode ser redefinida por um administrador. Procure a equipe de Inovação.</p>
+    <p th:replace="~{email/parts :: notYou}"></p>
+</div>
+</body>
+</html>

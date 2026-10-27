@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="pt-BR" th:replace="~{email/layout :: layout(~{::title}, ~{::content})}">
+<head>
+    <title>Chamado reatribuído</title>
+</head>
+<body>
+<div th:fragment="content">
+    <p th:replace="~{email/parts :: greeting}">Olá.</p>
+    <p style="margin:0 0 16px;"><strong th:text="${reassignedByName}">Nome</strong> passou este chamado para você às <span th:text="${reassignedTime}">14:30</span> de <span th:text="${reassignedDate}">23/10/2026</span>. A partir de agora, você é o responsável pelo atendimento.</p>
+    <table th:replace="~{email/parts :: ticketCard}"></table>
+    <table th:replace="~{email/parts :: ticketButton}"></table>
+</div>
+</body>
+</html>

@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="pt-BR" th:replace="~{email/layout :: layout(~{::title}, ~{::content})}">
+<head>
+    <title>Confirme seu e-mail</title>
+</head>
+<body>
+<div th:fragment="content">
+    <p th:replace="~{email/parts :: greeting}">Olá.</p>
+    <p style="margin:0 0 16px;">Para concluir o seu cadastro no CentralDesk, confirme o seu e-mail com o código abaixo. Sem a confirmação, a conta não é ativada e é apagada em 24 horas.</p>
+    <div th:replace="~{email/parts :: codeBox}"></div>
+    <p th:replace="~{email/parts :: notYou}"></p>
+</div>
+</body>
+</html>

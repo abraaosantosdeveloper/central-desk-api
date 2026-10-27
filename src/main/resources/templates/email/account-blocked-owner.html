@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="pt-BR" th:replace="~{email/layout :: layout(~{::title}, ~{::content})}">
+<head>
+    <title>Sua conta foi bloqueada</title>
+</head>
+<body>
+<div th:fragment="content">
+    <p th:replace="~{email/parts :: greeting}">Olá.</p>
+    <p style="margin:0 0 16px;">Sua conta no CentralDesk foi bloqueada às <span th:text="${eventTime}">14:30</span> de <span th:text="${eventDate}">23/10/2026</span> depois de 5 tentativas de acesso sem sucesso.</p>
+    <p style="margin:0 0 16px;">Para voltar a entrar, procure a equipe de Inovação: um administrador vai confirmar a sua identidade e redefinir a sua senha. Por segurança, a senha não pode ser redefinida pelo "Esqueci minha senha" enquanto a conta estiver bloqueada.</p>
+    <p th:replace="~{email/parts :: notYou}"></p>
+</div>
+</body>
+</html>

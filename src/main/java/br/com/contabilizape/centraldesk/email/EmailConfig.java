@@ -6,6 +6,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 import org.springframework.core.task.SyncTaskExecutor;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -27,8 +28,14 @@ import java.net.http.HttpClient;
 @EnableConfigurationProperties(EmailProperties.class)
 public class EmailConfig {
 
-    /** Nome usado em {@code @Async(EmailConfig.EXECUTOR)}. */
+    /** Nome usado em {@code @Async(EmailConfig.EXECUTOR)}: e-mails de chamado. */
     public static final String EXECUTOR = "emailExecutor";
+
+    /** Fila só dos e-mails de conta (códigos, bloqueio): não esperam atrás dos e-mails de chamado. */
+    public static final String PRIORITY_EXECUTOR = "priorityEmailExecutor";
+
+    /** Variável que o Railway define em todo serviço: lá, e-mail sem chave do Resend não é aceito. */
+    static final String RAILWAY_ENVIRONMENT = "RAILWAY_ENVIRONMENT_NAME";
 
     private static final Logger log = LoggerFactory.getLogger(EmailConfig.class);
 
@@ -36,11 +43,32 @@ public class EmailConfig {
     @Bean(EXECUTOR)
     @ConditionalOnProperty(name = "app.email.async", havingValue = "true", matchIfMissing = true)
     ThreadPoolTaskExecutor backgroundEmailExecutor() {
+        return pool("email-", 500);
+    }
+
+    @Bean(PRIORITY_EXECUTOR)
+    @ConditionalOnProperty(name = "app.email.async", havingValue = "true", matchIfMissing = true)
+    ThreadPoolTaskExecutor priorityEmailExecutor() {
+        return pool("email-conta-", 200);
+    }
+
+    @Bean(PRIORITY_EXECUTOR)
+    @ConditionalOnProperty(name = "app.email.async", havingValue = "false")
+    TaskExecutor sameThreadPriorityEmailExecutor() {
+        return new SyncTaskExecutor();
+    }
+
+    @Bean
+    EmailFormats emailFormats(EmailProperties properties) {
+        return new EmailFormats(properties.zone(), properties.maxMessageChars());
+    }
+
+    private static ThreadPoolTaskExecutor pool(String threadPrefix, int queueCapacity) {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(2);
         executor.setMaxPoolSize(2);
-        executor.setQueueCapacity(500);
-        executor.setThreadNamePrefix("email-");
+        executor.setQueueCapacity(queueCapacity);
+        executor.setThreadNamePrefix(threadPrefix);
         // Deploy no Railway: termina os e-mails da fila antes de a instância sair
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(20);
@@ -55,7 +83,11 @@ public class EmailConfig {
     }
 
     @Bean
-    EmailSender emailSender(EmailProperties properties) {
+    EmailSender emailSender(EmailProperties properties, Environment environment) {
+        if (!properties.hasResendKey() && (properties.required() || environment.containsProperty(RAILWAY_ENVIRONMENT))) {
+            // Sem a chave, códigos de acesso iriam para o log do servidor (B6)
+            throw new IllegalStateException("RESEND_API_KEY é obrigatória neste ambiente (app.email.required ou Railway).");
+        }
         if (!properties.hasResendKey()) {
             log.info("RESEND_API_KEY não definida: os e-mails serão apenas registrados no log.");
             return new LoggingEmailSender();
