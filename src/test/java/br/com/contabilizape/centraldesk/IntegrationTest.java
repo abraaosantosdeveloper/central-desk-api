@@ -30,6 +30,7 @@ import java.lang.annotation.Target;
         "app.email.resend.api-key=", "app.email.async=false",
         "app.security.jwt.secret=" + IntegrationTest.JWT_SECRET,
         "app.security.content-encryption-key=" + IntegrationTest.CONTENT_ENCRYPTION_KEY,
+        "app.security.otp-hmac-key=" + IntegrationTest.OTP_HMAC_KEY,
         "app.security.cookie.secure=true"
 })
 @AutoConfigureMockMvc
@@ -41,4 +42,7 @@ public @interface IntegrationTest {
 
     /** Chave dos comentários nos testes (base64 de 32 bytes). A real fica só no .env (CONTENT_ENCRYPTION_KEY). */
     String CONTENT_ENCRYPTION_KEY = "Y2hhdmUtZGUtdGVzdGUtZG9zLWNvbWVudGFyaW9zISE=";
+
+    /** Chave dos códigos por e-mail nos testes (base64 de 32 bytes). A real fica só no .env (OTP_HMAC_KEY). */
+    String OTP_HMAC_KEY = "Y2hhdmUtZGUtdGVzdGUtZG9zLWNvZGlnb3MtMzJieXQ=";
 }
