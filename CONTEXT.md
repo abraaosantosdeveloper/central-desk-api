@@ -217,6 +217,7 @@ Formato obrigatório: `V<n>__<descricao>.sql` — **`V` maiúsculo** e dois unde
 | `V21__create_trusted_devices_and_login_challenges.sql` | `trusted_devices` (navegadores confiáveis, 30 dias) e `login_challenges` (etapa entre a senha e o código) (SCRUM-206) |
 | `V22__create_ticket_closures.sql` | `ticket_closures`: encerramentos desfeitos por reabertura (SCRUM-208) |
 | `V23__add_ticket_departments.sql` | `tickets.origin_department_id` e `tickets.target_department_id` (NOT NULL): povoados com o departamento atual do solicitante e a Inovação; *trigger* que preenche a origem em inserts sem ela; índices `(origin_department_id, status)`, `(target_department_id, status)` e `created_at` (SCRUM-213) |
+| `V24__create_coordinators.sql` | `coordinators` (papel de coordenador, 1:1 com `users`, como `admins`) e `PRIVILEGE_CHANGED` no `CHECK` de `security_events` (agora `chk_security_events_type`) (SCRUM-219) |
 
 A V11 e a V12 já estão na `main` (PR #10, 20/10) e rodam em toda a suíte de integração, então valem como aplicadas e **não se editam mais**: qualquer ajuste vira V17 em diante. O código que as usa (entidades, services, endpoints) ainda não existe (SCRUM-152 e SCRUM-150).
 
@@ -556,7 +557,8 @@ Detalhes e o porquê de cada regra: `docs/ADR-SEGURANCA-CONTAS.md` (e o plano `P
 | GET | `/tickets/queue` | fila da Inovação: `OPEN` sem responsável; só `TICKET_HANDLER` e admin (SCRUM-160) | **implementado** |
 | GET | `/tickets/queue/count` | tamanho da fila (`{ "openCount": 7 }`, chamados `OPEN`); só `TICKET_HANDLER` e admin; é o número do círculo do menu (SCRUM-189) | **implementado** |
 | GET | `/tickets/assigned` | chamados sob responsabilidade do usuário; só `TICKET_HANDLER` e admin (SCRUM-160) | **implementado** |
-| GET | `/tickets/{id}` | detalhes do chamado: solicitante, `TICKET_HANDLER` e admin; demais → 404 (SCRUM-161) | **implementado** |
+| GET | `/tickets/overview` | **Todos os chamados**: admin vê tudo (filtros `originDepartmentId`, `targetDepartmentId`); coordenador vê o que o próprio setor abriu ou recebeu (`relation` = `ORIGIN`/`TARGET`/`BOTH`; filtros de origem e destino ignorados; setor lido do banco); demais → 403. Sem `status`, todos os status juntos; filtros `categoryId`, `priorityId`, `q` (título, `#número`, início do id ou nome de quem abriu), `from`/`to` (dia de abertura no fuso `app.tickets.time-zone`) e `orderBy` (`RECENT`/`PRIORITY`/`UPDATED`); resposta paginada com `statusCounts { all, OPEN, IN_PROGRESS, CLOSED }` calculados com os mesmos filtros, menos o de status (PLANO-REATRIBUICAO-SETOR-E-TODOS-CHAMADOS §2) | **implementado** |
+| GET | `/tickets/{id}` | detalhes do chamado: solicitante, `TICKET_HANDLER`, admin e **coordenadores do setor de origem ou de destino** (só leitura); demais → 404 (SCRUM-161) | **implementado** |
 | PUT | `/tickets/{id}` | editar chamado: só o solicitante e só enquanto `OPEN` (403 / 409 / 404) | **implementado** |
 | GET | `/categories` | categorias **ativas** do formulário de chamado, por nome (logado) | **implementado** |
 | POST | `/categories` | criar categoria (admin), `{ label, color: #RRGGBB }`; nome repetido (sem diferenciar maiúsculas) → 409 (SCRUM-167) | **implementado** |
@@ -569,7 +571,7 @@ Detalhes e o porquê de cada regra: `docs/ADR-SEGURANCA-CONTAS.md` (e o plano `P
 | GET | `/tickets/assignees` | quem pode atender (Inovação e admins ativos), por nome, com `inProgress`; só `TICKET_HANDLER` e admin (SCRUM-173) | **implementado** |
 | PATCH | `/tickets/{id}/reassign` | reatribuir, corpo `{ assigneeId }`: responsável atual ou admin (403); destino ativo da Inovação ou admin e não o solicitante (400); mesma pessoa ou `CLOSED` → 409; na fila vira `IN_PROGRESS`; em atendimento mantém o `assignedAt` (SCRUM-173) | **implementado** |
 | POST | `/tickets/{id}/comments` | comentar: **só o solicitante e o responsável atual** (demais → 403, mesmo vendo o chamado) (SCRUM-172); conteúdo gravado cifrado; `CLOSED` → 409; dispara `comment.created` no SSE (SCRUM-164) | **implementado** |
-| GET | `/tickets/{id}/comments` | conversa do chamado, do mais antigo para o mais novo, já decifrada; funciona com o chamado encerrado (SCRUM-164) | **implementado** |
+| GET | `/tickets/{id}/comments` | conversa do chamado, do mais antigo para o mais novo, já decifrada; funciona com o chamado encerrado (SCRUM-164); coordenadores do setor de origem ou de destino também leem, mas não comentam (403) | **implementado** |
 | GET | `/events/stream` | stream SSE do usuário logado (`text/event-stream`): eventos `connected`, `comment.created`, `ticket.created`, `session.ended`, `queue.changed` e `department-requests.changed` (SCRUM-164, PR #26; `queue.changed` na SCRUM-189; `department-requests.changed` na SCRUM-191) | **implementado** |
 | POST | `/tickets/{id}/rating` | avaliar o atendimento: só o solicitante, chamado `CLOSED` com responsável, uma vez (201 / 403 / 404 / 409) | previsto |
 | GET | `/notifications` | notificações do usuário logado, mais recentes primeiro, paginadas; filtros opcionais `category` e `unread` | previsto |

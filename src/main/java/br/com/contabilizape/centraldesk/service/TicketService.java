@@ -160,16 +160,22 @@ public class TicketService {
     }
 
     /**
-     * Detalhes do chamado. Veem: o solicitante, a Inovação (TICKET_HANDLER) e os administradores.
+     * Detalhes do chamado. Veem: o solicitante, a Inovação (TICKET_HANDLER), os administradores e os
+     * coordenadores do setor de origem ou de destino (só leitura; condição lida do banco).
      * Para os demais, 404: quem não pode ver não descobre que o chamado existe.
      */
     @Transactional(readOnly = true)
     public TicketResponse findById(UUID ticketId, UUID userId, List<String> roles) {
-        findActiveRequester(userId);
+        User viewer = findActiveRequester(userId);
         Ticket ticket = ticketRepository.findById(ticketId)
-                .filter(found -> TicketAccess.canView(found, userId, roles))
+                .filter(found -> TicketAccess.canView(found, userId, roles) || followsAsCoordinator(found, viewer))
                 .orElseThrow(() -> new TicketNotFoundException(ticketId));
         return TicketResponse.from(ticket);
+    }
+
+    private boolean followsAsCoordinator(Ticket ticket, User viewer) {
+        return userRepository.isCoordinator(viewer.getId())
+                && TicketAccess.inSector(ticket, viewer.getDepartment().getId());
     }
 
     public static final int MAX_PAGE_SIZE = 100;

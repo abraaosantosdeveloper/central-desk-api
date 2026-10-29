@@ -10,10 +10,13 @@ import br.com.contabilizape.centraldesk.dto.ReassignRequest;
 import br.com.contabilizape.centraldesk.dto.TicketCloseRequest;
 import br.com.contabilizape.centraldesk.dto.TicketCreateRequest;
 import br.com.contabilizape.centraldesk.dto.TicketFilter;
+import br.com.contabilizape.centraldesk.dto.TicketOverviewFilter;
+import br.com.contabilizape.centraldesk.dto.TicketOverviewResponse;
 import br.com.contabilizape.centraldesk.dto.TicketResponse;
 import br.com.contabilizape.centraldesk.dto.TicketSummaryResponse;
 import br.com.contabilizape.centraldesk.dto.TicketUpdateRequest;
 import br.com.contabilizape.centraldesk.security.TokenService;
+import br.com.contabilizape.centraldesk.service.TicketOverviewService;
 import br.com.contabilizape.centraldesk.service.TicketReassignmentService;
 import br.com.contabilizape.centraldesk.service.TicketService;
 import jakarta.validation.Valid;
@@ -43,10 +46,12 @@ public class TicketController implements TicketApi {
     private final TicketService ticketService;
     private final TicketReassignmentService reassignmentService;
     private final TicketReopenService ticketReopenService;
+    private final TicketOverviewService overviewService;
 
     public TicketController(TicketService ticketService, TicketReassignmentService reassignmentService,
-                            TicketReopenService ticketReopenService) {
+                            TicketReopenService ticketReopenService, TicketOverviewService overviewService) {
         this.reassignmentService = reassignmentService;
+        this.overviewService = overviewService;
         this.ticketReopenService = ticketReopenService;
         this.ticketService = ticketService;
     }
@@ -74,6 +79,14 @@ public class TicketController implements TicketApi {
     public PageResponse<TicketSummaryResponse> listQueue(@AuthenticationPrincipal Jwt jwt, TicketFilter filter,
                                                          @PageableDefault(size = 20) Pageable pageable) {
         return ticketService.listQueue(UUID.fromString(jwt.getSubject()), filter, pageable);
+    }
+
+    /** Administradores (tudo) e coordenadores (o próprio setor); os demais, 403 (regra no serviço, lida do banco). */
+    @Override
+    @GetMapping("/overview")
+    public TicketOverviewResponse overview(@AuthenticationPrincipal Jwt jwt, TicketOverviewFilter filter,
+                                           @PageableDefault(size = 20) Pageable pageable) {
+        return overviewService.overview(UUID.fromString(jwt.getSubject()), filter, pageable);
     }
 
     /** Só Inovação e administradores (regra no SecurityConfig). */

@@ -26,8 +26,9 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Conversa do chamado. Comentam e leem as mesmas pessoas que veem o chamado (TicketAccess);
- * a cifra do conteúdo é feita no EncryptedStringConverter, fora daqui.
+ * Conversa do chamado. Leem as mesmas pessoas que veem o chamado (TicketAccess), inclusive os coordenadores
+ * do setor de origem ou de destino; comentam só o solicitante e o responsável. A cifra do conteúdo é feita
+ * no EncryptedStringConverter, fora daqui.
  */
 @Service
 public class CommentService {
@@ -48,7 +49,7 @@ public class CommentService {
     @Transactional
     public CommentResponse create(UUID ticketId, UUID userId, List<String> roles, CommentCreateRequest request) {
         User author = findActiveUser(userId);
-        Ticket ticket = findVisibleTicket(ticketId, userId, roles);
+        Ticket ticket = findVisibleTicket(ticketId, author, roles);
         boolean participant = ticket.getRequester().getId().equals(userId)
                 || (ticket.getAssignee() != null && ticket.getAssignee().getId().equals(userId));
         if (!participant) {
@@ -70,8 +71,8 @@ public class CommentService {
 
     @Transactional(readOnly = true)
     public List<CommentResponse> list(UUID ticketId, UUID userId, List<String> roles) {
-        findActiveUser(userId);
-        findVisibleTicket(ticketId, userId, roles);
+        User reader = findActiveUser(userId);
+        findVisibleTicket(ticketId, reader, roles);
         return commentRepository.findByTicketIdOrderByCreatedAtAsc(ticketId).stream()
                 .map(CommentResponse::from)
                 .toList();
@@ -88,9 +89,12 @@ public class CommentService {
         return ids;
     }
 
-    private Ticket findVisibleTicket(UUID ticketId, UUID userId, List<String> roles) {
+    // Coordenador do setor acompanha (lê); comentar continua só para os participantes
+    private Ticket findVisibleTicket(UUID ticketId, User user, List<String> roles) {
         return ticketRepository.findById(ticketId)
-                .filter(ticket -> TicketAccess.canView(ticket, userId, roles))
+                .filter(ticket -> TicketAccess.canView(ticket, user.getId(), roles)
+                        || (userRepository.isCoordinator(user.getId())
+                            && TicketAccess.inSector(ticket, user.getDepartment().getId())))
                 .orElseThrow(() -> new TicketNotFoundException(ticketId));
     }
 

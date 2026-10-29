@@ -9,6 +9,8 @@ import br.com.contabilizape.centraldesk.dto.ReassignRequest;
 import br.com.contabilizape.centraldesk.dto.TicketCloseRequest;
 import br.com.contabilizape.centraldesk.dto.TicketCreateRequest;
 import br.com.contabilizape.centraldesk.dto.TicketFilter;
+import br.com.contabilizape.centraldesk.dto.TicketOverviewFilter;
+import br.com.contabilizape.centraldesk.dto.TicketOverviewResponse;
 import br.com.contabilizape.centraldesk.dto.TicketResponse;
 import br.com.contabilizape.centraldesk.dto.TicketSummaryResponse;
 import br.com.contabilizape.centraldesk.dto.TicketUpdateRequest;
@@ -103,6 +105,32 @@ public interface TicketApi {
     PageResponse<TicketSummaryResponse> listQueue(@Parameter(hidden = true) Jwt jwt,
                                                   @ParameterObject TicketFilter filter,
                                                   @ParameterObject Pageable pageable);
+
+    @Operation(
+            summary = "Todos os chamados",
+            description = """
+                    **Administrador:** todos os chamados, de todos os setores, com filtros opcionais de \
+                    `originDepartmentId` e `targetDepartmentId`. **Coordenador:** os chamados que o próprio setor \
+                    abriu (origem) ou recebeu (destino); `relation` escolhe `ORIGIN`, `TARGET` ou `BOTH` (padrão), e \
+                    os filtros de origem e destino são ignorados (o setor vem do banco, o cliente não amplia o escopo). \
+                    Demais perfis: 403. Sem `status`, vêm abertos, em andamento e encerrados juntos. Filtros: \
+                    `categoryId`, `priorityId`, `q` (título, número ou nome de quem abriu), `from`/`to` (dia de \
+                    abertura, inclusive) e `orderBy` (`RECENT`, `PRIORITY`, `UPDATED`). Paginado (`size` padrão 20, \
+                    máximo 100). `statusCounts` traz o total de cada aba com os mesmos filtros, menos o de status.""",
+            security = @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH))
+    @ApiResponse(responseCode = "200", description = "Página de chamados com os contadores por status.")
+    @ApiResponse(
+            responseCode = "400",
+            description = "Filtro inválido (ex.: `status`, `relation` ou data em formato desconhecido).",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    @ApiResponse(responseCode = "401", description = "Sem sessão.", content = @Content)
+    @ApiResponse(
+            responseCode = "403",
+            description = "Quem chamou não é administrador nem coordenador, ou a conta foi desativada.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    TicketOverviewResponse overview(@Parameter(hidden = true) Jwt jwt,
+                                    @ParameterObject TicketOverviewFilter filter,
+                                    @ParameterObject Pageable pageable);
 
     @Operation(
             summary = "Tamanho da fila de atendimento",
