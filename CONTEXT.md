@@ -217,7 +217,6 @@ Formato obrigatório: `V<n>__<descricao>.sql` — **`V` maiúsculo** e dois unde
 | `V21__create_trusted_devices_and_login_challenges.sql` | `trusted_devices` (navegadores confiáveis, 30 dias) e `login_challenges` (etapa entre a senha e o código) (SCRUM-206) |
 | `V22__create_ticket_closures.sql` | `ticket_closures`: encerramentos desfeitos por reabertura (SCRUM-208) |
 | `V23__add_ticket_departments.sql` | `tickets.origin_department_id` e `tickets.target_department_id` (NOT NULL): povoados com o departamento atual do solicitante e a Inovação; *trigger* que preenche a origem em inserts sem ela; índices `(origin_department_id, status)`, `(target_department_id, status)` e `created_at` (SCRUM-213) |
-| `V24__create_coordinators.sql` | `coordinators` (papel de coordenador, 1:1 com `users`, como `admins`) e `PRIVILEGE_CHANGED` no `CHECK` de `security_events` (agora `chk_security_events_type`) (SCRUM-219) |
 
 A V11 e a V12 já estão na `main` (PR #10, 20/10) e rodam em toda a suíte de integração, então valem como aplicadas e **não se editam mais**: qualquer ajuste vira V17 em diante. O código que as usa (entidades, services, endpoints) ainda não existe (SCRUM-152 e SCRUM-150).
 
