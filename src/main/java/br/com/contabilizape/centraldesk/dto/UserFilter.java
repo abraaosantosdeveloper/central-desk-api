@@ -15,13 +15,13 @@ public record UserFilter(
     @Schema(description = "Parte do nome ou do e-mail, sem diferenciar maiúsculas", example = "maria")
     String search,
 
-    @Schema(description = "Perfil: ADMIN (administradores), HANDLER (Inovação, sem ser admin) ou "
-            + "COLLABORATOR (demais contas)", example = "HANDLER")
+    @Schema(description = "Perfil: ADMIN (administradores), COORDINATOR (coordenadores de setor), HANDLER "
+            + "(Inovação, sem ser admin) ou COLLABORATOR (fora da Inovação, sem ser admin nem coordenador)", example = "HANDLER")
     UserRole role,
 
     @Schema(description = "Departamento da conta")
     UUID departmentId
 ) {
 
-    public enum UserRole { ADMIN, HANDLER, COLLABORATOR }
+    public enum UserRole { ADMIN, COORDINATOR, HANDLER, COLLABORATOR }
 }

@@ -52,7 +52,10 @@ public enum EmailTemplate {
     TFA_FAILED_AFTER_PASSWORD("tfa-failed-after-password", "Tentativa de acesso à sua conta", true,
             "eventDate", "eventTime"),
     NEW_BROWSER_LOGIN("new-browser-login", "Novo acesso à sua conta", true, "browserLabel", "eventDate", "eventTime"),
-    TWO_FACTOR_DISABLED("two-factor-disabled", "Verificação em duas etapas desligada", true, "eventDate", "eventTime");
+    TWO_FACTOR_DISABLED("two-factor-disabled", "Verificação em duas etapas desligada", true, "eventDate", "eventTime"),
+    // Sem os níveis no assunto: o corpo diz o que mudou (PLANO-REATRIBUICAO §3, PV7)
+    PRIVILEGE_CHANGED("privilege-changed", "Seu nível de acesso mudou", true,
+            "adminName", "previousLevel", "newLevel", "eventDate", "eventTime");
 
     /** Variáveis de todo e-mail de chamado (ARQUITETURA-EMAILS §8, "comuns a todos"). */
     public static final Set<String> TICKET_HEADER = Header.FIELDS;

@@ -36,6 +36,6 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
     Optional<Ticket> findForEmail(@Param("id") UUID id);
 
     @Override
-    @EntityGraph(attributePaths = {"category", "priority", "requester", "assignee"})
+    @EntityGraph(attributePaths = {"category", "priority", "requester", "assignee", "originDepartment", "targetDepartment"})
     Page<Ticket> findAll(Specification<Ticket> spec, Pageable pageable);
 }

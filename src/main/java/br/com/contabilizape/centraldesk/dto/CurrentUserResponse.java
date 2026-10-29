@@ -19,7 +19,8 @@ public record CurrentUserResponse(
     @Schema(description = "true quando há pedido de entrada na Inovação aguardando um administrador")
     boolean departmentApprovalPending,
     OffsetDateTime createdAt,
-    @Schema(description = "Permissões: ROLE_ADMIN (administrador) e TICKET_HANDLER (atende chamados). Vazia para colaboradores.",
+    @Schema(description = "Permissões: ROLE_ADMIN (administrador), COORDINATOR (coordena o próprio departamento) e TICKET_HANDLER "
+            + "(atende chamados). Vazia para colaboradores.",
             example = "[]")
     List<String> roles
 ) {

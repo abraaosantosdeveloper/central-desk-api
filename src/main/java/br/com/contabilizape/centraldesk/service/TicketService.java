@@ -27,10 +27,12 @@ import br.com.contabilizape.centraldesk.model.User;
 import br.com.contabilizape.centraldesk.model.UserStatus;
 import br.com.contabilizape.centraldesk.repository.AdminRepository;
 import br.com.contabilizape.centraldesk.repository.CategoryRepository;
+import br.com.contabilizape.centraldesk.repository.DepartmentRepository;
 import br.com.contabilizape.centraldesk.repository.PriorityRepository;
 import br.com.contabilizape.centraldesk.repository.TicketRepository;
 import br.com.contabilizape.centraldesk.repository.UserRepository;
 import br.com.contabilizape.centraldesk.realtime.TicketCreatedEvent;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -52,23 +54,29 @@ public class TicketService {
     private final AdminRepository adminRepository;
     private final CategoryRepository categoryRepository;
     private final PriorityRepository priorityRepository;
+    private final DepartmentRepository departmentRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
+    private final UUID handlerDepartmentId;
 
     public TicketService(TicketRepository ticketRepository,
                          UserRepository userRepository,
                          AdminRepository adminRepository,
                          CategoryRepository categoryRepository,
                          PriorityRepository priorityRepository,
+                         DepartmentRepository departmentRepository,
                          ApplicationEventPublisher eventPublisher,
-                         Clock clock) {
+                         Clock clock,
+                         @Value("${app.tickets.handler-department-id}") UUID handlerDepartmentId) {
         this.ticketRepository = ticketRepository;
         this.userRepository = userRepository;
         this.adminRepository = adminRepository;
         this.categoryRepository = categoryRepository;
         this.priorityRepository = priorityRepository;
+        this.departmentRepository = departmentRepository;
         this.eventPublisher = eventPublisher;
         this.clock = clock;
+        this.handlerDepartmentId = handlerDepartmentId;
     }
 
     /**
@@ -113,7 +121,8 @@ public class TicketService {
     }
 
     /**
-     * Abre um chamado em nome do usuário logado (requesterId vem do token, nunca do corpo).
+     * Abre um chamado em nome do usuário logado (requesterId vem do token, nunca do corpo). A origem é o
+     * departamento atual do solicitante; o destino, por enquanto, é sempre a Inovação (SCRUM-213).
      */
     @Transactional
     public TicketResponse open(UUID requesterId, TicketCreateRequest request) {
@@ -121,7 +130,8 @@ public class TicketService {
         Category category = findCategory(request.categoryId(), null);
         Priority priority = findPriority(request.priorityId());
 
-        Ticket ticket = new Ticket(request.title().trim(), request.description().trim(), category, priority, requester);
+        Ticket ticket = new Ticket(request.title().trim(), request.description().trim(), category, priority, requester,
+                departmentRepository.getReferenceById(handlerDepartmentId));
         ticketRepository.saveAndFlush(ticket); // flush preenche o createdAt antes de montar a resposta
         // Dois eventos: o resumo para a tela (SSE) e o fato de domínio, que a fila e os e-mails também ouvem
         eventPublisher.publishEvent(new TicketCreatedEvent(TicketSummaryResponse.from(ticket)));

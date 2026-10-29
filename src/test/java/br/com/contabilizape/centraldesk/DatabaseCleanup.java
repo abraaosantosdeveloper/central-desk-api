@@ -13,6 +13,8 @@ public final class DatabaseCleanup {
 
     /** Remove usuários comuns e tudo o que depende deles; administradores são preservados. */
     public static void removeNonAdminUsers(JdbcTemplate jdbc) {
+        // Coordenadores nunca são administradores (privilégios exclusivos): saem todos
+        jdbc.update("DELETE FROM coordinators");
         jdbc.update("DELETE FROM notifications");
         jdbc.update("DELETE FROM ticket_ratings");
         jdbc.update("DELETE FROM comments");

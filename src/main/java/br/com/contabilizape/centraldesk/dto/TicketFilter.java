@@ -22,7 +22,7 @@ public record TicketFilter(
             example = "impressora")
     String q,
 
-    @Schema(description = "Departamento de quem abriu o chamado (ids em GET /departments)")
+    @Schema(description = "Setor de origem: o departamento de quem abriu, no momento da abertura (ids em GET /departments)")
     UUID departmentId,
 
     @Schema(description = "Ordenação: RECENT (mais recentes primeiro, padrão) ou PRIORITY "

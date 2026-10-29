@@ -251,6 +251,15 @@ public final class ProblemExamples {
               }
             }""";
 
+    public static final String ADMIN_ONLY_INNOVATION = """
+            {
+              "type": "about:blank",
+              "title": "Operação não permitida",
+              "status": 409,
+              "detail": "Somente contas da Inovação podem ser administradoras. Mude o departamento da pessoa primeiro.",
+              "instance": "/users/3f2c8a10-5b7e-4d21-9c3a-8e1f0b2d4c6a/privilege"
+            }""";
+
     public static final String LAST_ADMIN = """
             {
               "type": "about:blank",

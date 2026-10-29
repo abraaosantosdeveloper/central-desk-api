@@ -22,6 +22,8 @@ public record AdminUserDetailResponse(
     String departmentName,
     @Schema(description = "true quando a conta é de administrador")
     boolean admin,
+    @Schema(description = "true quando a conta coordena o próprio departamento (exclusivo com admin)")
+    boolean coordinator,
     @Schema(description = "true quando a conta é da Inovação (atende chamados)")
     boolean ticketHandler,
     @Schema(description = "true quando há pedido de entrada na Inovação aguardando um administrador")
@@ -41,6 +43,7 @@ public record AdminUserDetailResponse(
             account.departmentId(),
             account.departmentName(),
             account.admin(),
+            account.coordinator(),
             account.ticketHandler(),
             account.departmentApprovalPending(),
             account.createdAt(),

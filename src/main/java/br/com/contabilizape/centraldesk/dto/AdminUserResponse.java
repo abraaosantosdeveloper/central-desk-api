@@ -17,6 +17,8 @@ public record AdminUserResponse(
     String departmentName,
     @Schema(description = "true quando a conta é de administrador")
     boolean admin,
+    @Schema(description = "true quando a conta coordena o próprio departamento (exclusivo com admin)")
+    boolean coordinator,
     @Schema(description = "true quando a conta é da Inovação (atende chamados)")
     boolean ticketHandler,
     @Schema(description = "true quando há pedido de entrada na Inovação aguardando um administrador")
@@ -28,7 +30,8 @@ public record AdminUserResponse(
     OffsetDateTime blockedAt
 ) {
 
-    public static AdminUserResponse from(User user, boolean admin, boolean ticketHandler, boolean approvalPending) {
+    public static AdminUserResponse from(User user, boolean admin, boolean coordinator, boolean ticketHandler,
+                                         boolean approvalPending) {
         return new AdminUserResponse(
             user.getId(),
             user.getFullName(),
@@ -37,6 +40,7 @@ public record AdminUserResponse(
             user.getDepartment().getId(),
             user.getDepartment().getName(),
             admin,
+            coordinator,
             ticketHandler,
             approvalPending,
             user.getCreatedAt(),

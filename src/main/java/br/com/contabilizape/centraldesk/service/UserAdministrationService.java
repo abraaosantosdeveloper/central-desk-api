@@ -12,15 +12,19 @@ import br.com.contabilizape.centraldesk.exception.InvalidAccountStatusException;
 import br.com.contabilizape.centraldesk.exception.SelfDeactivationException;
 import br.com.contabilizape.centraldesk.exception.UserNotFoundException;
 import br.com.contabilizape.centraldesk.model.Admin;
+import br.com.contabilizape.centraldesk.model.Coordinator;
 import br.com.contabilizape.centraldesk.model.Department;
 import br.com.contabilizape.centraldesk.model.DepartmentRequestStatus;
+import br.com.contabilizape.centraldesk.model.PrivilegeLevel;
 import br.com.contabilizape.centraldesk.model.User;
 import br.com.contabilizape.centraldesk.model.UserStatus;
 import br.com.contabilizape.centraldesk.realtime.UserPermissionsChangedEvent;
 import br.com.contabilizape.centraldesk.repository.AdminRepository;
+import br.com.contabilizape.centraldesk.repository.CoordinatorRepository;
 import br.com.contabilizape.centraldesk.repository.DepartmentRepository;
 import br.com.contabilizape.centraldesk.repository.DepartmentRequestRepository;
 import br.com.contabilizape.centraldesk.repository.UserRepository;
+import br.com.contabilizape.centraldesk.security.ClientInfo;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Subquery;
 import org.springframework.beans.factory.annotation.Value;
@@ -52,24 +56,30 @@ public class UserAdministrationService {
 
     private final UserRepository userRepository;
     private final AdminRepository adminRepository;
+    private final CoordinatorRepository coordinatorRepository;
     private final DepartmentRequestRepository departmentRequestRepository;
     private final DepartmentRepository departmentRepository;
     private final AccountOffboarding offboarding;
+    private final PrivilegeService privilegeService;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
     private final UUID handlerDepartmentId;
 
     public UserAdministrationService(UserRepository userRepository, AdminRepository adminRepository,
+                                     CoordinatorRepository coordinatorRepository,
                                      DepartmentRequestRepository departmentRequestRepository,
                                      DepartmentRepository departmentRepository,
-                                     AccountOffboarding offboarding, ApplicationEventPublisher eventPublisher,
+                                     AccountOffboarding offboarding, PrivilegeService privilegeService,
+                                     ApplicationEventPublisher eventPublisher,
                                      Clock clock,
                                      @Value("${app.tickets.handler-department-id}") UUID handlerDepartmentId) {
         this.userRepository = userRepository;
         this.adminRepository = adminRepository;
+        this.coordinatorRepository = coordinatorRepository;
         this.departmentRequestRepository = departmentRequestRepository;
         this.departmentRepository = departmentRepository;
         this.offboarding = offboarding;
+        this.privilegeService = privilegeService;
         this.eventPublisher = eventPublisher;
         this.clock = clock;
         this.handlerDepartmentId = handlerDepartmentId;
@@ -81,9 +91,11 @@ public class UserAdministrationService {
         Pageable page = PageRequest.of(pageable.getPageNumber(), Math.min(pageable.getPageSize(), MAX_PAGE_SIZE), BY_NAME);
         // Poucos admins e poucos pedidos pendentes: duas consultas em vez de uma por conta
         Set<UUID> adminIds = adminRepository.findAllUserIds();
+        Set<UUID> coordinatorIds = coordinatorRepository.findAllUserIds();
         Set<UUID> pendingIds = departmentRequestRepository.findUserIdsByStatus(DepartmentRequestStatus.PENDING);
         return PageResponse.from(userRepository.findAll(matching(filter), page),
-                user -> toResponse(user, adminIds.contains(user.getId()), pendingIds.contains(user.getId())));
+                user -> toResponse(user, adminIds.contains(user.getId()), coordinatorIds.contains(user.getId()),
+                        pendingIds.contains(user.getId())));
     }
 
     /** A conta aberta no painel traz também o CPF, que a tela de edição precisa. */
@@ -199,6 +211,10 @@ public class UserAdministrationService {
         if (leavesInnovation) {
             offboarding.returnTicketsToQueue(userId);
         }
+        // Quem coordena um setor e vai para outro deixa de coordenar (a coordenação é do departamento atual)
+        if (changesDepartment && coordinatorRepository.existsById(userId)) {
+            coordinatorRepository.deleteById(userId);
+        }
         if (changesDepartment) {
             eventPublisher.publishEvent(new UserPermissionsChangedEvent(userId));
         }
@@ -221,9 +237,14 @@ public class UserAdministrationService {
         if (adminRepository.existsById(userId)) {
             throw new InvalidAccountStatusException("Esta conta já é de administrador.");
         }
+        // Privilégios exclusivos (PV1): quem vira administrador deixa de ser coordenador
+        if (coordinatorRepository.existsById(userId)) {
+            coordinatorRepository.deleteById(userId);
+            coordinatorRepository.flush();
+        }
         adminRepository.save(new Admin(user, findUser(adminId)));
         eventPublisher.publishEvent(new UserPermissionsChangedEvent(userId));
-        return toResponse(user, true, pendingRequest(userId));
+        return toResponse(user, true, false, pendingRequest(userId));
     }
 
     /** Remove o perfil de administrador. Ninguém remove o próprio, então sempre sobra quem fez a remoção. */
@@ -239,7 +260,18 @@ public class UserAdministrationService {
         offboarding.ensureNotLastActiveAdmin(userId);
         adminRepository.deleteById(userId);
         eventPublisher.publishEvent(new UserPermissionsChangedEvent(userId));
-        return toResponse(user, false, pendingRequest(userId));
+        return toResponse(user, false, false, pendingRequest(userId));
+    }
+
+    /**
+     * "Alterar privilégios" (PUT /users/{id}/privilege): ADMIN, COORDINATOR ou COLLABORATOR, exclusivos entre si.
+     * As regras ficam no PrivilegeService.
+     */
+    @Transactional
+    public AdminUserResponse changePrivilege(UUID userId, PrivilegeLevel level, UUID adminId, ClientInfo client) {
+        privilegeService.change(userId, level, adminId, client);
+        User user = findUser(userId);
+        return toResponse(user, level == PrivilegeLevel.ADMIN, level == PrivilegeLevel.COORDINATOR, pendingRequest(userId));
     }
 
     private boolean pendingRequest(UUID userId) {
@@ -252,12 +284,13 @@ public class UserAdministrationService {
 
     private AdminUserResponse toResponse(User user) {
         boolean pending = departmentRequestRepository.existsByUserIdAndStatus(user.getId(), DepartmentRequestStatus.PENDING);
-        return toResponse(user, adminRepository.existsById(user.getId()), pending);
+        return toResponse(user, adminRepository.existsById(user.getId()), coordinatorRepository.existsById(user.getId()),
+                pending);
     }
 
-    private AdminUserResponse toResponse(User user, boolean admin, boolean approvalPending) {
+    private AdminUserResponse toResponse(User user, boolean admin, boolean coordinator, boolean approvalPending) {
         boolean ticketHandler = user.getDepartment().getId().equals(handlerDepartmentId);
-        return AdminUserResponse.from(user, admin, ticketHandler, approvalPending);
+        return AdminUserResponse.from(user, admin, coordinator, ticketHandler, approvalPending);
     }
 
     private Specification<User> matching(UserFilter filter) {
@@ -281,11 +314,15 @@ public class UserAdministrationService {
                 Subquery<UUID> admins = query.subquery(UUID.class);
                 admins.select(admins.from(Admin.class).get("userId"));
                 Predicate isAdmin = user.get("id").in(admins);
+                Subquery<UUID> coordinators = query.subquery(UUID.class);
+                coordinators.select(coordinators.from(Coordinator.class).get("userId"));
+                Predicate isCoordinator = user.get("id").in(coordinators);
                 Predicate inInnovation = cb.equal(user.get("department").get("id"), handlerDepartmentId);
                 predicates.add(switch (filter.role()) {
                     case ADMIN -> isAdmin;
+                    case COORDINATOR -> isCoordinator;
                     case HANDLER -> cb.and(inInnovation, cb.not(isAdmin));
-                    case COLLABORATOR -> cb.and(cb.not(inInnovation), cb.not(isAdmin));
+                    case COLLABORATOR -> cb.and(cb.not(inInnovation), cb.not(isAdmin), cb.not(isCoordinator));
                 });
             }
             return cb.and(predicates.toArray(Predicate[]::new));

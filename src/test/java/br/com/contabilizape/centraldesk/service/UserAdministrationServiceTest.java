@@ -19,6 +19,7 @@ import br.com.contabilizape.centraldesk.model.TicketStatus;
 import br.com.contabilizape.centraldesk.model.User;
 import br.com.contabilizape.centraldesk.model.UserStatus;
 import br.com.contabilizape.centraldesk.repository.AdminRepository;
+import br.com.contabilizape.centraldesk.repository.CoordinatorRepository;
 import br.com.contabilizape.centraldesk.repository.DepartmentRepository;
 import br.com.contabilizape.centraldesk.repository.DepartmentRequestRepository;
 import br.com.contabilizape.centraldesk.repository.TicketRepository;
@@ -65,6 +66,8 @@ class UserAdministrationServiceTest {
 
     @Mock private UserRepository userRepository;
     @Mock private AdminRepository adminRepository;
+    @Mock private CoordinatorRepository coordinatorRepository;
+    @Mock private PrivilegeService privilegeService;
     @Mock private DepartmentRequestRepository departmentRequestRepository;
     @Mock private TicketRepository ticketRepository;
     @Mock private DepartmentRepository departmentRepository;
@@ -80,8 +83,9 @@ class UserAdministrationServiceTest {
     void setUp() {
         AccountOffboarding offboarding = new AccountOffboarding(userRepository, adminRepository, ticketRepository,
                 refreshTokenService, eventPublisher);
-        service = new UserAdministrationService(userRepository, adminRepository, departmentRequestRepository,
-                departmentRepository, offboarding, eventPublisher, Clock.fixed(NOW, ZoneOffset.UTC), INNOVATION_ID);
+        service = new UserAdministrationService(userRepository, adminRepository, coordinatorRepository,
+                departmentRequestRepository, departmentRepository, offboarding, privilegeService, eventPublisher,
+                Clock.fixed(NOW, ZoneOffset.UTC), INNOVATION_ID);
     }
 
     // ---------- desativar ----------
@@ -220,6 +224,37 @@ class UserAdministrationServiceTest {
         service.changeDepartment(TARGET_ID, GENERAL_ID);
 
         verifyNoInteractions(eventPublisher);
+    }
+
+    // ---------- coordenação (SCRUM-219) ----------
+
+    @Test
+    void changingDepartmentRemovesTheCoordination() {
+        User target = user(TARGET_ID, general, UserStatus.ACTIVE);
+        Department finance = department(UUID.fromString("cccccccc-0000-4000-8000-000000000003"), "Financeiro");
+        when(userRepository.findById(TARGET_ID)).thenReturn(Optional.of(target));
+        when(departmentRepository.findById(finance.getId())).thenReturn(Optional.of(finance));
+        when(coordinatorRepository.existsById(TARGET_ID)).thenReturn(true, false);
+
+        AdminUserResponse response = service.changeDepartment(TARGET_ID, finance.getId());
+
+        verify(coordinatorRepository).deleteById(TARGET_ID);
+        assertThat(response.coordinator()).isFalse();
+    }
+
+    @Test
+    void grantingAdminToACoordinatorRemovesTheCoordination() {
+        User target = user(TARGET_ID, innovation, UserStatus.ACTIVE);
+        User granter = user(ADMIN_ID, innovation, UserStatus.ACTIVE);
+        when(userRepository.findById(TARGET_ID)).thenReturn(Optional.of(target));
+        when(userRepository.findById(ADMIN_ID)).thenReturn(Optional.of(granter));
+        when(coordinatorRepository.existsById(TARGET_ID)).thenReturn(true);
+
+        AdminUserResponse response = service.grantAdmin(TARGET_ID, ADMIN_ID);
+
+        verify(coordinatorRepository).deleteById(TARGET_ID);
+        assertThat(response.admin()).isTrue();
+        assertThat(response.coordinator()).isFalse();
     }
 
     @Test
@@ -413,7 +448,7 @@ class UserAdministrationServiceTest {
     }
 
     private static Ticket ticketAssignedTo(User assignee) {
-        Ticket ticket = new Ticket("Impressora", "Sem papel", mock(Category.class), mock(Priority.class), mock(User.class));
+        Ticket ticket = new Ticket("Impressora", "Sem papel", mock(Category.class), mock(Priority.class), mock(User.class), mock(Department.class));
         ticket.assign(assignee, OffsetDateTime.now(ZoneOffset.UTC));
         return ticket;
     }

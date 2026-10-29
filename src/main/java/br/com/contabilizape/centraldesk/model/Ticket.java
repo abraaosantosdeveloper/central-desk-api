@@ -46,6 +46,17 @@ public class Ticket {
     @JoinColumn(name = "requester_id", nullable = false)
     private User requester;
 
+    // Setor de origem (SCRUM-213, D2): o departamento de quem abriu, gravado na abertura e nunca alterado.
+    // Sem setter e sem update: trocar de setor, reabrir, devolver à fila ou anonimizar não mexem nele.
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "origin_department_id", nullable = false, updatable = false)
+    private Department originDepartment;
+
+    // Setor que recebe o chamado. Hoje sempre a Inovação; a troca (SCRUM-211) ainda não existe.
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "target_department_id", nullable = false)
+    private Department targetDepartment;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "assignee_id")
     private User assignee;
@@ -74,13 +85,19 @@ public class Ticket {
 
     protected Ticket() {}
 
-    /** Abre o chamado: status OPEN, sem responsável. */
-    public Ticket(String title, String description, Category category, Priority priority, User requester) {
+    /**
+     * Abre o chamado: status OPEN, sem responsável. A origem é o departamento do solicitante neste momento
+     * (D2); o destino é o setor que vai receber o chamado.
+     */
+    public Ticket(String title, String description, Category category, Priority priority, User requester,
+                  Department targetDepartment) {
         this.title = title;
         this.description = description;
         this.category = category;
         this.priority = priority;
         this.requester = requester;
+        this.originDepartment = requester.getDepartment();
+        this.targetDepartment = targetDepartment;
     }
 
     /** Troca o conteúdo do formulário. Quem pode e quando é decidido no TicketService. */
@@ -171,6 +188,8 @@ public class Ticket {
     public Category getCategory() { return category; }
     public Priority getPriority() { return priority; }
     public User getRequester() { return requester; }
+    public Department getOriginDepartment() { return originDepartment; }
+    public Department getTargetDepartment() { return targetDepartment; }
     public User getAssignee() { return assignee; }
     public OffsetDateTime getAssignedAt() { return assignedAt; }
     public User getClosedBy() { return closedBy; }

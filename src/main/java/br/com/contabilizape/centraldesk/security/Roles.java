@@ -8,6 +8,12 @@ public final class Roles {
     /** Usuário presente na tabela admins. */
     public static final String ADMIN = "ROLE_ADMIN";
 
+    /**
+     * Coordenador do próprio departamento (SCRUM-219). No token só serve para o front montar o menu: as
+     * rotas que dependem dele conferem a condição no banco.
+     */
+    public static final String COORDINATOR = "COORDINATOR";
+
     /** Membro do departamento que atende os chamados (Inovação). */
     public static final String TICKET_HANDLER = "TICKET_HANDLER";
 

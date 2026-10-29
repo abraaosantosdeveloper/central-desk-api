@@ -6,6 +6,7 @@ import br.com.contabilizape.centraldesk.dto.AdminUserResponse;
 import br.com.contabilizape.centraldesk.dto.AdminUserUpdateRequest;
 import br.com.contabilizape.centraldesk.dto.DepartmentChangeRequest;
 import br.com.contabilizape.centraldesk.dto.PageResponse;
+import br.com.contabilizape.centraldesk.dto.PrivilegeChangeRequest;
 import br.com.contabilizape.centraldesk.dto.TemporaryPasswordResponse;
 import br.com.contabilizape.centraldesk.dto.UserFilter;
 import io.swagger.v3.oas.annotations.Operation;
@@ -35,7 +36,7 @@ public interface AdminUserApi {
             description = """
                     Só administradores. Ordem alfabética pelo nome; paginado (`size` padrão 20, máximo 100). \
                     Filtros opcionais: `status`, `search` (parte do nome ou do e-mail), `role` \
-                    (ADMIN, HANDLER, COLLABORATOR) e `departmentId`. Sem `status`, as contas \
+                    (ADMIN, COORDINATOR, HANDLER, COLLABORATOR) e `departmentId`. Sem `status`, as contas \
                     **anonimizadas** ficam de fora.""",
             security = @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH))
     @ApiResponse(responseCode = "200", description = "Página de contas.")
@@ -179,6 +180,32 @@ public interface AdminUserApi {
     @ApiResponse(responseCode = "409", description = "A conta não está ativa, não é da Inovação ou já é de administrador.",
             content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
     AdminUserResponse grantAdmin(@Parameter(hidden = true) Jwt jwt, @Parameter(description = "Id do usuário") UUID id);
+
+    @Operation(
+            summary = "Altera o privilégio de uma conta",
+            description = """
+                    Só administradores. Níveis exclusivos entre si: `ADMIN`, `COORDINATOR` (coordena o próprio \
+                    departamento: vê os chamados que o setor abriu ou recebeu) e `COLLABORATOR`. `ADMIN` só para \
+                    contas da Inovação. Ninguém altera o próprio privilégio, a conta precisa estar ativa e o sistema \
+                    nunca fica sem administrador ativo. Atender chamados não muda: vem do departamento. \
+                    Vale **na hora**: as sessões da pessoa são encerradas (os navegadores dela recebem \
+                    `session.ended`), a troca fica na auditoria (`PRIVILEGE_CHANGED`) e a pessoa recebe um e-mail. \
+                    Pedir o nível que a conta já tem não muda nada.""",
+            security = @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH))
+    @ApiResponse(responseCode = "200", description = "Privilégio alterado (ou já era o pedido).",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = AdminUserResponse.class)))
+    @ApiResponse(responseCode = "400", description = "Nível ausente ou inválido.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    @ApiResponse(responseCode = "401", description = "Sem sessão.", content = @Content)
+    @ApiResponse(responseCode = "403", description = "Quem chamou não é administrador.", content = @Content)
+    @ApiResponse(responseCode = "404", description = "Conta inexistente.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    @ApiResponse(responseCode = "409", description = "Própria conta, conta não ativa, ADMIN fora da Inovação ou último administrador ativo.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE,
+                    schema = @Schema(implementation = ProblemDetail.class),
+                    examples = @ExampleObject(name = "Somente Inovação", value = ProblemExamples.ADMIN_ONLY_INNOVATION)))
+    AdminUserResponse changePrivilege(@Parameter(hidden = true) Jwt jwt, @Parameter(description = "Id do usuário") UUID id,
+                                      PrivilegeChangeRequest request, @Parameter(hidden = true) HttpServletRequest httpRequest);
 
     @Operation(
             summary = "Remove acesso de administrador",

@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="pt-BR" th:replace="~{email/layout :: layout(~{::title}, ~{::content})}">
+<head>
+    <title>Seu nível de acesso mudou</title>
+</head>
+<body>
+<div th:fragment="content">
+    <p th:replace="~{email/parts :: greeting}">Olá.</p>
+    <p style="margin:0 0 16px;">Um administrador (<strong th:text="${adminName}">Nome</strong>) alterou o seu nível de acesso no CentralDesk às <span th:text="${eventTime}">14:30</span> de <span th:text="${eventDate}">29/10/2026</span>: de <strong th:text="${previousLevel}">Colaborador</strong> para <strong th:text="${newLevel}">Coordenador</strong>.</p>
+    <p style="margin:0 0 16px;">Por segurança, as suas sessões foram encerradas. Entre de novo para ver o menu com as novas permissões.</p>
+    <p style="margin:16px 0 0;padding:12px 14px;background-color:#FFF7ED;border-radius:8px;font-size:14px;color:#9A3412;">Se você não esperava essa mudança, fale com a equipe de Inovação.</p>
+</div>
+</body>
+</html>

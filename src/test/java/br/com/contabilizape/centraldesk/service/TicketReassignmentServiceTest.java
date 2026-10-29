@@ -90,7 +90,7 @@ class TicketReassignmentServiceTest {
 
     @Test
     void adminReassigningATicketFromTheQueuePublishesTheEventWithFromQueue() {
-        Ticket ticket = new Ticket("Impressora", "Sem papel", mock(Category.class), mock(Priority.class), requester);
+        Ticket ticket = new Ticket("Impressora", "Sem papel", mock(Category.class), mock(Priority.class), requester, mock(Department.class));
         stubActorTicketAndNewAssignee(ticket);
 
         service.reassign(TICKET_ID, ACTOR_ID, List.of(Roles.ADMIN), NEW_ASSIGNEE_ID);
@@ -139,7 +139,7 @@ class TicketReassignmentServiceTest {
     void requesterWhoIsAdminCanReceiveHisOwnTicket() {
         User adminRequester = user(REQUESTER_ID, UserStatus.ACTIVE, department(UUID.randomUUID()));
         Ticket ticket = new Ticket("Integração", "Demanda interna", mock(Category.class), mock(Priority.class),
-                adminRequester);
+                adminRequester, mock(Department.class));
         ticket.assign(actor, OffsetDateTime.now(ZoneOffset.UTC));
         when(userRepository.findById(ACTOR_ID)).thenReturn(Optional.of(actor));
         when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
@@ -155,7 +155,7 @@ class TicketReassignmentServiceTest {
     @Test
     void requesterFromInnovationWhoIsNotAdminCannotReceiveHisOwnTicket() {
         User handlerRequester = user(REQUESTER_ID, UserStatus.ACTIVE, innovation);
-        Ticket ticket = new Ticket("Notebook", "Não liga", mock(Category.class), mock(Priority.class), handlerRequester);
+        Ticket ticket = new Ticket("Notebook", "Não liga", mock(Category.class), mock(Priority.class), handlerRequester, mock(Department.class));
         ticket.assign(actor, OffsetDateTime.now(ZoneOffset.UTC));
         when(userRepository.findById(ACTOR_ID)).thenReturn(Optional.of(actor));
         when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
@@ -199,7 +199,7 @@ class TicketReassignmentServiceTest {
     }
 
     private Ticket ticketInProgressWith(User assignee) {
-        Ticket ticket = new Ticket("Impressora", "Sem papel", mock(Category.class), mock(Priority.class), requester);
+        Ticket ticket = new Ticket("Impressora", "Sem papel", mock(Category.class), mock(Priority.class), requester, mock(Department.class));
         ticket.assign(assignee, OffsetDateTime.now(ZoneOffset.UTC));
         return ticket;
     }

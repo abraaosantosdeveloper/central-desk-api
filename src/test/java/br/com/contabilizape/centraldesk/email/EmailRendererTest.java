@@ -84,6 +84,21 @@ class EmailRendererTest {
     }
 
     @Test
+    void privilegeChangeSaysWhoChangedFromWhatToWhat() {
+        Map<String, Object> variables = sample(EmailTemplate.PRIVILEGE_CHANGED);
+        variables.put("adminName", "Ana Admin");
+        variables.put("previousLevel", "Colaborador");
+        variables.put("newLevel", "Coordenador");
+
+        EmailMessage message = renderer.compose(EmailTemplate.PRIVILEGE_CHANGED, "maria.souza@contabilizape.com.br",
+                variables, "privilege-changed/1/2", null);
+
+        assertThat(message.html()).contains("Ana Admin").contains("Colaborador").contains("Coordenador")
+                .contains("sessões foram encerradas");
+        assertThat(message.subject()).isEqualTo("Seu nível de acesso mudou");
+    }
+
+    @Test
     void lineBreaksOfTheMessageBecomeBrTags() {
         Map<String, Object> variables = sample(EmailTemplate.TICKET_NEW_MESSAGE);
         variables.put("messageLines", List.of("Bom dia,", "a impressora voltou."));

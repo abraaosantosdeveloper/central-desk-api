@@ -47,6 +47,10 @@ public interface UserRepository extends JpaRepository<User, UUID>, JpaSpecificat
     @Query("select u.sessionsValidFrom from User u where u.id = :id")
     Optional<OffsetDateTime> findSessionsValidFrom(@Param("id") UUID id);
 
+    /** Coordenador de setor (SCRUM-219), lido do banco a cada uso: vale na hora em que o papel muda. */
+    @Query("select case when count(c) > 0 then true else false end from Coordinator c where c.userId = :userId")
+    boolean isCoordinator(@Param("userId") UUID userId);
+
     @Query("select a.user from Admin a where a.user.status = :status")
     List<User> findAdminsByStatus(@Param("status") UserStatus status);
 

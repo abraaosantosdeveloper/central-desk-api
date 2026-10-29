@@ -241,6 +241,9 @@ public class AuthService {
         if (adminRepository.existsById(user.getId())) {
             roles.add(Roles.ADMIN);
         }
+        if (userRepository.isCoordinator(user.getId())) {
+            roles.add(Roles.COORDINATOR);
+        }
         if (user.getDepartment().getId().equals(handlerDepartmentId)) {
             roles.add(Roles.TICKET_HANDLER);
         }

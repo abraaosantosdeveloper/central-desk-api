@@ -16,5 +16,7 @@ public enum SecurityEventType {
     PASSWORD_RESET_COMPLETED,
     PASSWORD_RESET_BY_ADMIN,
     ADMIN_RECOVERY,
-    EMAIL_VERIFIED
+    EMAIL_VERIFIED,
+    /** Nível de privilégio trocado por um administrador (detalhes: anterior → novo, e quem trocou). */
+    PRIVILEGE_CHANGED
 }

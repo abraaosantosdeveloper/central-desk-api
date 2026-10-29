@@ -12,6 +12,7 @@ import java.time.ZoneOffset;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Máquina de estados do chamado: o status só muda pelas ações (assumir, devolver à fila, encerrar).
@@ -209,8 +210,44 @@ class TicketTest {
         assertThat(ticket.getStatus()).isEqualTo(TicketStatus.OPEN);
     }
 
+    // ---------- SCRUM-213: setores no chamado (D2) ----------
+
+    @Test
+    void originIsTheRequesterDepartmentAtOpening() {
+        Department fiscal = mock(Department.class);
+        Department innovation = mock(Department.class);
+        User requester = mock(User.class);
+        when(requester.getDepartment()).thenReturn(fiscal);
+
+        Ticket ticket = new Ticket("Impressora", "Sem papel", mock(Category.class), mock(Priority.class), requester, innovation);
+
+        assertThat(ticket.getOriginDepartment()).isSameAs(fiscal);
+        assertThat(ticket.getTargetDepartment()).isSameAs(innovation);
+    }
+
+    @Test
+    void originNeverChangesWhenTheRequesterMovesOrTheTicketGoesThroughItsLifecycle() {
+        Department fiscal = mock(Department.class);
+        User requester = mock(User.class);
+        when(requester.getDepartment()).thenReturn(fiscal);
+        Ticket ticket = new Ticket("Impressora", "Sem papel", mock(Category.class), mock(Priority.class), requester,
+                mock(Department.class));
+
+        // A pessoa muda de setor depois de abrir: o chamado continua sendo do setor de origem
+        when(requester.getDepartment()).thenReturn(mock(Department.class));
+        User handler = mock(User.class);
+        ticket.assign(handler, NOW);
+        ticket.reassign(mock(User.class), NOW);
+        ticket.returnToQueue();
+        ticket.assign(handler, NOW);
+        ticket.close(handler, "Troquei o toner", NOW);
+        ticket.reopen(false);
+
+        assertThat(ticket.getOriginDepartment()).isSameAs(fiscal);
+    }
+
     private static Ticket ticket(TicketStatus status) {
-        Ticket ticket = new Ticket("Impressora", "Sem papel", mock(Category.class), mock(Priority.class), mock(User.class));
+        Ticket ticket = new Ticket("Impressora", "Sem papel", mock(Category.class), mock(Priority.class), mock(User.class), mock(Department.class));
         ReflectionTestUtils.setField(ticket, "status", status);
         return ticket;
     }

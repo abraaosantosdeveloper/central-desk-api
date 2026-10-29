@@ -1,5 +1,6 @@
 package br.com.contabilizape.centraldesk.dto;
 
+import br.com.contabilizape.centraldesk.model.Department;
 import br.com.contabilizape.centraldesk.model.Ticket;
 import br.com.contabilizape.centraldesk.model.TicketStatus;
 import br.com.contabilizape.centraldesk.model.User;
@@ -19,6 +20,10 @@ public record TicketSummaryResponse(
     PriorityResponse priority,
     UUID requesterId,
     String requesterName,
+    @Schema(description = "Setor de origem: o departamento de quem abriu, no momento da abertura (nunca muda)")
+    DepartmentResponse originDepartment,
+    @Schema(description = "Setor de destino: quem recebe o chamado (hoje sempre a Inovação)")
+    DepartmentResponse targetDepartment,
     @Schema(description = "Responsável; vazio enquanto o chamado está na fila")
     UUID assigneeId,
     String assigneeName,
@@ -36,11 +41,17 @@ public record TicketSummaryResponse(
             PriorityResponse.from(ticket.getPriority()),
             ticket.getRequester().getId(),
             ticket.getRequester().getFullName(),
+            departmentOf(ticket.getOriginDepartment()),
+            departmentOf(ticket.getTargetDepartment()),
             idOf(ticket.getAssignee()),
             nameOf(ticket.getAssignee()),
             ticket.getCreatedAt(),
             ticket.getUpdatedAt()
         );
+    }
+
+    private static DepartmentResponse departmentOf(Department department) {
+        return department == null ? null : DepartmentResponse.from(department);
     }
 
     private static UUID idOf(User user) {

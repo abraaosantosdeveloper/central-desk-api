@@ -29,6 +29,7 @@ import br.com.contabilizape.centraldesk.realtime.TicketCreatedEvent;
 import br.com.contabilizape.centraldesk.model.UserStatus;
 import br.com.contabilizape.centraldesk.repository.AdminRepository;
 import br.com.contabilizape.centraldesk.repository.CategoryRepository;
+import br.com.contabilizape.centraldesk.repository.DepartmentRepository;
 import br.com.contabilizape.centraldesk.repository.PriorityRepository;
 import br.com.contabilizape.centraldesk.repository.TicketRepository;
 import br.com.contabilizape.centraldesk.repository.UserRepository;
@@ -74,12 +75,14 @@ class TicketServiceTest {
     private static final UUID CATEGORY_ID = UUID.randomUUID();
     private static final short MEDIUM = 2;
     private static final Instant NOW = Instant.parse("2026-10-20T12:00:00Z");
+    private static final UUID INNOVATION_ID = UUID.fromString("e9790f1f-41df-4369-bfe7-1be4be535561");
 
     @Mock private TicketRepository ticketRepository;
     @Mock private UserRepository userRepository;
     @Mock private AdminRepository adminRepository;
     @Mock private CategoryRepository categoryRepository;
     @Mock private PriorityRepository priorityRepository;
+    @Mock private DepartmentRepository departmentRepository;
     @Mock private ApplicationEventPublisher eventPublisher;
 
     private TicketService ticketService;
@@ -91,7 +94,7 @@ class TicketServiceTest {
     @BeforeEach
     void setUp() {
         ticketService = new TicketService(ticketRepository, userRepository, adminRepository, categoryRepository, priorityRepository,
-                eventPublisher, Clock.fixed(NOW, ZoneOffset.UTC));
+                departmentRepository, eventPublisher, Clock.fixed(NOW, ZoneOffset.UTC), INNOVATION_ID);
     }
 
     @Test
@@ -100,6 +103,7 @@ class TicketServiceTest {
         when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(maria));
         when(categoryRepository.findById(CATEGORY_ID)).thenReturn(Optional.of(hardware));
         when(priorityRepository.findById(MEDIUM)).thenReturn(Optional.of(medium));
+        when(departmentRepository.getReferenceById(INNOVATION_ID)).thenReturn(mock(Department.class));
         when(ticketRepository.saveAndFlush(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         TicketResponse response = ticketService.open(REQUESTER_ID, request("  Impressora parada  ", CATEGORY_ID, MEDIUM));
@@ -121,6 +125,25 @@ class TicketServiceTest {
         TicketOpenedEvent opened = published(TicketOpenedEvent.class);
         assertThat(opened.eventId()).isNotNull();
         assertThat(opened.requesterId()).isEqualTo(REQUESTER_ID);
+    }
+
+    // SCRUM-213: a origem é o departamento do solicitante na abertura; o destino, por enquanto, a Inovação
+    @Test
+    void openedTicketKeepsTheRequesterDepartmentAsOriginAndInnovationAsTarget() {
+        User maria = requester(UserStatus.ACTIVE);
+        Department innovation = mock(Department.class);
+        when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(maria));
+        when(categoryRepository.findById(CATEGORY_ID)).thenReturn(Optional.of(hardware));
+        when(priorityRepository.findById(MEDIUM)).thenReturn(Optional.of(medium));
+        when(departmentRepository.getReferenceById(INNOVATION_ID)).thenReturn(innovation);
+        when(ticketRepository.saveAndFlush(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ticketService.open(REQUESTER_ID, request("Impressora parada", CATEGORY_ID, MEDIUM));
+
+        ArgumentCaptor<Ticket> saved = ArgumentCaptor.forClass(Ticket.class);
+        verify(ticketRepository).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getOriginDepartment()).isSameAs(maria.getDepartment());
+        assertThat(saved.getValue().getTargetDepartment()).isSameAs(innovation);
     }
 
     @Test
@@ -184,7 +207,7 @@ class TicketServiceTest {
     @Test
     void requesterEditsOpenTicket() {
         User maria = requester(UserStatus.ACTIVE);
-        Ticket ticket = new Ticket("Antigo", "Descrição antiga", hardware, medium, maria);
+        Ticket ticket = new Ticket("Antigo", "Descrição antiga", hardware, medium, maria, mock(Department.class));
         when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(maria));
         when(ticketRepository.findById(TICKET_ID)).thenReturn(Optional.of(ticket));
         when(categoryRepository.findById(CATEGORY_ID)).thenReturn(Optional.of(hardware));
@@ -217,7 +240,7 @@ class TicketServiceTest {
         User joao = new User("João Souza", "11144477735", "joao.souza@contabilizape.com.br", "hash", mock(Department.class));
         ReflectionTestUtils.setField(joao, "id", joaoId);
         ReflectionTestUtils.setField(joao, "status", UserStatus.ACTIVE);
-        Ticket ticketOfMaria = new Ticket("Antigo", "Descrição", hardware, medium, maria);
+        Ticket ticketOfMaria = new Ticket("Antigo", "Descrição", hardware, medium, maria, mock(Department.class));
         when(userRepository.findById(joaoId)).thenReturn(Optional.of(joao));
         when(ticketRepository.findById(TICKET_ID)).thenReturn(Optional.of(ticketOfMaria));
 
@@ -229,7 +252,7 @@ class TicketServiceTest {
     @Test
     void ticketAlreadyAssumedCannotBeEdited() {
         User maria = requester(UserStatus.ACTIVE);
-        Ticket ticket = new Ticket("Antigo", "Descrição", hardware, medium, maria);
+        Ticket ticket = new Ticket("Antigo", "Descrição", hardware, medium, maria, mock(Department.class));
         ReflectionTestUtils.setField(ticket, "status", TicketStatus.IN_PROGRESS);
         when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(maria));
         when(ticketRepository.findById(TICKET_ID)).thenReturn(Optional.of(ticket));
@@ -242,7 +265,7 @@ class TicketServiceTest {
     @Test
     void editWithUnknownCategoryIsRejected() {
         User maria = requester(UserStatus.ACTIVE);
-        Ticket ticket = new Ticket("Antigo", "Descrição", hardware, medium, maria);
+        Ticket ticket = new Ticket("Antigo", "Descrição", hardware, medium, maria, mock(Department.class));
         when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(maria));
         when(ticketRepository.findById(TICKET_ID)).thenReturn(Optional.of(ticket));
         when(categoryRepository.findById(CATEGORY_ID)).thenReturn(Optional.empty());
@@ -263,7 +286,7 @@ class TicketServiceTest {
     @Test
     void requesterSeesOwnTicket() {
         User maria = requester(UserStatus.ACTIVE);
-        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, maria);
+        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, maria, mock(Department.class));
         when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(maria));
         when(ticketRepository.findById(TICKET_ID)).thenReturn(Optional.of(ticket));
 
@@ -286,7 +309,7 @@ class TicketServiceTest {
     @Test
     void anotherCollaboratorGetsNotFound() {
         User other = user(OTHER_ID, UserStatus.ACTIVE);
-        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, requester(UserStatus.ACTIVE));
+        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, requester(UserStatus.ACTIVE), mock(Department.class));
         when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(other));
         when(ticketRepository.findById(TICKET_ID)).thenReturn(Optional.of(ticket));
 
@@ -317,7 +340,7 @@ class TicketServiceTest {
 
     private void viewerSeesTicketOfAnotherUser(List<String> roles) {
         User viewer = user(OTHER_ID, UserStatus.ACTIVE);
-        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, requester(UserStatus.ACTIVE));
+        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, requester(UserStatus.ACTIVE), mock(Department.class));
         when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(viewer));
         when(ticketRepository.findById(TICKET_ID)).thenReturn(Optional.of(ticket));
 
@@ -333,7 +356,7 @@ class TicketServiceTest {
     @Test
     void myTicketsAreSummarizedNewestFirst() {
         User maria = requester(UserStatus.ACTIVE);
-        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, maria);
+        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, maria, mock(Department.class));
         when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(maria));
         when(ticketRepository.findAll(any(Specification.class), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(ticket)));
@@ -413,7 +436,7 @@ class TicketServiceTest {
     @Test
     void handlerAssignsOpenTicketToHimself() {
         User handler = user(OTHER_ID, UserStatus.ACTIVE);
-        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, requester(UserStatus.ACTIVE));
+        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, requester(UserStatus.ACTIVE), mock(Department.class));
         when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(handler));
         when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
 
@@ -444,7 +467,7 @@ class TicketServiceTest {
     @Test
     void assigningTicketAlreadyInProgressIsInvalidTransition() {
         User handler = user(OTHER_ID, UserStatus.ACTIVE);
-        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, requester(UserStatus.ACTIVE));
+        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, requester(UserStatus.ACTIVE), mock(Department.class));
         ReflectionTestUtils.setField(ticket, "status", TicketStatus.IN_PROGRESS);
         when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(handler));
         when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
@@ -458,7 +481,7 @@ class TicketServiceTest {
     @Test
     void requesterCannotAssignOwnTicket() {
         User handler = user(OTHER_ID, UserStatus.ACTIVE);
-        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, handler);
+        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, handler, mock(Department.class));
         when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(handler));
         when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
 
@@ -472,7 +495,7 @@ class TicketServiceTest {
     @Test
     void adminAssumesTicketHeOpened() {
         User admin = user(OTHER_ID, UserStatus.ACTIVE);
-        Ticket ticket = new Ticket("Integração com o ERP", "Demanda interna", hardware, medium, admin);
+        Ticket ticket = new Ticket("Integração com o ERP", "Demanda interna", hardware, medium, admin, mock(Department.class));
         when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(admin));
         when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
         when(adminRepository.existsById(OTHER_ID)).thenReturn(true);
@@ -500,7 +523,7 @@ class TicketServiceTest {
     @Test
     void requesterCannotCloseOwnTicket() {
         User maria = requester(UserStatus.ACTIVE);
-        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, maria);
+        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, maria, mock(Department.class));
         when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(maria));
         when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
 
@@ -514,7 +537,7 @@ class TicketServiceTest {
     @Test
     void adminClosesTicketHeOpenedWhenHeIsTheAssignee() {
         User admin = user(OTHER_ID, UserStatus.ACTIVE);
-        Ticket ticket = new Ticket("Integração com o ERP", "Demanda interna", hardware, medium, admin);
+        Ticket ticket = new Ticket("Integração com o ERP", "Demanda interna", hardware, medium, admin, mock(Department.class));
         ticket.assign(admin, NOW.atOffset(ZoneOffset.UTC));
         when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(admin));
         when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
@@ -528,7 +551,7 @@ class TicketServiceTest {
     @Test
     void requesterCannotCloseOwnTicketWhileSomeoneElseHandlesIt() {
         User admin = user(OTHER_ID, UserStatus.ACTIVE);
-        Ticket ticket = new Ticket("Integração com o ERP", "Demanda interna", hardware, medium, admin);
+        Ticket ticket = new Ticket("Integração com o ERP", "Demanda interna", hardware, medium, admin, mock(Department.class));
         ticket.assign(requester(UserStatus.ACTIVE), NOW.atOffset(ZoneOffset.UTC));
         when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(admin));
         when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
@@ -552,7 +575,7 @@ class TicketServiceTest {
     @Test
     void anotherCollaboratorCannotCloseAndGetsNotFound() {
         User other = user(OTHER_ID, UserStatus.ACTIVE);
-        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, requester(UserStatus.ACTIVE));
+        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, requester(UserStatus.ACTIVE), mock(Department.class));
         when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(other));
         when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
 
@@ -563,7 +586,7 @@ class TicketServiceTest {
 
     @Test
     void closingClosedTicketIsInvalidTransition() {
-        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, requester(UserStatus.ACTIVE));
+        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, requester(UserStatus.ACTIVE), mock(Department.class));
         ReflectionTestUtils.setField(ticket, "status", TicketStatus.CLOSED);
         when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(user(OTHER_ID, UserStatus.ACTIVE)));
         when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
@@ -587,7 +610,7 @@ class TicketServiceTest {
     @Test
     void closingATicketInProgressIsNotFlaggedAsWasOpen() {
         User closer = user(OTHER_ID, UserStatus.ACTIVE);
-        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, requester(UserStatus.ACTIVE));
+        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, requester(UserStatus.ACTIVE), mock(Department.class));
         ReflectionTestUtils.setField(ticket, "status", TicketStatus.IN_PROGRESS);
         when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(closer));
         when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
@@ -610,7 +633,7 @@ class TicketServiceTest {
 
     private void closesTicketOfAnotherUserWith(List<String> roles) {
         User closer = user(OTHER_ID, UserStatus.ACTIVE);
-        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, requester(UserStatus.ACTIVE));
+        Ticket ticket = new Ticket("Impressora", "Sem papel", hardware, medium, requester(UserStatus.ACTIVE), mock(Department.class));
         when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(closer));
         when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
 

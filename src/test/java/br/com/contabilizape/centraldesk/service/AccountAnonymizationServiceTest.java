@@ -222,7 +222,7 @@ class AccountAnonymizationServiceTest {
     }
 
     private static Ticket ticketInProgressAssignedTo(User assignee) {
-        Ticket ticket = new Ticket("Impressora", "Sem papel", mock(Category.class), mock(Priority.class), mock(User.class));
+        Ticket ticket = new Ticket("Impressora", "Sem papel", mock(Category.class), mock(Priority.class), mock(User.class), mock(Department.class));
         ReflectionTestUtils.setField(ticket, "status", TicketStatus.IN_PROGRESS);
         ReflectionTestUtils.setField(ticket, "assignee", assignee);
         ReflectionTestUtils.setField(ticket, "assignedAt", NOW_UTC.minusDays(1));

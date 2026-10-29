@@ -216,6 +216,8 @@ Formato obrigatório: `V<n>__<descricao>.sql` — **`V` maiúsculo** e dois unde
 | `V20__create_security_events.sql` | `security_events`: trilha de auditoria da segurança das contas (SCRUM-202) |
 | `V21__create_trusted_devices_and_login_challenges.sql` | `trusted_devices` (navegadores confiáveis, 30 dias) e `login_challenges` (etapa entre a senha e o código) (SCRUM-206) |
 | `V22__create_ticket_closures.sql` | `ticket_closures`: encerramentos desfeitos por reabertura (SCRUM-208) |
+| `V23__add_ticket_departments.sql` | `tickets.origin_department_id` e `tickets.target_department_id` (NOT NULL): povoados com o departamento atual do solicitante e a Inovação; *trigger* que preenche a origem em inserts sem ela; índices `(origin_department_id, status)`, `(target_department_id, status)` e `created_at` (SCRUM-213) |
+| `V24__create_coordinators.sql` | `coordinators` (papel de coordenador, 1:1 com `users`, como `admins`) e `PRIVILEGE_CHANGED` no `CHECK` de `security_events` (agora `chk_security_events_type`) (SCRUM-219) |
 
 A V11 e a V12 já estão na `main` (PR #10, 20/10) e rodam em toda a suíte de integração, então valem como aplicadas e **não se editam mais**: qualquer ajuste vira V17 em diante. O código que as usa (entidades, services, endpoints) ainda não existe (SCRUM-152 e SCRUM-150).
 
@@ -246,6 +248,8 @@ Os UUIDs são fixos porque a aplicação os referencia por configuração: assim
 
 **admins** — `user_id` UUID PK e FK para `users` (1:1) · `granted_by_id` FK para `users`, nullable (o primeiro admin não tem) · `granted_at`
 
+**coordinators** (V24) — `user_id` UUID PK e FK para `users` (1:1) · `granted_by_id` FK para `users` · `granted_at`. O setor coordenado é o `department_id` atual da conta (não é copiado); mais de um coordenador por setor é permitido. Exclusivo com `admins` (regra na aplicação).
+
 **department_requests** — `id` UUID PK · `user_id` FK · `department_id` FK (departamento pedido) · `status` (`PENDING`, `APPROVED`, `REJECTED`) · `reviewed_by_id` FK nullable · `reviewed_at` nullable · `created_at` · `updated_at`
 - `CHECK`: pedido `PENDING` não tem revisor; pedido revisado precisa ter `reviewed_by_id` e `reviewed_at`.
 - Índice único parcial: no máximo **um pedido pendente por usuário** (pode pedir de novo depois de uma recusa).
@@ -255,7 +259,7 @@ Os UUIDs são fixos porque a aplicação os referencia por configuração: assim
 
 **priorities** — `id` SMALLINT PK · `label` VARCHAR(20) UNIQUE. Valores fixos: 1 Baixa, 2 Média, 3 Alta, 4 Crítica. O `id` define a ordem de urgência.
 
-**tickets** — `id` UUID PK · `ticket_number` BIGINT UNIQUE, identity (V17: número legível `#n` usado em e-mails e na interface; o `id` segue sendo o identificador da API) · `title` VARCHAR(120) · `description` TEXT · `status` (`OPEN`, `IN_PROGRESS`, `CLOSED`) · `category_id` FK · `priority_id` FK · `requester_id` FK · `assignee_id` FK nullable · `assigned_at` nullable · `closed_by_id` FK nullable · `closed_at` nullable · `resolution` TEXT nullable, até 2000 caracteres (V15: o que foi feito, obrigatório ao encerrar) · `created_at` · `updated_at`
+**tickets** — `id` UUID PK · `ticket_number` BIGINT UNIQUE, identity (V17: número legível `#n` usado em e-mails e na interface; o `id` segue sendo o identificador da API) · `title` VARCHAR(120) · `description` TEXT · `status` (`OPEN`, `IN_PROGRESS`, `CLOSED`) · `category_id` FK · `priority_id` FK · `requester_id` FK · `assignee_id` FK nullable · `assigned_at` nullable · `closed_by_id` FK nullable · `closed_at` nullable · `resolution` TEXT nullable, até 2000 caracteres (V15: o que foi feito, obrigatório ao encerrar) · `created_at` · `updated_at` · V23: `origin_department_id` FK (setor de origem: o departamento de quem abriu, gravado na abertura e **nunca alterado** — `updatable = false`, sem *setter*) · `target_department_id` FK (setor de destino; padrão Inovação, hoje sempre ela)
 
 **comments** — `id` UUID PK · `content` TEXT · `user_id` FK · `ticket_id` FK · `created_at` · `updated_at`
 
@@ -303,6 +307,9 @@ Os UUIDs são fixos porque a aplicação os referencia por configuração: assim
   - Não é possível remover o último administrador.
   - O **primeiro admin** é criado pelo `AdminBootstrap` (`ApplicationRunner`) ao subir a aplicação, **se ainda não houver nenhum admin** e as variáveis `ADMIN_NAME`, `ADMIN_CPF`, `ADMIN_EMAIL` e `ADMIN_PASSWORD` estiverem definidas. As credenciais passam pelas mesmas validações do cadastro (CPF, e-mail corporativo, força da senha); se forem inválidas, ou se o e-mail ou o CPF já existir, a aplicação não sobe. Ele entra na Inovação com `granted_by_id` nulo.
   - Por quê: dados pessoais e senha não podem ficar numa migration versionada no Git. Cada ambiente define o próprio admin no `.env`.
+- **Coordenador** (registro na tabela `coordinators`, authority `COORDINATOR` no token, SCRUM-219): acompanha os chamados que o **próprio departamento** abriu (origem) ou recebeu (destino). Não atende chamados por ser coordenador (atender vem do departamento). A condição é **lida do banco** nas rotas que dependem dela; a authority no token só serve para o front montar o menu.
+  - Níveis de privilégio **exclusivos**: `ADMIN`, `COORDINATOR`, `COLLABORATOR` (`PUT /users/{id}/privilege`, PV1 a PV7 do PLANO-REATRIBUICAO-SETOR-E-TODOS-CHAMADOS). `ADMIN` só na Inovação; ninguém altera o próprio; sempre sobra um admin ativo; a troca encerra as sessões da pessoa (`session.ended`), grava `PRIVILEGE_CHANGED` em `security_events` e envia o e-mail `privilege-changed`.
+  - Quem troca de departamento **perde a coordenação** (proposta do design, DECISOES-PAINEIS-METRICAS-BI §4). Conceder admin pela rota antiga (`PUT /users/{id}/admin`) também tira a coordenação.
 
 ### Ações do admin sobre a conta de outro usuário
 
@@ -533,7 +540,7 @@ Detalhes e o porquê de cada regra: `docs/ADR-SEGURANCA-CONTAS.md` (e o plano `P
 | PATCH | `/users/me/password` | troca de senha: exige a atual, revoga todas as sessões, invalida na hora os access tokens antigos (PR #26) e reabre a atual com cookies novos (204) (SCRUM-157) | **implementado** |
 | DELETE | `/users/me` | encerramento da própria conta: confirma a senha, anonimiza e apaga os cookies (204); último admin → 409 (SCRUM-159) | **implementado** |
 | PATCH | `/users/{id}/anonymize` | anonimização pelo admin, só de conta `DEACTIVATED` (404 / 409) (SCRUM-159) | **implementado** |
-| GET | `/users` | lista de contas (admin): ordem por nome, paginada, filtros `status`, `search`, `role` (`ADMIN`/`HANDLER`/`COLLABORATOR`) e `departmentId` (SCRUM-168); sem `status`, as anonimizadas ficam de fora (SCRUM-165) | **implementado** |
+| GET | `/users` | lista de contas (admin): ordem por nome, paginada, filtros `status`, `search`, `role` (`ADMIN`/`COORDINATOR`/`HANDLER`/`COLLABORATOR`) e `departmentId` (SCRUM-168); sem `status`, as anonimizadas ficam de fora (SCRUM-165) | **implementado** |
 | GET | `/users/{id}` | consulta de uma conta (admin), com `admin`, `ticketHandler`, `departmentApprovalPending` e o **CPF** (`AdminUserDetailResponse`; a listagem continua sem CPF) (SCRUM-165, PR #25) | **implementado** |
 | PUT | `/users/{id}` | corrigir nome, CPF, e-mail e departamento de uma conta **ativa** (admin), inclusive a do próprio admin; os quatro campos vão juntos; CPF ou e-mail repetido → 409; conta não ativa → 409; trocar o e-mail de outra pessoa encerra as sessões dela; responde `AdminUserDetailResponse` (PR #25) | **implementado** |
 | PATCH | `/users/{id}/deactivate` | desativação (admin): bloqueia o login na hora, revoga as sessões e devolve os chamados à fila; própria conta ou último admin → 409 (SCRUM-165) | **implementado** |
@@ -541,11 +548,12 @@ Detalhes e o porquê de cada regra: `docs/ADR-SEGURANCA-CONTAS.md` (e o plano `P
 | PATCH | `/users/{id}/department` | trocar o departamento (admin), corpo `{ departmentId }`: só conta ativa e sem pedido pendente (409); departamento inexistente → 400; para a Inovação vale como aprovação; quem sai da Inovação devolve os chamados em atendimento à fila (SCRUM-170) | **implementado** |
 | PUT | `/users/{id}/admin` | conceder admin: só conta ativa **da Inovação**; já admin → 409; grava quem concedeu (SCRUM-169) | **implementado** |
 | DELETE | `/users/{id}/admin` | remover admin: própria conta, conta que não é admin ou último admin ativo → 409 (SCRUM-169) | **implementado** |
+| PUT | `/users/{id}/privilege` | alterar privilégio (admin), corpo `{ level: ADMIN \| COORDINATOR \| COLLABORATOR }`: exclusivos; `ADMIN` fora da Inovação, própria conta, conta não ativa ou último admin → 409; nível inválido → 400; encerra as sessões da pessoa, audita e envia e-mail; responde `AdminUserResponse` (com `coordinator`) (SCRUM-219). `PUT/DELETE /users/{id}/admin` continuam até o front migrar | **implementado** |
 | GET | `/department-requests` | fila de pedidos pendentes (admin), do mais antigo para o mais novo (SCRUM-165) | **implementado** |
 | PATCH | `/department-requests/{id}/approve` | aprovar pedido (admin): quem pediu vai para a Inovação e ganha `TICKET_HANDLER` na próxima renovação; já analisado → 409 (SCRUM-165) | **implementado** |
 | PATCH | `/department-requests/{id}/reject` | recusar pedido (admin): quem pediu continua no Geral; já analisado → 409 (SCRUM-165) | **implementado** |
-| POST | `/tickets` | abrir chamado (logado): solicitante = usuário do token, nasce `OPEN` | **implementado** |
-| GET | `/tickets/mine` | chamados abertos pelo usuário: paginado, filtros `status`/`categoryId`/`priorityId`/`q` (título ou `#número`)/`departmentId` (de quem abriu) e `orderBy` (`RECENT` padrão ou `PRIORITY`: mais urgente e, no empate, mais antigo) — os mesmos valem para `/queue` e `/assigned` (SCRUM-168); resumo sem descrição (SCRUM-160) | **implementado** |
+| POST | `/tickets` | abrir chamado (logado): solicitante = usuário do token, nasce `OPEN`; origem = departamento atual do solicitante, destino = Inovação (SCRUM-213). `TicketResponse` e `TicketSummaryResponse` trazem `originDepartment` e `targetDepartment` (`{ id, name }`) | **implementado** |
+| GET | `/tickets/mine` | chamados abertos pelo usuário: paginado, filtros `status`/`categoryId`/`priorityId`/`q` (título ou `#número`)/`departmentId` (setor de origem gravado no chamado, SCRUM-213) e `orderBy` (`RECENT` padrão ou `PRIORITY`: mais urgente e, no empate, mais antigo) — os mesmos valem para `/queue` e `/assigned` (SCRUM-168); resumo sem descrição (SCRUM-160) | **implementado** |
 | GET | `/tickets/queue` | fila da Inovação: `OPEN` sem responsável; só `TICKET_HANDLER` e admin (SCRUM-160) | **implementado** |
 | GET | `/tickets/queue/count` | tamanho da fila (`{ "openCount": 7 }`, chamados `OPEN`); só `TICKET_HANDLER` e admin; é o número do círculo do menu (SCRUM-189) | **implementado** |
 | GET | `/tickets/assigned` | chamados sob responsabilidade do usuário; só `TICKET_HANDLER` e admin (SCRUM-160) | **implementado** |

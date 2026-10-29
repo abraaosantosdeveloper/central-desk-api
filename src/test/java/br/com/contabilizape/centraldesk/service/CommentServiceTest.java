@@ -171,7 +171,7 @@ class CommentServiceTest {
     // ---------- auxiliares ----------
 
     private Ticket ticket(TicketStatus status, User assignee) {
-        Ticket ticket = new Ticket("Impressora", "Sem papel", mock(Category.class), mock(Priority.class), requester);
+        Ticket ticket = new Ticket("Impressora", "Sem papel", mock(Category.class), mock(Priority.class), requester, mock(Department.class));
         ReflectionTestUtils.setField(ticket, "id", TICKET_ID);
         ReflectionTestUtils.setField(ticket, "status", status);
         ReflectionTestUtils.setField(ticket, "assignee", assignee);

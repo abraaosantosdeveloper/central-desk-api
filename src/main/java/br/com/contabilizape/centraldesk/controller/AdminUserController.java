@@ -5,6 +5,7 @@ import br.com.contabilizape.centraldesk.dto.AdminUserDetailResponse;
 import br.com.contabilizape.centraldesk.dto.AdminUserResponse;
 import br.com.contabilizape.centraldesk.dto.AdminUserUpdateRequest;
 import br.com.contabilizape.centraldesk.dto.PageResponse;
+import br.com.contabilizape.centraldesk.dto.PrivilegeChangeRequest;
 import br.com.contabilizape.centraldesk.dto.UserFilter;
 import br.com.contabilizape.centraldesk.service.UserAdministrationService;
 import org.springframework.data.domain.Pageable;
@@ -95,6 +96,16 @@ public class AdminUserController implements AdminUserApi {
     @PutMapping("/{id}/admin")
     public AdminUserResponse grantAdmin(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {
         return userAdministrationService.grantAdmin(id, UUID.fromString(jwt.getSubject()));
+    }
+
+    /** ADMIN, COORDINATOR ou COLLABORATOR, exclusivos entre si (SCRUM-219). */
+    @Override
+    @PutMapping("/{id}/privilege")
+    public AdminUserResponse changePrivilege(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id,
+                                             @Valid @RequestBody PrivilegeChangeRequest request,
+                                             HttpServletRequest httpRequest) {
+        return userAdministrationService.changePrivilege(id, request.level(), UUID.fromString(jwt.getSubject()),
+                ClientInfo.from(httpRequest));
     }
 
     @Override

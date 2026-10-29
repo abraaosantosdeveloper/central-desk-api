@@ -13,7 +13,7 @@ import java.util.UUID;
 
 /**
  * Critérios das listagens de chamados. Cada painel tem o seu recorte; os filtros opcionais
- * (status, categoria, prioridade, busca e departamento de quem abriu) são somados a ele.
+ * (status, categoria, prioridade, busca e setor de origem) são somados a ele.
  */
 final class TicketSpecifications {
 
@@ -47,7 +47,8 @@ final class TicketSpecifications {
                 predicates.add(cb.equal(ticket.get("priority").get("id"), filter.priorityId()));
             }
             if (filter.departmentId() != null) {
-                predicates.add(cb.equal(ticket.get("requester").get("department").get("id"), filter.departmentId()));
+                // Setor de origem gravado no chamado (SCRUM-213): não muda se a pessoa trocar de departamento
+                predicates.add(cb.equal(ticket.get("originDepartment").get("id"), filter.departmentId()));
             }
             if (filter.q() != null && !filter.q().isBlank()) {
                 String term = filter.q().trim().toLowerCase(Locale.ROOT);

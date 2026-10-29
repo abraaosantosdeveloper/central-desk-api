@@ -3,6 +3,7 @@ package br.com.contabilizape.centraldesk.service;
 import br.com.contabilizape.centraldesk.email.EmailDispatcher;
 import br.com.contabilizape.centraldesk.email.EmailFormats;
 import br.com.contabilizape.centraldesk.email.EmailTemplate;
+import br.com.contabilizape.centraldesk.model.PrivilegeLevel;
 import br.com.contabilizape.centraldesk.model.User;
 import org.springframework.stereotype.Component;
 
@@ -50,6 +51,12 @@ public class AccountEmails {
 
     public void twoFactorDisabled(User user) {
         send(EmailTemplate.TWO_FACTOR_DISABLED, user, Map.of());
+    }
+
+    /** Nível de privilégio trocado por um administrador (PV7). */
+    public void privilegeChanged(User user, User admin, PrivilegeLevel previous, PrivilegeLevel current) {
+        send(EmailTemplate.PRIVILEGE_CHANGED, user, Map.of("adminName", admin.getFullName(),
+                "previousLevel", previous.label(), "newLevel", current.label()));
     }
 
     private void send(EmailTemplate template, User user, Map<String, Object> extra) {
