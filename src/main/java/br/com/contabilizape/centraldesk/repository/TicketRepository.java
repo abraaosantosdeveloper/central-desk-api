@@ -1,5 +1,6 @@
 package br.com.contabilizape.centraldesk.repository;
 
+import br.com.contabilizape.centraldesk.dto.OverviewAssigneeResponse;
 import br.com.contabilizape.centraldesk.model.Ticket;
 import br.com.contabilizape.centraldesk.model.TicketStatus;
 import jakarta.persistence.LockModeType;
@@ -23,6 +24,23 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
 
     /** Tamanho da fila: OPEN ⇔ sem responsável (a máquina de estados garante). */
     long countByStatus(TicketStatus status);
+
+    /** Filtro de responsável (administrador): quem já é responsável por algum chamado, em qualquer setor. */
+    @Query("""
+            select distinct new br.com.contabilizape.centraldesk.dto.OverviewAssigneeResponse(a.id, a.fullName, a.department.name)
+            from Ticket t join t.assignee a
+            order by a.fullName
+            """)
+    List<OverviewAssigneeResponse> findAllAssignees();
+
+    /** Filtro de responsável (coordenador): só quem atende chamados que o setor abriu ou recebeu. */
+    @Query("""
+            select distinct new br.com.contabilizape.centraldesk.dto.OverviewAssigneeResponse(a.id, a.fullName, a.department.name)
+            from Ticket t join t.assignee a
+            where t.originDepartment.id = :sector or t.targetDepartment.id = :sector
+            order by a.fullName
+            """)
+    List<OverviewAssigneeResponse> findAssigneesInSector(@Param("sector") UUID sector);
 
     /** Listagens: carrega junto o que o resumo mostra, sem uma consulta por chamado. */
     /** Lê o chamado travando a linha até o fim da transação: duas pessoas não assumem o mesmo chamado. */

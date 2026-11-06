@@ -3,6 +3,7 @@ package br.com.contabilizape.centraldesk.controller.doc;
 import br.com.contabilizape.centraldesk.dto.TicketReopenRequest;
 import br.com.contabilizape.centraldesk.config.OpenApiConfig;
 import br.com.contabilizape.centraldesk.dto.AssigneeResponse;
+import br.com.contabilizape.centraldesk.dto.OverviewAssigneeResponse;
 import br.com.contabilizape.centraldesk.dto.PageResponse;
 import br.com.contabilizape.centraldesk.dto.QueueCountResponse;
 import br.com.contabilizape.centraldesk.dto.ReassignRequest;
@@ -131,6 +132,22 @@ public interface TicketApi {
     TicketOverviewResponse overview(@Parameter(hidden = true) Jwt jwt,
                                     @ParameterObject TicketOverviewFilter filter,
                                     @ParameterObject Pageable pageable);
+
+    @Operation(
+            summary = "Responsáveis para o filtro de \"Todos os chamados\"",
+            description = """
+                    Quem é responsável por algum chamado do recorte de quem pergunta: o **administrador** recebe \
+                    todos; o **coordenador**, só quem atende chamados que o próprio setor abriu ou recebeu. Ordem \
+                    alfabética. Use o `id` em `assigneeId` de `GET /tickets/overview`; para listar só os chamados \
+                    sem responsável, use `unassigned=true`. Demais perfis: 403.""",
+            security = @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH))
+    @ApiResponse(responseCode = "200", description = "Responsáveis, em ordem alfabética.")
+    @ApiResponse(responseCode = "401", description = "Sem sessão.", content = @Content)
+    @ApiResponse(
+            responseCode = "403",
+            description = "Quem chamou não é administrador nem coordenador, ou a conta foi desativada.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    List<OverviewAssigneeResponse> overviewAssignees(@Parameter(hidden = true) Jwt jwt);
 
     @Operation(
             summary = "Tamanho da fila de atendimento",

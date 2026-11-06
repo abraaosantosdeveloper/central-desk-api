@@ -160,6 +160,49 @@ class TicketOverviewIntegrationTest {
     }
 
     @Test
+    void filtersByAssigneeOrByNoAssignee() throws Exception {
+        Cookie session = login(ADMIN);
+
+        mockMvc.perform(get("/tickets/overview").param("assigneeId", carlos.toString()).cookie(session))
+                .andExpect(jsonPath("$.content[*].id", contains(ids(invoice, vpn))));
+        mockMvc.perform(get("/tickets/overview").param("unassigned", "true").cookie(session))
+                .andExpect(jsonPath("$.content[*].id", contains(ids(server, printer))));
+        // Os contadores das abas seguem o filtro de responsável
+        mockMvc.perform(get("/tickets/overview").param("assigneeId", carlos.toString()).cookie(session))
+                .andExpect(jsonPath("$.statusCounts.all").value(2))
+                .andExpect(jsonPath("$.statusCounts.OPEN").value(0));
+        // Com responsável escolhido, "sem responsável" é ignorado
+        mockMvc.perform(get("/tickets/overview").param("assigneeId", carlos.toString())
+                        .param("unassigned", "true").cookie(session))
+                .andExpect(jsonPath("$.content[*].id", contains(ids(invoice, vpn))));
+    }
+
+    @Test
+    void assigneeFilterStaysInsideTheCoordinatorSector() throws Exception {
+        // Paula só vê os chamados do Financeiro: dos dois do Carlos, só o "Nota fiscal" (destino Financeiro)
+        mockMvc.perform(get("/tickets/overview").param("assigneeId", carlos.toString()).cookie(login(PAULA)))
+                .andExpect(jsonPath("$.content[*].id", contains(ids(invoice))));
+    }
+
+    @Test
+    void listsTheAssigneesOfTheScope() throws Exception {
+        mockMvc.perform(get("/tickets/overview/assignees").cookie(login(ADMIN)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].fullName", contains("Carlos Lima")))
+                .andExpect(jsonPath("$[0].id").value(carlos.toString()))
+                .andExpect(jsonPath("$[0].departmentName").value("Inovação"));
+        mockMvc.perform(get("/tickets/overview/assignees").cookie(login(PAULA)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].fullName", contains("Carlos Lima")));
+    }
+
+    @Test
+    void collaboratorCannotListTheAssignees() throws Exception {
+        mockMvc.perform(get("/tickets/overview/assignees").cookie(login(MARIA)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void isPaginated() throws Exception {
         mockMvc.perform(get("/tickets/overview").param("page", "1").param("size", "3").cookie(login(ADMIN)))
                 .andExpect(jsonPath("$.content[*].id", contains(ids(printer))))

@@ -1,5 +1,6 @@
 package br.com.contabilizape.centraldesk.service;
 
+import br.com.contabilizape.centraldesk.dto.OverviewAssigneeResponse;
 import br.com.contabilizape.centraldesk.dto.TicketOverviewFilter;
 import br.com.contabilizape.centraldesk.dto.TicketOverviewFilter.OverviewOrder;
 import br.com.contabilizape.centraldesk.dto.TicketOverviewFilter.SectorRelation;
@@ -84,6 +85,22 @@ public class TicketOverviewService {
                 tickets.getTotalElements(),
                 tickets.getTotalPages(),
                 new TicketOverviewResponse.StatusCounts(open + inProgress + closed, open, inProgress, closed));
+    }
+
+    /**
+     * Opções do filtro de responsável: administrador, quem atende qualquer chamado; coordenador, só quem atende
+     * chamados do próprio setor (origem ou destino). Demais perfis: 403.
+     */
+    @Transactional(readOnly = true)
+    public List<OverviewAssigneeResponse> assignees(UUID userId) {
+        User user = findActiveUser(userId);
+        if (adminRepository.existsById(user.getId())) {
+            return ticketRepository.findAllAssignees();
+        }
+        if (userRepository.isCoordinator(user.getId())) {
+            return ticketRepository.findAssigneesInSector(user.getDepartment().getId());
+        }
+        throw new TicketOverviewForbiddenException();
     }
 
     /**

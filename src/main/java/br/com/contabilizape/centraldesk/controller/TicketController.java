@@ -4,6 +4,7 @@ import br.com.contabilizape.centraldesk.dto.TicketReopenRequest;
 import br.com.contabilizape.centraldesk.service.TicketReopenService;
 import br.com.contabilizape.centraldesk.controller.doc.TicketApi;
 import br.com.contabilizape.centraldesk.dto.AssigneeResponse;
+import br.com.contabilizape.centraldesk.dto.OverviewAssigneeResponse;
 import br.com.contabilizape.centraldesk.dto.PageResponse;
 import br.com.contabilizape.centraldesk.dto.QueueCountResponse;
 import br.com.contabilizape.centraldesk.dto.ReassignRequest;
@@ -87,6 +88,13 @@ public class TicketController implements TicketApi {
     public TicketOverviewResponse overview(@AuthenticationPrincipal Jwt jwt, TicketOverviewFilter filter,
                                            @PageableDefault(size = 20) Pageable pageable) {
         return overviewService.overview(UUID.fromString(jwt.getSubject()), filter, pageable);
+    }
+
+    /** Opções do filtro de responsável de "Todos os chamados"; o escopo (admin ou setor) é imposto no serviço. */
+    @Override
+    @GetMapping("/overview/assignees")
+    public List<OverviewAssigneeResponse> overviewAssignees(@AuthenticationPrincipal Jwt jwt) {
+        return overviewService.assignees(UUID.fromString(jwt.getSubject()));
     }
 
     /** Só Inovação e administradores (regra no SecurityConfig). */
