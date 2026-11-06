@@ -31,6 +31,12 @@ public record TicketOverviewFilter(
     @Schema(description = "Prioridade (ids em GET /priorities)", example = "2")
     Short priorityId,
 
+    @Schema(description = "Responsável pelo chamado (ids em GET /tickets/overview/assignees)")
+    UUID assigneeId,
+
+    @Schema(description = "true = só chamados sem responsável; ignorado quando `assigneeId` vem junto", example = "true")
+    Boolean unassigned,
+
     @Schema(description = "Busca: parte do título, número do chamado (#123 ou início do id) ou parte do nome de quem abriu. "
             + "Comentários não entram (são cifrados)", example = "impressora")
     String q,

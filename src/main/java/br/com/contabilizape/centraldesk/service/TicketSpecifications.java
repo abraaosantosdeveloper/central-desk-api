@@ -65,6 +65,11 @@ final class TicketSpecifications {
             if (filter.priorityId() != null) {
                 predicates.add(cb.equal(ticket.get("priority").get("id"), filter.priorityId()));
             }
+            if (filter.assigneeId() != null) {
+                predicates.add(cb.equal(ticket.get("assignee").get("id"), filter.assigneeId()));
+            } else if (Boolean.TRUE.equals(filter.unassigned())) {
+                predicates.add(cb.isNull(ticket.get("assignee")));
+            }
             if (filter.from() != null) {
                 predicates.add(cb.greaterThanOrEqualTo(ticket.<OffsetDateTime>get("createdAt"), startOf(filter.from(), zone)));
             }

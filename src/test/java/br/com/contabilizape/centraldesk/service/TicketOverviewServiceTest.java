@@ -1,5 +1,6 @@
 package br.com.contabilizape.centraldesk.service;
 
+import br.com.contabilizape.centraldesk.dto.OverviewAssigneeResponse;
 import br.com.contabilizape.centraldesk.dto.TicketOverviewFilter;
 import br.com.contabilizape.centraldesk.dto.TicketOverviewFilter.OverviewOrder;
 import br.com.contabilizape.centraldesk.dto.TicketOverviewResponse;
@@ -36,6 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -49,7 +51,7 @@ class TicketOverviewServiceTest {
 
     private static final UUID USER_ID = UUID.fromString("aaaaaaaa-0000-4000-8000-000000000001");
     private static final TicketOverviewFilter NO_FILTER =
-            new TicketOverviewFilter(null, null, null, null, null, null, null, null, null, null);
+            new TicketOverviewFilter(null, null, null, null, null, null, null, null, null, null, null, null);
 
     @Mock private TicketRepository ticketRepository;
     @Mock private UserRepository userRepository;
@@ -147,8 +149,44 @@ class TicketOverviewServiceTest {
         return any(Specification.class);
     }
 
+    // ---------- Opções do filtro de responsável ----------
+
+    @Test
+    void adminListsEveryAssignee() {
+        OverviewAssigneeResponse carlos = new OverviewAssigneeResponse(UUID.randomUUID(), "Carlos Lima", "Inovação");
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user(UserStatus.ACTIVE)));
+        when(adminRepository.existsById(USER_ID)).thenReturn(true);
+        when(ticketRepository.findAllAssignees()).thenReturn(List.of(carlos));
+
+        assertThat(service.assignees(USER_ID)).containsExactly(carlos);
+    }
+
+    @Test
+    void coordinatorListsOnlyTheAssigneesOfHisSector() {
+        UUID sectorId = UUID.randomUUID();
+        Department sector = mock(Department.class);
+        when(sector.getId()).thenReturn(sectorId);
+        User coordinator = user(UserStatus.ACTIVE);
+        ReflectionTestUtils.setField(coordinator, "department", sector);
+        OverviewAssigneeResponse carlos = new OverviewAssigneeResponse(UUID.randomUUID(), "Carlos Lima", "Inovação");
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(coordinator));
+        when(userRepository.isCoordinator(USER_ID)).thenReturn(true);
+        when(ticketRepository.findAssigneesInSector(sectorId)).thenReturn(List.of(carlos));
+
+        assertThat(service.assignees(USER_ID)).containsExactly(carlos);
+        verify(ticketRepository, never()).findAllAssignees();
+    }
+
+    @Test
+    void collaboratorCannotListAssignees() {
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user(UserStatus.ACTIVE)));
+
+        assertThatThrownBy(() -> service.assignees(USER_ID)).isInstanceOf(TicketOverviewForbiddenException.class);
+        verifyNoInteractions(ticketRepository);
+    }
+
     private static TicketOverviewFilter ordered(OverviewOrder order) {
-        return new TicketOverviewFilter(null, null, null, null, null, null, null, null, null, order);
+        return new TicketOverviewFilter(null, null, null, null, null, null, null, null, null, null, null, order);
     }
 
     private static User user(UserStatus status) {
