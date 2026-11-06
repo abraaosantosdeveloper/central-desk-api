@@ -82,7 +82,7 @@ public class TicketReassignmentService {
         return TicketResponse.from(ticket);
     }
 
-    // Destino: conta ativa da Inovação ou admin. Quem abriu o chamado só pode recebê-lo se for admin (SCRUM-207)
+    // Destino: conta ativa da Inovação ou admin. Quem abriu o chamado só pode recebê-lo se for admin ou coordenador (SCRUM-207)
     private User findEligibleAssignee(UUID assigneeId, Ticket ticket) {
         User assignee = userRepository.findById(assigneeId)
                 .filter(User::isActive)
@@ -90,10 +90,16 @@ public class TicketReassignmentService {
                         || adminRepository.existsById(user.getId()))
                 .orElseThrow(() -> new InvalidAssigneeException(
                         "Escolha uma pessoa ativa da Inovação ou um administrador."));
-        if (assignee.getId().equals(ticket.getRequester().getId()) && !adminRepository.existsById(assignee.getId())) {
+        if (assignee.getId().equals(ticket.getRequester().getId()) && !canHandleOwnTickets(assignee.getId())) {
             throw new InvalidAssigneeException("Quem abriu o chamado não pode atendê-lo.");
         }
         return assignee;
+    }
+
+    // Administrador ou coordenador (equipe de TI) podem atender os chamados que abriram, para rastrear as
+    // demandas internas (SCRUM-207 ampliada). A condição vem do banco, não do token.
+    private boolean canHandleOwnTickets(UUID userId) {
+        return adminRepository.existsById(userId) || userRepository.isCoordinator(userId);
     }
 
     private User findActiveUser(UUID userId) {

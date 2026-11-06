@@ -81,7 +81,7 @@ public class TicketService {
 
     /**
      * Encerra o chamado. Podem: a Inovação e os administradores; o solicitante não encerra o próprio (403),
-     * a menos que seja também o responsável (admin que assumiu a própria demanda, SCRUM-207).
+     * a menos que seja também o responsável (admin ou coordenador que assumiu a própria demanda, SCRUM-207).
      * Os demais recebem 404, como em GET /tickets/{id}.
      */
     @Transactional
@@ -103,15 +103,15 @@ public class TicketService {
     /**
      * O usuário logado (Inovação ou admin, regra no SecurityConfig) assume o chamado: OPEN → IN_PROGRESS.
      * A linha fica travada até o fim da transação; se duas pessoas assumirem ao mesmo tempo,
-     * a segunda encontra IN_PROGRESS e recebe 409. Quem abriu o chamado não o assume, exceto um administrador
-     * (demandas internas, SCRUM-207); a condição de admin vem do banco, não do token.
+     * a segunda encontra IN_PROGRESS e recebe 409. Quem abriu o chamado não o assume, exceto um administrador ou um
+     * coordenador (demandas internas, SCRUM-207); essa condição vem do banco, não do token.
      */
     @Transactional
     public TicketResponse assign(UUID ticketId, UUID userId) {
         User assignee = findActiveRequester(userId);
         Ticket ticket = ticketRepository.findByIdForUpdate(ticketId)
                 .orElseThrow(() -> new TicketNotFoundException(ticketId));
-        if (ticket.getRequester().getId().equals(userId) && !adminRepository.existsById(userId)) {
+        if (ticket.getRequester().getId().equals(userId) && !canHandleOwnTickets(userId)) {
             throw new SelfAssignmentException();
         }
         ticket.assign(assignee, OffsetDateTime.now(clock));
@@ -171,6 +171,12 @@ public class TicketService {
                 .filter(found -> TicketAccess.canView(found, userId, roles) || followsAsCoordinator(found, viewer))
                 .orElseThrow(() -> new TicketNotFoundException(ticketId));
         return TicketResponse.from(ticket);
+    }
+
+    // Administrador ou coordenador (equipe de TI) podem atender os chamados que abriram, para rastrear as
+    // demandas internas (SCRUM-207 ampliada). A condição vem do banco, não do token.
+    private boolean canHandleOwnTickets(UUID userId) {
+        return adminRepository.existsById(userId) || userRepository.isCoordinator(userId);
     }
 
     private boolean followsAsCoordinator(Ticket ticket, User viewer) {
