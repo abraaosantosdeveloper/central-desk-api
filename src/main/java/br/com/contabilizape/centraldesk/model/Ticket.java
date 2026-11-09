@@ -64,6 +64,11 @@ public class Ticket {
     @Column(name = "assigned_at")
     private OffsetDateTime assignedAt;
 
+    // Primeira vez que o chamado foi assumido (SCRUM-216). O assignedAt é zerado ao devolver à fila e ao reabrir
+    // sem o responsável; este não: é ele que mede o tempo de resposta no painel de métricas.
+    @Column(name = "first_assigned_at")
+    private OffsetDateTime firstAssignedAt;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "closed_by_id")
     private User closedBy;
@@ -117,6 +122,9 @@ public class Ticket {
         moveTo(TicketStatus.IN_PROGRESS);
         this.assignee = assignee;
         this.assignedAt = now;
+        if (this.firstAssignedAt == null) {
+            this.firstAssignedAt = now;
+        }
     }
 
     /**
@@ -192,6 +200,7 @@ public class Ticket {
     public Department getTargetDepartment() { return targetDepartment; }
     public User getAssignee() { return assignee; }
     public OffsetDateTime getAssignedAt() { return assignedAt; }
+    public OffsetDateTime getFirstAssignedAt() { return firstAssignedAt; }
     public User getClosedBy() { return closedBy; }
     public OffsetDateTime getClosedAt() { return closedAt; }
     public String getResolution() { return resolution; }
