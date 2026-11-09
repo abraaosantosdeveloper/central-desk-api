@@ -6,6 +6,7 @@ import br.com.contabilizape.centraldesk.exception.CategoryDoesNotExistException;
 import br.com.contabilizape.centraldesk.exception.CommentForbiddenException;
 import br.com.contabilizape.centraldesk.exception.ReassignConflictException;
 import br.com.contabilizape.centraldesk.exception.ReassignForbiddenException;
+import br.com.contabilizape.centraldesk.exception.MetricsForbiddenException;
 import br.com.contabilizape.centraldesk.exception.TicketOverviewForbiddenException;
 import br.com.contabilizape.centraldesk.exception.CategoryLabelTakenException;
 import br.com.contabilizape.centraldesk.exception.CategoryNotFoundException;
@@ -87,7 +88,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     }
 
     @ExceptionHandler({TicketEditForbiddenException.class, SelfAssignmentException.class, CommentForbiddenException.class, TicketCloseForbiddenException.class, TicketReopenForbiddenException.class,
-            ReassignForbiddenException.class, TicketOverviewForbiddenException.class})
+            ReassignForbiddenException.class, TicketOverviewForbiddenException.class, MetricsForbiddenException.class})
     public ProblemDetail handleTicketActionForbidden(RuntimeException exception) {
         return problem(HttpStatus.FORBIDDEN, "Acesso negado", exception.getMessage());
     }

@@ -246,6 +246,48 @@ class TicketTest {
         assertThat(ticket.getOriginDepartment()).isSameAs(fiscal);
     }
 
+    // ---------- primeira atribuição (SCRUM-216) ----------
+
+    @Test
+    void firstAssignmentIsRecordedWhenTheTicketIsAssumed() {
+        Ticket ticket = ticket(TicketStatus.OPEN);
+
+        ticket.assign(mock(User.class), NOW);
+
+        assertThat(ticket.getFirstAssignedAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    void firstAssignmentSurvivesReturningToTheQueueAndBeingAssumedAgain() {
+        Ticket ticket = ticket(TicketStatus.OPEN);
+        ticket.assign(mock(User.class), NOW);
+
+        ticket.returnToQueue();
+        assertThat(ticket.getAssignedAt()).isNull();
+        ticket.assign(mock(User.class), NOW.plusHours(5));
+
+        assertThat(ticket.getAssignedAt()).isEqualTo(NOW.plusHours(5));
+        assertThat(ticket.getFirstAssignedAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    void firstAssignmentSurvivesAReopeningThatSendsTheTicketBackToTheQueue() {
+        Ticket ticket = ticket(TicketStatus.OPEN);
+        User handler = mock(User.class);
+        ticket.assign(handler, NOW);
+        ticket.close(handler, "Troquei a fonte.", NOW.plusHours(1));
+
+        ticket.reopen(false);
+
+        assertThat(ticket.getAssignedAt()).isNull();
+        assertThat(ticket.getFirstAssignedAt()).isEqualTo(NOW);
+    }
+
+    @Test
+    void ticketNeverAssumedHasNoFirstAssignment() {
+        assertThat(ticket(TicketStatus.OPEN).getFirstAssignedAt()).isNull();
+    }
+
     private static Ticket ticket(TicketStatus status) {
         Ticket ticket = new Ticket("Impressora", "Sem papel", mock(Category.class), mock(Priority.class), mock(User.class), mock(Department.class));
         ReflectionTestUtils.setField(ticket, "status", status);
