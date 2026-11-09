@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Exportação dos chamados em CSV (SCRUM-XXX), para análises fora do sistema. O escopo é o mesmo de
+ * Exportação dos chamados em planilha Excel (SCRUM-222), para análises fora do sistema. O escopo é o mesmo de
  * "Todos os chamados": administrador exporta todos; coordenador, os que o próprio setor abriu ou recebeu;
  * os demais recebem 403. Administrador e coordenador vêm do banco, nunca do token.
  */
@@ -27,7 +27,7 @@ public class TicketExportService {
     private final TicketRepository ticketRepository;
     private final UserRepository userRepository;
     private final AdminRepository adminRepository;
-    private final TicketCsvWriter csvWriter;
+    private final TicketSpreadsheetWriter spreadsheetWriter;
 
     public TicketExportService(TicketRepository ticketRepository, UserRepository userRepository,
                                AdminRepository adminRepository,
@@ -35,12 +35,12 @@ public class TicketExportService {
         this.ticketRepository = ticketRepository;
         this.userRepository = userRepository;
         this.adminRepository = adminRepository;
-        this.csvWriter = new TicketCsvWriter(zone);
+        this.spreadsheetWriter = new TicketSpreadsheetWriter(zone);
     }
 
     @Transactional(readOnly = true)
-    public byte[] exportCsv(UUID userId) {
-        return csvWriter.write(rowsVisibleTo(findActiveUser(userId)));
+    public byte[] exportXlsx(UUID userId) {
+        return spreadsheetWriter.write(rowsVisibleTo(findActiveUser(userId)));
     }
 
     private List<TicketExportRow> rowsVisibleTo(User user) {

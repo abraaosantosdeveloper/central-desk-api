@@ -3,6 +3,11 @@ package br.com.contabilizape.centraldesk.controller;
 import br.com.contabilizape.centraldesk.DatabaseCleanup;
 import br.com.contabilizape.centraldesk.IntegrationTest;
 import jakarta.servlet.http.Cookie;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellType;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -12,8 +17,8 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
+import java.io.ByteArrayInputStream;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -26,11 +31,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Exportação de chamados em CSV (GET /tickets/export, SCRUM-XXX): administrador exporta tudo, coordenador só o
- * próprio setor (origem ou destino), os demais recebem 403 e nenhum dado sensível sai no arquivo.
+ * Exportação de chamados em planilha (GET /tickets/export, SCRUM-222): administrador exporta tudo, com todos os
+ * campos do chamado; coordenador só o próprio setor (origem ou destino); os demais recebem 403; CPF e e-mail não saem.
  *
  * Cenário: Financeiro abriu "Impressora" para a Inovação (na fila); Fiscal abriu "VPN caiu" para a Inovação
- * (com Carlos) e "Nota fiscal" para o Financeiro (encerrado por Carlos); a Inovação abriu "Servidor lento".
+ * (com Carlos) e "Nota fiscal" para o Financeiro (encerrado por Carlos, com resolução); a Inovação abriu "Servidor lento".
  * Paula coordena o Financeiro.
  */
 @IntegrationTest
@@ -52,6 +57,8 @@ class TicketExportIntegrationTest {
     @Autowired
     private JdbcTemplate jdbc;
 
+    private UUID invoice;
+
     @BeforeEach
     void setUp() throws Exception {
         DatabaseCleanup.removeNonAdminUsers(jdbc);
@@ -67,9 +74,11 @@ class TicketExportIntegrationTest {
         UUID joao = account(JOAO, "86288366757", "João Souza", fiscal);
         UUID carlos = account(CARLOS, "39053344705", "Carlos Lima", INNOVATION);
 
-        ticket("Impressora", "Não imprime; papel preso", maria, finance, INNOVATION, "OPEN", null, category);
+        ticket("Impressora", "Não imprime", maria, finance, INNOVATION, "OPEN", null, category);
         ticket("VPN caiu", "Sem acesso", joao, fiscal, INNOVATION, "IN_PROGRESS", carlos, category);
-        ticket("Nota fiscal", "Emitir NF", joao, fiscal, finance, "CLOSED", carlos, category);
+        invoice = ticket("Nota fiscal", "Emitir NF", joao, fiscal, finance, "CLOSED", carlos, category);
+        jdbc.update("UPDATE tickets SET closed_by_id = ?, closed_at = now(), resolution = 'NF emitida' WHERE id = ?",
+                carlos, invoice);
         ticket("Servidor lento", "Lentidão", carlos, INNOVATION, INNOVATION, "OPEN", null, category);
     }
 
@@ -80,23 +89,33 @@ class TicketExportIntegrationTest {
     }
 
     @Test
-    void adminDownloadsEveryTicketAsCsvFile() throws Exception {
+    void adminDownloadsEveryTicketWithEveryField() throws Exception {
         byte[] body = mockMvc.perform(get("/tickets/export").cookie(login(ADMIN)))
                 .andExpect(status().isOk())
-                .andExpect(header().string(HttpHeaders.CONTENT_TYPE, startsWith("text/csv")))
+                .andExpect(header().string(HttpHeaders.CONTENT_TYPE,
+                        startsWith("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")))
                 .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, containsString("attachment")))
-                .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, containsString("chamados-")))
+                .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, containsString(".xlsx")))
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
                 .andReturn().getResponse().getContentAsByteArray();
 
-        List<String> lines = lines(body);
-        assertThat(lines).hasSize(5); // cabeçalho + 4 chamados
-        assertThat(lines.get(0)).startsWith("﻿Número;Título;Descrição;Solicitante;");
-        assertThat(String.join("\n", lines))
-                .contains(";Impressora;\"Não imprime; papel preso\";Maria da Silva;Financeiro;Inovação;Em espera;Aberto;")
-                .contains(";VPN caiu;Sem acesso;João Souza;Fiscal;Inovação;Carlos Lima;Em andamento;")
-                .contains(";Nota fiscal;Emitir NF;João Souza;Fiscal;Financeiro;Carlos Lima;Encerrado;")
-                .contains(";Servidor lento;");
+        try (XSSFWorkbook workbook = workbook(body)) {
+            Sheet sheet = workbook.getSheet("Chamados");
+            assertThat(sheet.getLastRowNum()).isEqualTo(4); // cabeçalho + 4 chamados, em ordem de número
+            assertThat(texts(sheet.getRow(1))).contains("Impressora", "Não imprime", "Aberto", "Maria da Silva",
+                    "Financeiro", "Inovação");
+            assertThat(sheet.getRow(1).getCell(9).getCellType()).isEqualTo(CellType.BLANK); // sem responsável
+            assertThat(sheet.getRow(1).getCell(14).getCellType()).isEqualTo(CellType.BLANK); // não encerrado
+
+            Row closed = sheet.getRow(3);
+            assertThat(texts(closed)).contains("Nota fiscal", "Encerrado", "João Souza", "Fiscal", "Financeiro",
+                    "Carlos Lima", "NF emitida");
+            assertThat(closed.getCell(4).getStringCellValue()).isNotBlank(); // categoria
+            assertThat(closed.getCell(5).getStringCellValue()).isNotBlank(); // prioridade
+            assertThat(closed.getCell(13).getStringCellValue()).isEqualTo("Carlos Lima"); // encerrado por
+            assertThat(closed.getCell(14).getLocalDateTimeCellValue()).isNotNull(); // encerrado em
+            assertThat(closed.getCell(17).getStringCellValue()).isEqualTo(invoice.toString()); // ID
+        }
     }
 
     @Test
@@ -105,22 +124,28 @@ class TicketExportIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsByteArray();
 
-        String csv = String.join("\n", lines(body));
-        assertThat(lines(body)).hasSize(3);
-        assertThat(csv).contains(";Impressora;").contains(";Nota fiscal;")
-                .doesNotContain(";VPN caiu;").doesNotContain(";Servidor lento;");
+        try (XSSFWorkbook workbook = workbook(body)) {
+            Sheet sheet = workbook.getSheet("Chamados");
+            assertThat(sheet.getLastRowNum()).isEqualTo(2);
+            assertThat(sheet.getRow(1).getCell(1).getStringCellValue()).isEqualTo("Impressora");
+            assertThat(sheet.getRow(2).getCell(1).getStringCellValue()).isEqualTo("Nota fiscal");
+        }
     }
 
     @Test
-    void sensitiveDataNeverLeaves() throws Exception {
+    void personalDataNeverLeaves() throws Exception {
         byte[] body = mockMvc.perform(get("/tickets/export").cookie(login(ADMIN)))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsByteArray();
 
-        assertThat(new String(body, StandardCharsets.UTF_8))
-                .doesNotContain(MARIA_CPF)
-                .doesNotContain("@contabilizape.com.br")
-                .doesNotContain(INNOVATION.toString());
+        try (XSSFWorkbook workbook = workbook(body)) {
+            Sheet sheet = workbook.getSheet("Chamados");
+            for (Row row : sheet) {
+                assertThat(String.join("|", texts(row)))
+                        .doesNotContain(MARIA_CPF)
+                        .doesNotContain("@contabilizape.com.br");
+            }
+        }
     }
 
     @Test
@@ -134,9 +159,18 @@ class TicketExportIntegrationTest {
         mockMvc.perform(get("/tickets/export")).andExpect(status().isUnauthorized());
     }
 
-    // Quebras de linha só separam registros fora de aspas; nos dados deste teste não há quebra dentro de campo
-    private static List<String> lines(byte[] body) {
-        return Arrays.asList(new String(body, StandardCharsets.UTF_8).split("\r\n"));
+    private static XSSFWorkbook workbook(byte[] body) throws Exception {
+        return new XSSFWorkbook(new ByteArrayInputStream(body));
+    }
+
+    private static List<String> texts(Row row) {
+        List<String> texts = new ArrayList<>();
+        for (Cell cell : row) {
+            if (cell.getCellType() == CellType.STRING) {
+                texts.add(cell.getStringCellValue());
+            }
+        }
+        return texts;
     }
 
     private UUID departmentId(String name) {
@@ -164,12 +198,13 @@ class TicketExportIntegrationTest {
         return new Cookie("access_token", header.substring(header.indexOf('=') + 1, header.indexOf(';')));
     }
 
-    private void ticket(String title, String description, UUID requester, UUID origin, UUID target, String status,
+    private UUID ticket(String title, String description, UUID requester, UUID origin, UUID target, String status,
                         UUID assignee, UUID category) {
-        jdbc.update("""
+        return jdbc.queryForObject("""
                 INSERT INTO tickets (title, description, status, category_id, priority_id, requester_id, assignee_id,
                                      origin_department_id, target_department_id, created_at, updated_at)
                 VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, now(), now())
-                """, title, description, status, category, requester, assignee, origin, target);
+                RETURNING id
+                """, UUID.class, title, description, status, category, requester, assignee, origin, target);
     }
 }

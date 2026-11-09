@@ -22,7 +22,8 @@ import java.util.UUID;
 @RequestMapping("/tickets")
 public class TicketExportController implements TicketExportApi {
 
-    static final MediaType TEXT_CSV = MediaType.parseMediaType("text/csv;charset=UTF-8");
+    public static final MediaType XLSX =
+            MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 
     private final TicketExportService exportService;
     private final ZoneId zone;
@@ -36,14 +37,14 @@ public class TicketExportController implements TicketExportApi {
     /** Administradores (tudo) e coordenadores (o próprio setor); os demais, 403 (regra no serviço, lida do banco). */
     @Override
     @GetMapping("/export")
-    public ResponseEntity<byte[]> exportCsv(@AuthenticationPrincipal Jwt jwt) {
-        byte[] csv = exportService.exportCsv(UUID.fromString(jwt.getSubject()));
-        String fileName = "chamados-" + LocalDate.now(Clock.system(zone)) + ".csv";
+    public ResponseEntity<byte[]> exportXlsx(@AuthenticationPrincipal Jwt jwt) {
+        byte[] spreadsheet = exportService.exportXlsx(UUID.fromString(jwt.getSubject()));
+        String fileName = "chamados-" + LocalDate.now(Clock.system(zone)) + ".xlsx";
         return ResponseEntity.ok()
-                .contentType(TEXT_CSV)
+                .contentType(XLSX)
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(fileName).build().toString())
                 // Dados internos: o navegador e proxies não guardam cópia
                 .header(HttpHeaders.CACHE_CONTROL, "no-store")
-                .body(csv);
+                .body(spreadsheet);
     }
 }

@@ -58,24 +58,28 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID>, JpaSpecif
     @EntityGraph(attributePaths = {"category", "priority", "requester", "assignee", "originDepartment", "targetDepartment"})
     Page<Ticket> findAll(Specification<Ticket> spec, Pageable pageable);
 
-    /** Exportação em CSV (administrador): todos os chamados, numa consulta só, em ordem de número. */
+    /** Exportação em planilha (administrador): todos os chamados, numa consulta só (sem N+1), em ordem de número. */
     @Query("""
             select new br.com.contabilizape.centraldesk.dto.TicketExportRow(
-                t.number, t.title, t.description, r.fullName, o.name, d.name, a.fullName, t.status,
-                t.createdAt, t.firstAssignedAt, t.closedAt, t.updatedAt)
-            from Ticket t join t.requester r join t.originDepartment o join t.targetDepartment d
-            left join t.assignee a
+                t.id, t.number, t.title, t.description, t.status, c.label, p.label, r.fullName, o.name, d.name,
+                a.fullName, t.assignedAt, t.firstAssignedAt, cb.fullName, t.closedAt, t.resolution,
+                t.createdAt, t.updatedAt)
+            from Ticket t join t.category c join t.priority p join t.requester r
+            join t.originDepartment o join t.targetDepartment d
+            left join t.assignee a left join t.closedBy cb
             order by t.number
             """)
     List<TicketExportRow> findAllForExport();
 
-    /** Exportação em CSV (coordenador): só os chamados que o setor abriu ou recebeu. */
+    /** Exportação em planilha (coordenador): só os chamados que o setor abriu ou recebeu. */
     @Query("""
             select new br.com.contabilizape.centraldesk.dto.TicketExportRow(
-                t.number, t.title, t.description, r.fullName, o.name, d.name, a.fullName, t.status,
-                t.createdAt, t.firstAssignedAt, t.closedAt, t.updatedAt)
-            from Ticket t join t.requester r join t.originDepartment o join t.targetDepartment d
-            left join t.assignee a
+                t.id, t.number, t.title, t.description, t.status, c.label, p.label, r.fullName, o.name, d.name,
+                a.fullName, t.assignedAt, t.firstAssignedAt, cb.fullName, t.closedAt, t.resolution,
+                t.createdAt, t.updatedAt)
+            from Ticket t join t.category c join t.priority p join t.requester r
+            join t.originDepartment o join t.targetDepartment d
+            left join t.assignee a left join t.closedBy cb
             where o.id = :sector or d.id = :sector
             order by t.number
             """)

@@ -10,13 +10,14 @@ import br.com.contabilizape.centraldesk.model.User;
 import br.com.contabilizape.centraldesk.repository.AdminRepository;
 import br.com.contabilizape.centraldesk.repository.TicketRepository;
 import br.com.contabilizape.centraldesk.repository.UserRepository;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.nio.charset.StandardCharsets;
+import java.io.ByteArrayInputStream;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.List;
@@ -32,14 +33,15 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-/** Quem pode exportar e qual recorte recebe (SCRUM-XXX). O recorte no banco é coberto no TicketExportIntegrationTest. */
+/** Quem pode exportar e qual recorte recebe (SCRUM-222). O recorte no banco é coberto no TicketExportIntegrationTest. */
 @ExtendWith(MockitoExtension.class)
 class TicketExportServiceTest {
 
     private static final UUID USER_ID = UUID.fromString("aaaaaaaa-0000-4000-8000-000000000001");
     private static final UUID SECTOR = UUID.fromString("bbbbbbbb-0000-4000-8000-000000000002");
-    private static final TicketExportRow ROW = new TicketExportRow(1L, "Impressora", "Não imprime", "Maria",
-            "Financeiro", "Inovação", null, TicketStatus.OPEN, OffsetDateTime.now(), null, null, null);
+    private static final TicketExportRow ROW = new TicketExportRow(UUID.randomUUID(), 1L, "Impressora",
+            "Não imprime", TicketStatus.OPEN, "Hardware", "Alta", "Maria", "Financeiro", "Inovação", null, null,
+            null, null, null, null, OffsetDateTime.now(), null);
 
     @Mock private TicketRepository ticketRepository;
     @Mock private UserRepository userRepository;
@@ -53,14 +55,16 @@ class TicketExportServiceTest {
     }
 
     @Test
-    void adminExportsEveryTicket() {
+    void adminExportsEveryTicket() throws Exception {
         activeUser();
         when(adminRepository.existsById(USER_ID)).thenReturn(true);
         when(ticketRepository.findAllForExport()).thenReturn(List.of(ROW));
 
-        String csv = new String(service.exportCsv(USER_ID), StandardCharsets.UTF_8);
+        byte[] spreadsheet = service.exportXlsx(USER_ID);
 
-        assertThat(csv).contains("1;Impressora;Não imprime;Maria;Financeiro;Inovação;Em espera;Aberto;");
+        try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(spreadsheet))) {
+            assertThat(workbook.getSheet("Chamados").getRow(1).getCell(1).getStringCellValue()).isEqualTo("Impressora");
+        }
         verify(ticketRepository, never()).findSectorForExport(SECTOR);
     }
 
@@ -71,7 +75,7 @@ class TicketExportServiceTest {
         when(userRepository.isCoordinator(USER_ID)).thenReturn(true);
         when(ticketRepository.findSectorForExport(SECTOR)).thenReturn(List.of(ROW));
 
-        service.exportCsv(USER_ID);
+        service.exportXlsx(USER_ID);
 
         verify(ticketRepository).findSectorForExport(SECTOR);
         verify(ticketRepository, never()).findAllForExport();
@@ -83,7 +87,7 @@ class TicketExportServiceTest {
         when(adminRepository.existsById(USER_ID)).thenReturn(false);
         when(userRepository.isCoordinator(USER_ID)).thenReturn(false);
 
-        assertThatThrownBy(() -> service.exportCsv(USER_ID)).isInstanceOf(TicketOverviewForbiddenException.class);
+        assertThatThrownBy(() -> service.exportXlsx(USER_ID)).isInstanceOf(TicketOverviewForbiddenException.class);
         verifyNoInteractions(ticketRepository);
     }
 
@@ -93,7 +97,7 @@ class TicketExportServiceTest {
         when(user.isActive()).thenReturn(false);
         when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
 
-        assertThatThrownBy(() -> service.exportCsv(USER_ID)).isInstanceOf(AccountNotActiveException.class);
+        assertThatThrownBy(() -> service.exportXlsx(USER_ID)).isInstanceOf(AccountNotActiveException.class);
         verifyNoInteractions(ticketRepository);
     }
 
@@ -101,7 +105,7 @@ class TicketExportServiceTest {
     void unknownUserIsAnInvalidSession() {
         when(userRepository.findById(USER_ID)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.exportCsv(USER_ID)).isInstanceOf(InvalidSessionException.class);
+        assertThatThrownBy(() -> service.exportXlsx(USER_ID)).isInstanceOf(InvalidSessionException.class);
     }
 
     private void activeUser() {
