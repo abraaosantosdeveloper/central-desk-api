@@ -46,10 +46,11 @@ public class Ticket {
     @JoinColumn(name = "requester_id", nullable = false)
     private User requester;
 
-    // Setor de origem (SCRUM-213, D2): o departamento de quem abriu, gravado na abertura e nunca alterado.
-    // Sem setter e sem update: trocar de setor, reabrir, devolver à fila ou anonimizar não mexem nele.
+    // Setor de origem (SCRUM-213, D2 revisada): o departamento de quem abriu, gravado na abertura. Trocar de
+    // setor, reabrir, devolver à fila ou anonimizar não mexem nele; só um administrador o corrige
+    // (changeOriginDepartment, regra no TicketOriginDepartmentService).
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "origin_department_id", nullable = false, updatable = false)
+    @JoinColumn(name = "origin_department_id", nullable = false)
     private Department originDepartment;
 
     // Setor que recebe o chamado. Hoje sempre a Inovação; a troca (SCRUM-211) ainda não existe.
@@ -111,6 +112,11 @@ public class Ticket {
         this.description = description;
         this.category = category;
         this.priority = priority;
+    }
+
+    /** Corrige o setor de origem. Quem pode (só administradores) é decidido no TicketOriginDepartmentService. */
+    public void changeOriginDepartment(Department originDepartment) {
+        this.originDepartment = originDepartment;
     }
 
     public boolean isOpen() {

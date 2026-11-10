@@ -4,6 +4,7 @@ import br.com.contabilizape.centraldesk.dto.TicketReopenRequest;
 import br.com.contabilizape.centraldesk.service.TicketReopenService;
 import br.com.contabilizape.centraldesk.controller.doc.TicketApi;
 import br.com.contabilizape.centraldesk.dto.AssigneeResponse;
+import br.com.contabilizape.centraldesk.dto.OriginDepartmentChangeRequest;
 import br.com.contabilizape.centraldesk.dto.OverviewAssigneeResponse;
 import br.com.contabilizape.centraldesk.dto.PageResponse;
 import br.com.contabilizape.centraldesk.dto.QueueCountResponse;
@@ -17,6 +18,7 @@ import br.com.contabilizape.centraldesk.dto.TicketResponse;
 import br.com.contabilizape.centraldesk.dto.TicketSummaryResponse;
 import br.com.contabilizape.centraldesk.dto.TicketUpdateRequest;
 import br.com.contabilizape.centraldesk.security.TokenService;
+import br.com.contabilizape.centraldesk.service.TicketOriginDepartmentService;
 import br.com.contabilizape.centraldesk.service.TicketOverviewService;
 import br.com.contabilizape.centraldesk.service.TicketReassignmentService;
 import br.com.contabilizape.centraldesk.service.TicketService;
@@ -48,9 +50,12 @@ public class TicketController implements TicketApi {
     private final TicketReassignmentService reassignmentService;
     private final TicketReopenService ticketReopenService;
     private final TicketOverviewService overviewService;
+    private final TicketOriginDepartmentService originDepartmentService;
 
     public TicketController(TicketService ticketService, TicketReassignmentService reassignmentService,
-                            TicketReopenService ticketReopenService, TicketOverviewService overviewService) {
+                            TicketReopenService ticketReopenService, TicketOverviewService overviewService,
+                            TicketOriginDepartmentService originDepartmentService) {
+        this.originDepartmentService = originDepartmentService;
         this.reassignmentService = reassignmentService;
         this.overviewService = overviewService;
         this.ticketReopenService = ticketReopenService;
@@ -151,6 +156,14 @@ public class TicketController implements TicketApi {
                                  @RequestBody @Valid TicketReopenRequest request) {
         List<String> roles = Objects.requireNonNullElse(jwt.getClaimAsStringList(TokenService.ROLES_CLAIM), List.of());
         return ticketReopenService.reopen(id, UUID.fromString(jwt.getSubject()), roles, request.reason());
+    }
+
+    /** Só administradores (regra no SecurityConfig, conferida de novo no serviço, lendo do banco). */
+    @Override
+    @PatchMapping("/{id}/origin-department")
+    public TicketResponse changeOriginDepartment(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id,
+                                                 @RequestBody @Valid OriginDepartmentChangeRequest request) {
+        return originDepartmentService.changeOriginDepartment(id, UUID.fromString(jwt.getSubject()), request.departmentId());
     }
 
     @Override

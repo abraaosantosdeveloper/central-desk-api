@@ -7,6 +7,8 @@ import br.com.contabilizape.centraldesk.exception.CommentForbiddenException;
 import br.com.contabilizape.centraldesk.exception.ReassignConflictException;
 import br.com.contabilizape.centraldesk.exception.ReassignForbiddenException;
 import br.com.contabilizape.centraldesk.exception.MetricsForbiddenException;
+import br.com.contabilizape.centraldesk.exception.OriginDepartmentChangeForbiddenException;
+import br.com.contabilizape.centraldesk.exception.OriginDepartmentConflictException;
 import br.com.contabilizape.centraldesk.exception.TicketOverviewForbiddenException;
 import br.com.contabilizape.centraldesk.exception.CategoryLabelTakenException;
 import br.com.contabilizape.centraldesk.exception.CategoryNotFoundException;
@@ -88,7 +90,8 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     }
 
     @ExceptionHandler({TicketEditForbiddenException.class, SelfAssignmentException.class, CommentForbiddenException.class, TicketCloseForbiddenException.class, TicketReopenForbiddenException.class,
-            ReassignForbiddenException.class, TicketOverviewForbiddenException.class, MetricsForbiddenException.class})
+            ReassignForbiddenException.class, TicketOverviewForbiddenException.class, MetricsForbiddenException.class,
+            OriginDepartmentChangeForbiddenException.class})
     public ProblemDetail handleTicketActionForbidden(RuntimeException exception) {
         return problem(HttpStatus.FORBIDDEN, "Acesso negado", exception.getMessage());
     }
@@ -106,6 +109,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(ReassignConflictException.class)
     public ProblemDetail handleReassignConflict(ReassignConflictException exception) {
         return problem(HttpStatus.CONFLICT, "Reatribuição não permitida", exception.getMessage());
+    }
+
+    @ExceptionHandler(OriginDepartmentConflictException.class)
+    public ProblemDetail handleOriginDepartmentConflict(OriginDepartmentConflictException exception) {
+        return problem(HttpStatus.CONFLICT, "Setor de origem inalterado", exception.getMessage());
     }
 
     @ExceptionHandler(TicketReopenConflictException.class)

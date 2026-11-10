@@ -24,8 +24,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * Setor de origem e setor de destino no chamado (SCRUM-213, DECISOES-PAINEIS-METRICAS-BI §2):
- * a origem é o departamento de quem abriu, no momento da abertura, e nunca muda (D2);
- * o destino, por enquanto, é sempre a Inovação.
+ * a origem é o departamento de quem abriu, no momento da abertura, e não acompanha mudanças de setor;
+ * só um administrador pode corrigi-la (PATCH /tickets/{id}/origin-department, D2 revisada).
+ * O destino, por enquanto, é sempre a Inovação.
  */
 @IntegrationTest
 class TicketDepartmentsIntegrationTest {
@@ -35,6 +36,7 @@ class TicketDepartmentsIntegrationTest {
     private static final String PASSWORD = "senhaForte123";
     private static final String MARIA = "maria.silva@contabilizape.com.br";
     private static final String HANDLER = "carlos.inovacao@contabilizape.com.br";
+    private static final String ADMIN = "ana.admin@contabilizape.com.br";
 
     @Autowired
     private MockMvc mockMvc;
@@ -57,8 +59,10 @@ class TicketDepartmentsIntegrationTest {
         hardware = jdbc.queryForObject("SELECT id FROM categories WHERE label = 'Hardware'", String.class);
     }
 
+    // A limpeza padrão preserva administradores; o criado aqui sai ao final
     @AfterEach
     void cleanUp() {
+        jdbc.update("DELETE FROM admins WHERE user_id IN (SELECT id FROM users WHERE email = ?)", ADMIN);
         DatabaseCleanup.removeNonAdminUsers(jdbc);
     }
 
@@ -140,7 +144,123 @@ class TicketDepartmentsIntegrationTest {
         assertThat(row.get("target_department_id")).isEqualTo(UUID.fromString(INNOVATION_ID));
     }
 
+    // ---------- Correção do setor de origem: só administradores ----------
+
+    @Test
+    void adminChangesTheOriginDepartment() throws Exception {
+        UUID ticket = open();
+
+        mockMvc.perform(patch("/tickets/" + ticket + "/origin-department").cookie(adminSession())
+                        .contentType(MediaType.APPLICATION_JSON).content(originBody(fiscal)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.originDepartment.id").value(fiscal.toString()))
+                .andExpect(jsonPath("$.originDepartment.name").value("Fiscal"))
+                .andExpect(jsonPath("$.targetDepartment.name").value("Inovação"))
+                .andExpect(jsonPath("$.status").value("OPEN"));
+
+        assertThat(jdbc.queryForObject("SELECT origin_department_id FROM tickets WHERE id = ?", UUID.class, ticket))
+                .isEqualTo(fiscal);
+    }
+
+    @Test
+    void adminCanCorrectTheOriginOfAClosedTicket() throws Exception {
+        UUID ticket = open();
+        jdbc.update("UPDATE tickets SET status = 'CLOSED' WHERE id = ?", ticket);
+
+        mockMvc.perform(patch("/tickets/" + ticket + "/origin-department").cookie(adminSession())
+                        .contentType(MediaType.APPLICATION_JSON).content(originBody(fiscal)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.originDepartment.name").value("Fiscal"))
+                .andExpect(jsonPath("$.status").value("CLOSED"));
+    }
+
+    @Test
+    void requesterCannotChangeTheOriginDepartment() throws Exception {
+        UUID ticket = open();
+
+        mockMvc.perform(patch("/tickets/" + ticket + "/origin-department").cookie(login(MARIA))
+                        .contentType(MediaType.APPLICATION_JSON).content(originBody(fiscal)))
+                .andExpect(status().isForbidden());
+        assertThat(originOf(ticket)).isEqualTo(finance);
+    }
+
+    @Test
+    void innovationMemberWhoIsNotAdminCannotChangeTheOriginDepartment() throws Exception {
+        UUID ticket = open();
+        UUID handler = register(HANDLER, "39053344705");
+        jdbc.update("UPDATE users SET department_id = ?::uuid WHERE id = ?", INNOVATION_ID, handler);
+
+        mockMvc.perform(patch("/tickets/" + ticket + "/origin-department").cookie(login(HANDLER))
+                        .contentType(MediaType.APPLICATION_JSON).content(originBody(fiscal)))
+                .andExpect(status().isForbidden());
+        assertThat(originOf(ticket)).isEqualTo(finance);
+    }
+
+    // O token vale até 15 min: quem deixou de ser admin nesse meio-tempo é barrado pelo banco
+    @Test
+    void formerAdminCannotChangeTheOriginEvenWithTheOldToken() throws Exception {
+        UUID ticket = open();
+        Cookie session = adminSession();
+        jdbc.update("DELETE FROM admins WHERE user_id IN (SELECT id FROM users WHERE email = ?)", ADMIN);
+
+        mockMvc.perform(patch("/tickets/" + ticket + "/origin-department").cookie(session)
+                        .contentType(MediaType.APPLICATION_JSON).content(originBody(fiscal)))
+                .andExpect(status().isForbidden());
+        assertThat(originOf(ticket)).isEqualTo(finance);
+    }
+
+    @Test
+    void sameOriginIsAConflict() throws Exception {
+        UUID ticket = open();
+
+        mockMvc.perform(patch("/tickets/" + ticket + "/origin-department").cookie(adminSession())
+                        .contentType(MediaType.APPLICATION_JSON).content(originBody(finance)))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void unknownDepartmentIsBadRequest() throws Exception {
+        UUID ticket = open();
+
+        mockMvc.perform(patch("/tickets/" + ticket + "/origin-department").cookie(adminSession())
+                        .contentType(MediaType.APPLICATION_JSON).content(originBody(UUID.randomUUID())))
+                .andExpect(status().isBadRequest());
+        assertThat(originOf(ticket)).isEqualTo(finance);
+    }
+
+    @Test
+    void missingDepartmentIdIsBadRequest() throws Exception {
+        UUID ticket = open();
+
+        mockMvc.perform(patch("/tickets/" + ticket + "/origin-department").cookie(adminSession())
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void unknownTicketIsNotFound() throws Exception {
+        mockMvc.perform(patch("/tickets/" + UUID.randomUUID() + "/origin-department").cookie(adminSession())
+                        .contentType(MediaType.APPLICATION_JSON).content(originBody(fiscal)))
+                .andExpect(status().isNotFound());
+    }
+
     // ---------- auxiliares ----------
+
+    // Administradores são somente da Inovação
+    private Cookie adminSession() throws Exception {
+        UUID admin = register(ADMIN, "11144477735");
+        jdbc.update("UPDATE users SET department_id = ?::uuid WHERE id = ?", INNOVATION_ID, admin);
+        jdbc.update("INSERT INTO admins (user_id) VALUES (?)", admin);
+        return login(ADMIN);
+    }
+
+    private UUID originOf(UUID ticket) {
+        return jdbc.queryForObject("SELECT origin_department_id FROM tickets WHERE id = ?", UUID.class, ticket);
+    }
+
+    private static String originBody(UUID departmentId) {
+        return "{ \"departmentId\": \"%s\" }".formatted(departmentId);
+    }
 
     private UUID open() throws Exception {
         String location = mockMvc.perform(post("/tickets").cookie(login(MARIA))

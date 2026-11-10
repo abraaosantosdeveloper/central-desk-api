@@ -3,6 +3,7 @@ package br.com.contabilizape.centraldesk.controller.doc;
 import br.com.contabilizape.centraldesk.dto.TicketReopenRequest;
 import br.com.contabilizape.centraldesk.config.OpenApiConfig;
 import br.com.contabilizape.centraldesk.dto.AssigneeResponse;
+import br.com.contabilizape.centraldesk.dto.OriginDepartmentChangeRequest;
 import br.com.contabilizape.centraldesk.dto.OverviewAssigneeResponse;
 import br.com.contabilizape.centraldesk.dto.PageResponse;
 import br.com.contabilizape.centraldesk.dto.QueueCountResponse;
@@ -244,6 +245,25 @@ public interface TicketApi {
     @ApiResponse(responseCode = "409", description = "Chamado encerrado ou a pessoa já é a responsável.",
             content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
     TicketResponse reassign(@Parameter(hidden = true) Jwt jwt, UUID id, ReassignRequest request);
+
+    @Operation(
+            summary = "Altera o setor de origem do chamado",
+            description = """
+                    **Só administradores** (a condição é conferida no banco, não só no token). Corrige o setor de \
+                    origem gravado na abertura, em qualquer status, inclusive em chamados encerrados. Status, \
+                    responsável e datas não mudam.""",
+            security = @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH))
+    @ApiResponse(responseCode = "200", description = "Setor de origem alterado.",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = TicketResponse.class)))
+    @ApiResponse(responseCode = "400", description = "`departmentId` ausente ou departamento inexistente.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    @ApiResponse(responseCode = "401", description = "Sem sessão.", content = @Content)
+    @ApiResponse(responseCode = "403", description = "Quem chamou não é administrador.", content = @Content)
+    @ApiResponse(responseCode = "404", description = "Chamado inexistente.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    @ApiResponse(responseCode = "409", description = "O departamento informado já é o setor de origem.",
+            content = @Content(mediaType = ProblemExamples.MEDIA_TYPE, schema = @Schema(implementation = ProblemDetail.class)))
+    TicketResponse changeOriginDepartment(@Parameter(hidden = true) Jwt jwt, UUID id, OriginDepartmentChangeRequest request);
 
     @Operation(
             summary = "Encerra um chamado",
