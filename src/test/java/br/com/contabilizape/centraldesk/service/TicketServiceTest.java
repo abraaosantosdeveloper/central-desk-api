@@ -509,6 +509,21 @@ class TicketServiceTest {
     }
 
     @Test
+    void coordinatorAssumesTicketHeOpened() {
+        User coordinator = user(OTHER_ID, UserStatus.ACTIVE);
+        Ticket ticket = new Ticket("Troca de switch", "Demanda interna da TI", hardware, medium, coordinator, mock(Department.class));
+        when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(coordinator));
+        when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
+        when(userRepository.isCoordinator(OTHER_ID)).thenReturn(true);
+
+        ticketService.assign(TICKET_ID, OTHER_ID);
+
+        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+        assertThat(ticket.getAssignee()).isSameAs(coordinator);
+        assertThat(published(TicketAssignedEvent.class).assigneeId()).isEqualTo(OTHER_ID);
+    }
+
+    @Test
     void deactivatedHandlerCannotAssign() {
         User handler = user(OTHER_ID, UserStatus.DEACTIVATED);
         when(userRepository.findById(OTHER_ID)).thenReturn(Optional.of(handler));

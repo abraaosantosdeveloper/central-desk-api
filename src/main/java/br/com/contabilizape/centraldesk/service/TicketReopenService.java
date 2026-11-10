@@ -99,15 +99,16 @@ public class TicketReopenService {
     }
 
     // Mesmas regras de quem pode receber um chamado (TicketReassignmentService): ativo, da Inovação ou admin;
-    // o próprio solicitante só se for admin (demanda interna, SCRUM-207)
+    // o próprio solicitante só se for admin ou coordenador (demanda interna, SCRUM-207)
     private boolean canStillHandle(Ticket ticket) {
         User assignee = ticket.getAssignee();
         if (assignee == null || !assignee.isActive()) {
             return false;
         }
         boolean admin = adminRepository.existsById(assignee.getId());
+        boolean coordinator = userRepository.isCoordinator(assignee.getId());
         boolean handler = assignee.getDepartment().getId().equals(handlerDepartmentId);
         boolean requester = assignee.getId().equals(ticket.getRequester().getId());
-        return (handler || admin) && (!requester || admin);
+        return (handler || admin) && (!requester || admin || coordinator);
     }
 }

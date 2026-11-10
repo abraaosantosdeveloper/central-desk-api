@@ -153,6 +153,23 @@ class TicketReassignmentServiceTest {
     }
 
     @Test
+    void requesterWhoIsCoordinatorCanReceiveHisOwnTicket() {
+        User coordinatorRequester = user(REQUESTER_ID, UserStatus.ACTIVE, innovation);
+        Ticket ticket = new Ticket("Troca de switch", "Demanda interna da TI", mock(Category.class), mock(Priority.class),
+                coordinatorRequester, mock(Department.class));
+        ticket.assign(actor, OffsetDateTime.now(ZoneOffset.UTC));
+        when(userRepository.findById(ACTOR_ID)).thenReturn(Optional.of(actor));
+        when(ticketRepository.findByIdForUpdate(TICKET_ID)).thenReturn(Optional.of(ticket));
+        when(userRepository.findById(REQUESTER_ID)).thenReturn(Optional.of(coordinatorRequester));
+        when(userRepository.isCoordinator(REQUESTER_ID)).thenReturn(true);
+
+        service.reassign(TICKET_ID, ACTOR_ID, List.of(Roles.TICKET_HANDLER), REQUESTER_ID);
+
+        assertThat(ticket.getAssignee()).isSameAs(coordinatorRequester);
+        assertThat(published().newAssigneeId()).isEqualTo(REQUESTER_ID);
+    }
+
+    @Test
     void requesterFromInnovationWhoIsNotAdminCannotReceiveHisOwnTicket() {
         User handlerRequester = user(REQUESTER_ID, UserStatus.ACTIVE, innovation);
         Ticket ticket = new Ticket("Notebook", "Não liga", mock(Category.class), mock(Priority.class), handlerRequester, mock(Department.class));
