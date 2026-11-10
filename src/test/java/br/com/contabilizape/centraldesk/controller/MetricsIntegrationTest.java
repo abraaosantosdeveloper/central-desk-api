@@ -71,8 +71,8 @@ class MetricsIntegrationTest {
         DatabaseCleanup.removeNonAdminUsers(jdbc);
         finance = departmentId("Financeiro");
         fiscal = departmentId("Fiscal");
-        hardware = jdbc.queryForObject("SELECT id FROM categories WHERE label = 'Hardware'", UUID.class);
-        software = jdbc.queryForObject("SELECT id FROM categories WHERE label <> 'Hardware' ORDER BY label LIMIT 1", UUID.class);
+        hardware = jdbc.queryForObject("SELECT id FROM categories WHERE label = 'Serviços'", UUID.class);
+        software = jdbc.queryForObject("SELECT id FROM categories WHERE label <> 'Serviços' ORDER BY label LIMIT 1", UUID.class);
 
         UUID admin = account(ADMIN, "71428793860", "Ana Admin", INNOVATION);
         jdbc.update("INSERT INTO admins (user_id) VALUES (?)", admin);

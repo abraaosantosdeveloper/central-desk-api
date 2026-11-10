@@ -17,7 +17,7 @@ public final class ProblemExamples {
               "instance": "/auth/register",
               "errors": {
                 "cpf": "CPF inválido",
-                "email": "deve ser um e-mail do domínio @contabilizape.com.br"
+                "email": "deve ser um endereço de e-mail bem formado"
               }
             }""";
 

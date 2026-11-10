@@ -176,8 +176,6 @@ class UserServiceTest {
 
     // ---------- recusas ----------
 
-    // O domínio do e-mail é validado no DTO (@CorporateEmail); ver CorporateEmailValidatorTest
-
     @Test
     void rejectsDuplicateEmail() {
         when(userRepository.findByEmail("maria.silva@contabilizape.com.br"))

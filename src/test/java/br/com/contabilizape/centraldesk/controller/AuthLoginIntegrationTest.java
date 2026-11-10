@@ -61,7 +61,7 @@ class AuthLoginIntegrationTest {
                 .andExpect(jsonPath("$.email").value(EMAIL))
                 .andExpect(jsonPath("$.fullName").value("Maria da Silva"))
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
-                .andExpect(jsonPath("$.departmentName").value("Geral"))
+                .andExpect(jsonPath("$.departmentName").value("Comunidade"))
                 .andExpect(jsonPath("$.roles", empty()))
                 .andExpect(jsonPath("$.password").doesNotExist())
                 .andExpect(jsonPath("$.passwordHash").doesNotExist())

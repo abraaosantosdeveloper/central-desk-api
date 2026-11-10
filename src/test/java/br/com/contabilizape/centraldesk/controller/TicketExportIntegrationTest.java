@@ -103,7 +103,7 @@ class TicketExportIntegrationTest {
             Sheet sheet = workbook.getSheet("Chamados");
             assertThat(sheet.getLastRowNum()).isEqualTo(4); // cabeçalho + 4 chamados, em ordem de número
             assertThat(texts(sheet.getRow(1))).contains("Impressora", "Não imprime", "Aberto", "Maria da Silva",
-                    "Financeiro", "Inovação");
+                    "Financeiro", "TI & Suporte");
             assertThat(sheet.getRow(1).getCell(9).getCellType()).isEqualTo(CellType.BLANK); // sem responsável
             assertThat(sheet.getRow(1).getCell(14).getCellType()).isEqualTo(CellType.BLANK); // não encerrado
 

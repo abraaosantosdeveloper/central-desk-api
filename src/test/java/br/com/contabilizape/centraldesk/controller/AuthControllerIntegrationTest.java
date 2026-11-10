@@ -14,7 +14,6 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -53,7 +52,7 @@ class AuthControllerIntegrationTest {
                 .andExpect(header().string("Location", startsWith("/users/")))
                 .andExpect(jsonPath("$.email").value("maria.silva@contabilizape.com.br"))
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
-                .andExpect(jsonPath("$.departmentName").value("Geral"))
+                .andExpect(jsonPath("$.departmentName").value("Comunidade"))
                 .andExpect(jsonPath("$.departmentApprovalPending").value(false))
                 .andExpect(jsonPath("$.createdAt").isNotEmpty())
                 .andExpect(jsonPath("$.password").doesNotExist())
@@ -69,7 +68,7 @@ class AuthControllerIntegrationTest {
     void innovationRequestStartsInGeneralWithPendingRequest() throws Exception {
         mockMvc.perform(register("joao.souza@contabilizape.com.br", CPF_JOAO, "senhaForte123", INNOVATION_ID))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.departmentName").value("Geral"))
+                .andExpect(jsonPath("$.departmentName").value("Comunidade"))
                 .andExpect(jsonPath("$.departmentApprovalPending").value(true));
 
         Map<String, Object> request = jdbc.queryForMap("""
@@ -112,13 +111,13 @@ class AuthControllerIntegrationTest {
         assertThat(countUsersWithEmail("maria.silva@contabilizape.com.br")).isZero();
     }
 
+    // Versão genérica: o cadastro é aberto a qualquer domínio de e-mail
     @Test
-    void rejectsEmailOutsideCompanyDomain() throws Exception {
+    void acceptsEmailFromAnyDomain() throws Exception {
         mockMvc.perform(register("maria@gmail.com", CPF_MARIA, "senhaForte123", GENERAL_ID))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.errors.email", containsString("@contabilizape.com.br")));
+                .andExpect(status().isCreated());
 
-        assertThat(countUsersWithEmail("maria@gmail.com")).isZero();
+        assertThat(countUsersWithEmail("maria@gmail.com")).isOne();
     }
 
     @Test

@@ -95,7 +95,7 @@ class AdminAccountsIntegrationTest {
         mockMvc.perform(get("/users/" + maria).cookie(adminSession))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.email").value(MARIA))
-                .andExpect(jsonPath("$.departmentName").value("Geral"))
+                .andExpect(jsonPath("$.departmentName").value("Comunidade"))
                 .andExpect(jsonPath("$.departmentApprovalPending").value(true))
                 .andExpect(jsonPath("$.admin").value(false))
                 .andExpect(jsonPath("$.ticketHandler").value(false));
@@ -170,7 +170,7 @@ class AdminAccountsIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[*].id", contains(request)))
                 .andExpect(jsonPath("$[0].userName").value("Maria da Silva"))
-                .andExpect(jsonPath("$[0].departmentName").value("Inovação"));
+                .andExpect(jsonPath("$[0].departmentName").value("TI & Suporte"));
 
         mockMvc.perform(patch("/department-requests/" + request + "/approve").cookie(adminSession))
                 .andExpect(status().isOk())
@@ -179,7 +179,7 @@ class AdminAccountsIntegrationTest {
 
         mockMvc.perform(post("/auth/refresh").cookie(new Cookie("refresh_token", cookie(mariaLogin, "refresh_token"))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.departmentName").value("Inovação"))
+                .andExpect(jsonPath("$.departmentName").value("TI & Suporte"))
                 .andExpect(jsonPath("$.departmentApprovalPending").value(false))
                 .andExpect(jsonPath("$.roles", hasItem("TICKET_HANDLER")));
         mockMvc.perform(get("/department-requests").cookie(adminSession))

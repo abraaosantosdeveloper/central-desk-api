@@ -56,7 +56,7 @@ class TicketNumberIntegrationTest {
                 .andReturn().getResponse().getHeaders(HttpHeaders.SET_COOKIE).stream()
                 .filter(cookie -> cookie.startsWith("access_token=")).findFirst().orElseThrow();
         session = new Cookie("access_token", header.substring(header.indexOf('=') + 1, header.indexOf(';')));
-        hardwareId = jdbc.queryForObject("SELECT id FROM categories WHERE label = 'Hardware'", String.class);
+        hardwareId = jdbc.queryForObject("SELECT id FROM categories WHERE label = 'Serviços'", String.class);
     }
 
     @AfterEach
