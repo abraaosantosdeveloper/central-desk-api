@@ -123,7 +123,6 @@ spring.jpa.properties.hibernate.format_sql=${SHOW_SQL:false}
 # Departamentos fixos criados na V8__seed_departments.sql
 app.tickets.handler-department-id=e9790f1f-41df-4369-bfe7-1be4be535561
 app.departments.default-department-id=3094ed3f-42ab-4bc0-9d8d-f6eb08891016
-app.users.allowed-email-domain=contabilizape.com.br
 
 # Primeiro administrador, criado ao subir se ainda não houver nenhum (AdminBootstrap).
 # Os valores ficam no .env, fora do Git. Vazios: nenhum admin é criado.
@@ -325,7 +324,7 @@ O admin age sobre a conta de outra pessoa por **ações pontuais**, cada uma com
 
 ### Cadastro de conta (RF00)
 
-1. O e-mail precisa ser do domínio `@contabilizape.com.br` (anotação `@CorporateEmail` no DTO; o domínio vem de `app.users.allowed-email-domain`, sem diferenciar maiúsculas) e é normalizado no service (`trim` + minúsculas) antes de gravar e de checar duplicidade.
+1. O e-mail pode ser de qualquer domínio (versão genérica: a regra `@CorporateEmail` foi removida) e é normalizado no service (`trim` + minúsculas) antes de gravar e de checar duplicidade.
 2. E-mail e CPF precisam ser únicos (409 se já existirem).
 3. O usuário escolhe qualquer departamento.
    - **Qualquer departamento exceto Inovação**: o usuário é criado nele.
@@ -505,7 +504,7 @@ Detalhes e o porquê de cada regra: `docs/ADR-SEGURANCA-CONTAS.md` (e o plano `P
 - **Autenticação fica separada sob `/auth`** (cadastro, login, refresh, logout). Assim todas as rotas públicas ficam num só prefixo e o resto da API fica inteiro protegido.
 - A ação vem do método HTTP, não da URL (`PUT /users/me`, e não `/users/me/edit`). `PUT` para edição completa de formulário; `PATCH` para ações pontuais.
 - **DTOs** como `record`, separados em entrada e saída, no pacote `dto/`. Nunca expor entidades JPA, e nunca retornar `password_hash` nem `cpf`.
-- Validação de formato no DTO (`@NotBlank`, `@Size`, `@Email`, `@Pattern` e os validadores próprios `@Cpf` e `@CorporateEmail`), com os mesmos limites do banco. Regras que dependem do banco (unicidade, departamento existente) ficam no service.
+- Validação de formato no DTO (`@NotBlank`, `@Size`, `@Email`, `@Pattern` e o validador próprio `@Cpf`), com os mesmos limites do banco. Regras que dependem do banco (unicidade, departamento existente) ficam no service.
 - **Erros no formato `ProblemDetail`** (RFC 9457, `application/problem+json`). Os services lançam **exceções de domínio** (pacote `exception/`), e o `GlobalExceptionHandler` (`@RestControllerAdvice`) as traduz: duplicidade → 409, dados inválidos → 400. Erros de validação trazem `errors` com a mensagem de cada campo. O handler **estende `ResponseEntityExceptionHandler`**, então também devolve `ProblemDetail` para os erros do próprio Spring MVC (JSON malformado etc.). **Não usar `spring.mvc.problemdetails.enabled=true`**: ele registra um tratador concorrente que responde a validação sem `errors` (SCRUM-133).
 
   ```json
@@ -670,7 +669,7 @@ src/main/java/br/com/contabilizape/centraldesk/
 │                 RefreshTokenService, RotatedRefreshToken, TicketAccess, TicketCatalogService,
 │                 TicketReassignmentService, TicketService, TicketSpecifications, UserAdministrationService,
 │                 UserService
-└── validation/   CorporateEmail, CorporateEmailValidator, Cpf, CpfValidator, StrongPassword
+└── validation/   Cpf, CpfValidator, StrongPassword
 ```
 
 Previsto para notificações e avaliações: `model/` ganha `Notification`, `NotificationType` (com a categoria) e `NotificationCategory`, além de `TicketRating`; `repository/` ganha `NotificationRepository` e `TicketRatingRepository`; `service/` ganha `NotificationService` e `TicketRatingService`; `controller/` ganha `NotificationController` (doc em `NotificationApi`) e o endpoint de avaliação no `TicketController`.
@@ -730,7 +729,6 @@ Testes (`src/test/java/br/com/contabilizape/centraldesk/`):
 ├── security/CookieBearerTokenResolverTest     leitura do cookie e rotas públicas (5)
 ├── security/AccessTokenCookieTest             atributos do cookie criado e do apagado (2)
 ├── security/RefreshTokenCookieTest            idem, com Path=/auth (2)
-├── validation/CorporateEmailValidatorTest     domínio do e-mail (9 casos)
 └── validation/CpfValidatorTest                algoritmo do CPF (16 casos)
 ```
 
@@ -757,7 +755,6 @@ Fluxo de uma requisição: `Controller (HTTP + DTO) → Service (regras, @Transa
 - `userRepository.saveAndFlush` no cadastro: o flush executa o `INSERT` na hora, e o `@CreationTimestamp` preenche o `createdAt` antes de a resposta ser montada.
 - Validadores customizados ficam em `validation/` (não são "middlewares": não veem a requisição; são acionados pelo `@Valid`). O que participa da cadeia HTTP do Spring Security (leitura do cookie, JWT) fica em `security/`.
 - Teste unitário do `TokenService` e do `JwtConfig` usa os beans reais, sem Spring: `new JwtConfig().jwtEncoder(...)`. O `TokenService` recebe um `Clock`, o que permite gerar tokens já vencidos nos testes.
-- Validador que precisa de configuração (como o `CorporateEmailValidator`) recebe o valor pelo construtor com `@Value`: o Spring cria os validadores como beans. Em teste unitário sem Spring, instancia-se o validador passando o valor (ver `UserCreateRequestValidationTest`).
 - `ticket_ratings.score` é `SMALLINT`: mapear como `short` (ou `Short`) no Java, senão o `validate` acusa divergência de tipo (*found int2, expecting integer*).
 
 ## 10. Requisitos funcionais

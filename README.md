@@ -78,7 +78,7 @@ O Maven não precisa ser instalado: o projeto usa o Maven Wrapper (`mvnw`).
    ADMIN_PASSWORD=
    ```
 
-   As variáveis `ADMIN_*` substituem qualquer dado pessoal em migration: o e-mail precisa ser `@contabilizape.com.br`, o CPF válido (só dígitos) e a senha com 8 a 72 caracteres, letra e número.
+   As variáveis `ADMIN_*` substituem qualquer dado pessoal em migration: o e-mail pode ser de qualquer domínio, o CPF válido (só dígitos) e a senha com 8 a 72 caracteres, letra e número.
 
 2. Suba o banco e o pgAdmin:
 
