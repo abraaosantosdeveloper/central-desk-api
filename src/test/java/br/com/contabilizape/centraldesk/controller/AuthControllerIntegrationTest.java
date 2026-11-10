@@ -14,7 +14,6 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -112,13 +111,13 @@ class AuthControllerIntegrationTest {
         assertThat(countUsersWithEmail("maria.silva@contabilizape.com.br")).isZero();
     }
 
+    // Versão genérica: o cadastro é aberto a qualquer domínio de e-mail
     @Test
-    void rejectsEmailOutsideCompanyDomain() throws Exception {
+    void acceptsEmailFromAnyDomain() throws Exception {
         mockMvc.perform(register("maria@gmail.com", CPF_MARIA, "senhaForte123", GENERAL_ID))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.errors.email", containsString("@contabilizape.com.br")));
+                .andExpect(status().isCreated());
 
-        assertThat(countUsersWithEmail("maria@gmail.com")).isZero();
+        assertThat(countUsersWithEmail("maria@gmail.com")).isOne();
     }
 
     @Test

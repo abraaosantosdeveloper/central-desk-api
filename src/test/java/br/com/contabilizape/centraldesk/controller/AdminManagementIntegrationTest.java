@@ -231,13 +231,13 @@ class AdminManagementIntegrationTest {
         mockMvc.perform(put("/users/" + maria).cookie(adminSession).contentType(MediaType.APPLICATION_JSON)
                         .content(updateBody("Maria da Silva", "52998224725", JOAO, innovation)))
                 .andExpect(status().isConflict());
-        // CPF inválido e e-mail fora do domínio
+        // CPF inválido e e-mail malformado (qualquer domínio é aceito na versão genérica)
         mockMvc.perform(put("/users/" + maria).cookie(adminSession).contentType(MediaType.APPLICATION_JSON)
                         .content(updateBody("Maria da Silva", "12345678900", MARIA, innovation)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors.cpf").exists());
         mockMvc.perform(put("/users/" + maria).cookie(adminSession).contentType(MediaType.APPLICATION_JSON)
-                        .content(updateBody("Maria da Silva", "52998224725", "maria@gmail.com", innovation)))
+                        .content(updateBody("Maria da Silva", "52998224725", "maria-sem-arroba", innovation)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors.email").exists());
 

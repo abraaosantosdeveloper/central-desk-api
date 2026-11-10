@@ -11,8 +11,8 @@
 -- =============================================================================
 
 INSERT INTO departments (id, name) VALUES
-    ('e9790f1f-41df-4369-bfe7-1be4be535561', 'Inovação'),
-    ('3094ed3f-42ab-4bc0-9d8d-f6eb08891016', 'Geral');
+    ('e9790f1f-41df-4369-bfe7-1be4be535561', 'TI & Suporte'),
+    ('3094ed3f-42ab-4bc0-9d8d-f6eb08891016', 'Comunidade');
 
 -- Demais departamentos da empresa (opcional). Descomente e ajuste os nomes
 -- ANTES de aplicar; depois de aplicada, use uma nova migration:

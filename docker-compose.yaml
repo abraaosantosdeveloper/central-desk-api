@@ -1,7 +1,7 @@
 services:
   db:
     image: postgres:16-alpine
-    container_name: chamados-db
+    container_name: chamados_community-db
     environment:
       POSTGRES_DB: chamados
       POSTGRES_USER: ${DB_USER}
@@ -9,7 +9,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - chamados-data:/var/lib/postgresql/data
+      - chamados_community-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "sh -c 'pg_isready -U ${DB_USER:-postgres} -d chamados'"]
       interval: 10s
@@ -19,7 +19,7 @@ services:
 
   pgadmin:
     image: dpage/pgadmin4
-    container_name: chamados-pgadmin
+    container_name: chamados_community-pgadmin
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
@@ -32,5 +32,5 @@ services:
         condition: service_healthy
 
 volumes:
-  chamados-data:
+  chamados_community-data:
   pgadmin-data:

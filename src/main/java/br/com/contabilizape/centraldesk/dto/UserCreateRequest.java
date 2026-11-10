@@ -1,6 +1,5 @@
 package br.com.contabilizape.centraldesk.dto;
 
-import br.com.contabilizape.centraldesk.validation.CorporateEmail;
 import br.com.contabilizape.centraldesk.validation.Cpf;
 import br.com.contabilizape.centraldesk.validation.StrongPassword;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -22,8 +21,8 @@ public record UserCreateRequest(
     @Cpf
     String cpf,
 
-    @Schema(description = "E-mail institucional (@contabilizape.com.br)", example = "maria.silva@contabilizape.com.br")
-    @NotBlank @Email @CorporateEmail @Size(max = 255)
+    @Schema(description = "E-mail (qualquer domínio)", example = "maria.silva@empresa.com.br")
+    @NotBlank @Email @Size(max = 255)
     String email,
 
     @Schema(description = "Senha de 8 a 72 caracteres, com ao menos uma letra e um número",

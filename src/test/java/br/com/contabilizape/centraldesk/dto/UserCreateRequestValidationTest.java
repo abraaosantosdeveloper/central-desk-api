@@ -1,9 +1,5 @@
 package br.com.contabilizape.centraldesk.dto;
 
-import br.com.contabilizape.centraldesk.validation.CorporateEmailValidator;
-import jakarta.validation.Configuration;
-import jakarta.validation.ConstraintValidator;
-import jakarta.validation.ConstraintValidatorFactory;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -32,25 +28,7 @@ class UserCreateRequestValidationTest {
 
     @BeforeAll
     static void setUp() {
-        // No Spring, o CorporateEmailValidator recebe o domínio da configuração.
-        // Aqui, sem Spring, ensinamos o Bean Validation a criá-lo com o domínio da empresa.
-        Configuration<?> configuration = Validation.byDefaultProvider().configure();
-        ConstraintValidatorFactory defaults = configuration.getDefaultConstraintValidatorFactory();
-        factory = configuration.constraintValidatorFactory(new ConstraintValidatorFactory() {
-            @Override
-            @SuppressWarnings("unchecked")
-            public <T extends ConstraintValidator<?, ?>> T getInstance(Class<T> key) {
-                if (key == CorporateEmailValidator.class) {
-                    return (T) new CorporateEmailValidator("contabilizape.com.br");
-                }
-                return defaults.getInstance(key);
-            }
-
-            @Override
-            public void releaseInstance(ConstraintValidator<?, ?> instance) {
-                defaults.releaseInstance(instance);
-            }
-        }).buildValidatorFactory();
+        factory = Validation.buildDefaultValidatorFactory();
         validator = factory.getValidator();
     }
 
@@ -103,12 +81,13 @@ class UserCreateRequestValidationTest {
         assertThat(invalidFields(request)).containsExactly("email");
     }
 
-    @ParameterizedTest(name = "recusa e-mail de outro domínio {0}")
-    @ValueSource(strings = {"maria@gmail.com", "maria@outracontabilizape.com.br"})
-    void rejectsEmailOutsideCompanyDomain(String email) {
+    // Versão genérica: o cadastro é aberto, sem restrição de domínio do e-mail
+    @ParameterizedTest(name = "aceita e-mail de qualquer domínio {0}")
+    @ValueSource(strings = {"maria@gmail.com", "maria@outracontabilizape.com.br", "maria@empresa.com.br"})
+    void acceptsEmailFromAnyDomain(String email) {
         var request = new UserCreateRequest(VALID_NAME, VALID_CPF, email, VALID_PASSWORD, VALID_DEPARTMENT);
 
-        assertThat(invalidFields(request)).containsExactly("email");
+        assertThat(validator.validate(request)).isEmpty();
     }
 
     @ParameterizedTest(name = "recusa senha {0}")
