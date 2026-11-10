@@ -57,8 +57,8 @@ class TicketListIntegrationTest {
         handler = register(HANDLER, "39053344705");
         jdbc.update("UPDATE users SET department_id = ? WHERE id = ?", UUID.fromString(INNOVATION_ID), handler);
         mariaSession = login(MARIA);
-        hardware = jdbc.queryForObject("SELECT id FROM categories WHERE label = 'Hardware'", UUID.class);
-        software = jdbc.queryForObject("SELECT id FROM categories WHERE label <> 'Hardware' ORDER BY label LIMIT 1", UUID.class);
+        hardware = jdbc.queryForObject("SELECT id FROM categories WHERE label = 'Serviços'", UUID.class);
+        software = jdbc.queryForObject("SELECT id FROM categories WHERE label <> 'Serviços' ORDER BY label LIMIT 1", UUID.class);
     }
 
     // A limpeza padrão preserva administradores; o criado aqui sai ao final
@@ -81,7 +81,7 @@ class TicketListIntegrationTest {
                 .andExpect(jsonPath("$.content[*].title", contains("Novo", "Antigo")))
                 .andExpect(jsonPath("$.content[0].description").doesNotExist())
                 .andExpect(jsonPath("$.content[0].assigneeId").value(handler.toString()))
-                .andExpect(jsonPath("$.content[0].category.label").value("Hardware"))
+                .andExpect(jsonPath("$.content[0].category.label").value("Serviços"))
                 .andExpect(jsonPath("$.content[0].priority.id").value(2))
                 .andExpect(jsonPath("$.totalElements").value(2))
                 .andExpect(jsonPath("$.page").value(0));

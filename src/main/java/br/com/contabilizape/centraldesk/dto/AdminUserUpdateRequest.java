@@ -1,6 +1,5 @@
 package br.com.contabilizape.centraldesk.dto;
 
-import br.com.contabilizape.centraldesk.validation.CorporateEmail;
 import br.com.contabilizape.centraldesk.validation.Cpf;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Email;
@@ -21,8 +20,8 @@ public record AdminUserUpdateRequest(
     @Cpf
     String cpf,
 
-    @Schema(description = "E-mail institucional (@contabilizape.com.br). É o login da pessoa.", example = "maria.silva@contabilizape.com.br")
-    @NotBlank @Email @CorporateEmail @Size(max = 255)
+    @Schema(description = "E-mail (qualquer domínio). É o login da pessoa.", example = "maria.silva@empresa.com.br")
+    @NotBlank @Email @Size(max = 255)
     String email,
 
     @Schema(description = "Departamento (ids em GET /departments)", example = "3094ed3f-42ab-4bc0-9d8d-f6eb08891016")

@@ -77,7 +77,7 @@ public interface AdminUserApi {
             security = @SecurityRequirement(name = OpenApiConfig.COOKIE_AUTH))
     @ApiResponse(responseCode = "200", description = "Dados corrigidos.",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = AdminUserDetailResponse.class)))
-    @ApiResponse(responseCode = "400", description = "Campo inválido (CPF, e-mail fora do domínio, nome vazio) ou departamento inexistente.",
+    @ApiResponse(responseCode = "400", description = "Campo inválido (CPF, e-mail malformado, nome vazio) ou departamento inexistente.",
             content = @Content(mediaType = ProblemExamples.MEDIA_TYPE,
                     schema = @Schema(implementation = ProblemDetail.class),
                     examples = @ExampleObject(name = "Campos inválidos", value = ProblemExamples.INVALID_FIELDS)))

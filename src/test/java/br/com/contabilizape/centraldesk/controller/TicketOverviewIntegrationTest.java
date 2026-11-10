@@ -66,8 +66,8 @@ class TicketOverviewIntegrationTest {
         DatabaseCleanup.removeNonAdminUsers(jdbc);
         finance = departmentId("Financeiro");
         fiscal = departmentId("Fiscal");
-        hardware = jdbc.queryForObject("SELECT id FROM categories WHERE label = 'Hardware'", UUID.class);
-        software = jdbc.queryForObject("SELECT id FROM categories WHERE label <> 'Hardware' ORDER BY label LIMIT 1", UUID.class);
+        hardware = jdbc.queryForObject("SELECT id FROM categories WHERE label = 'Serviços'", UUID.class);
+        software = jdbc.queryForObject("SELECT id FROM categories WHERE label <> 'Serviços' ORDER BY label LIMIT 1", UUID.class);
 
         UUID admin = account(ADMIN, "71428793860", "Ana Admin", INNOVATION);
         jdbc.update("INSERT INTO admins (user_id) VALUES (?)", admin);
@@ -96,7 +96,7 @@ class TicketOverviewIntegrationTest {
         mockMvc.perform(get("/tickets/overview").cookie(login(ADMIN)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[*].id", contains(ids(server, invoice, vpn, printer))))
-                .andExpect(jsonPath("$.content[0].originDepartment.name").value("Inovação"))
+                .andExpect(jsonPath("$.content[0].originDepartment.name").value("TI & Suporte"))
                 .andExpect(jsonPath("$.content[1].targetDepartment.name").value("Financeiro"))
                 .andExpect(jsonPath("$.totalElements").value(4))
                 .andExpect(jsonPath("$.statusCounts.all").value(4))
@@ -190,7 +190,7 @@ class TicketOverviewIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[*].fullName", contains("Carlos Lima")))
                 .andExpect(jsonPath("$[0].id").value(carlos.toString()))
-                .andExpect(jsonPath("$[0].departmentName").value("Inovação"));
+                .andExpect(jsonPath("$[0].departmentName").value("TI & Suporte"));
         mockMvc.perform(get("/tickets/overview/assignees").cookie(login(PAULA)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[*].fullName", contains("Carlos Lima")));
