@@ -56,7 +56,7 @@ class TicketDepartmentsIntegrationTest {
         fiscal = departmentId("Fiscal");
         maria = register(MARIA, "52998224725");
         jdbc.update("UPDATE users SET department_id = ? WHERE id = ?", finance, maria);
-        hardware = jdbc.queryForObject("SELECT id FROM categories WHERE label = 'Hardware'", String.class);
+        hardware = jdbc.queryForObject("SELECT id FROM categories WHERE label = 'Serviços'", String.class);
     }
 
     // A limpeza padrão preserva administradores; o criado aqui sai ao final
@@ -73,7 +73,7 @@ class TicketDepartmentsIntegrationTest {
                 .andExpect(jsonPath("$.originDepartment.id").value(finance.toString()))
                 .andExpect(jsonPath("$.originDepartment.name").value("Financeiro"))
                 .andExpect(jsonPath("$.targetDepartment.id").value(INNOVATION_ID))
-                .andExpect(jsonPath("$.targetDepartment.name").value("Inovação"));
+                .andExpect(jsonPath("$.targetDepartment.name").value("TI & Suporte"));
 
         Map<String, Object> row = jdbc.queryForMap(
                 "SELECT origin_department_id, target_department_id FROM tickets WHERE requester_id = ?", maria);
@@ -94,7 +94,7 @@ class TicketDepartmentsIntegrationTest {
         mockMvc.perform(get("/tickets/mine").cookie(session))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].originDepartment.name").value("Financeiro"))
-                .andExpect(jsonPath("$.content[0].targetDepartment.name").value("Inovação"));
+                .andExpect(jsonPath("$.content[0].targetDepartment.name").value("TI & Suporte"));
     }
 
     @Test
@@ -111,7 +111,7 @@ class TicketDepartmentsIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON).content("{ \"resolution\": \"Troquei o toner.\" }"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.originDepartment.name").value("Financeiro"))
-                .andExpect(jsonPath("$.targetDepartment.name").value("Inovação"));
+                .andExpect(jsonPath("$.targetDepartment.name").value("TI & Suporte"));
     }
 
     @Test
@@ -155,7 +155,7 @@ class TicketDepartmentsIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.originDepartment.id").value(fiscal.toString()))
                 .andExpect(jsonPath("$.originDepartment.name").value("Fiscal"))
-                .andExpect(jsonPath("$.targetDepartment.name").value("Inovação"))
+                .andExpect(jsonPath("$.targetDepartment.name").value("TI & Suporte"))
                 .andExpect(jsonPath("$.status").value("OPEN"));
 
         assertThat(jdbc.queryForObject("SELECT origin_department_id FROM tickets WHERE id = ?", UUID.class, ticket))

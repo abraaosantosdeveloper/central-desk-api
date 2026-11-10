@@ -40,8 +40,8 @@ class DepartmentControllerIntegrationTest {
         mockMvc.perform(get("/departments"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(10)))
-                .andExpect(jsonPath("$[?(@.name == 'Geral')].id").value(GENERAL_ID))
-                .andExpect(jsonPath("$[?(@.name == 'Inovação')].id").value(INNOVATION_ID));
+                .andExpect(jsonPath("$[?(@.name == 'Comunidade')].id").value(GENERAL_ID))
+                .andExpect(jsonPath("$[?(@.name == 'TI & Suporte')].id").value(INNOVATION_ID));
     }
 
     @Test
@@ -51,8 +51,8 @@ class DepartmentControllerIntegrationTest {
         mockMvc.perform(get("/departments"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[*].name").value(
-                        org.hamcrest.Matchers.contains("Administrativo", "Comercial", "Contábil", "Departamento Pessoal",
-                                "Financeiro", "Fiscal", "Geral", "Inovação", "Recursos Humanos", "Societário", "Zeladoria (teste)")));
+                        org.hamcrest.Matchers.contains("Administrativo", "Comercial", "Comunidade", "Contábil", "Departamento Pessoal",
+                                "Financeiro", "Fiscal", "Recursos Humanos", "Societário", "TI & Suporte", "Zeladoria (teste)")));
     }
 
     @Test

@@ -68,7 +68,7 @@ class AdminManagementIntegrationTest {
     void allCompanyDepartmentsAreAvailableAtSignUp() throws Exception {
         mockMvc.perform(get("/departments"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[*].name", hasItems("Inovação", "Geral", "Financeiro", "Fiscal",
+                .andExpect(jsonPath("$[*].name", hasItems("TI & Suporte", "Comunidade", "Financeiro", "Fiscal",
                         "Contábil", "Recursos Humanos")));
     }
 

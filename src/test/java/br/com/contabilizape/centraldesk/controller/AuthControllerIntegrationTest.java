@@ -52,7 +52,7 @@ class AuthControllerIntegrationTest {
                 .andExpect(header().string("Location", startsWith("/users/")))
                 .andExpect(jsonPath("$.email").value("maria.silva@contabilizape.com.br"))
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
-                .andExpect(jsonPath("$.departmentName").value("Geral"))
+                .andExpect(jsonPath("$.departmentName").value("Comunidade"))
                 .andExpect(jsonPath("$.departmentApprovalPending").value(false))
                 .andExpect(jsonPath("$.createdAt").isNotEmpty())
                 .andExpect(jsonPath("$.password").doesNotExist())
@@ -68,7 +68,7 @@ class AuthControllerIntegrationTest {
     void innovationRequestStartsInGeneralWithPendingRequest() throws Exception {
         mockMvc.perform(register("joao.souza@contabilizape.com.br", CPF_JOAO, "senhaForte123", INNOVATION_ID))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.departmentName").value("Geral"))
+                .andExpect(jsonPath("$.departmentName").value("Comunidade"))
                 .andExpect(jsonPath("$.departmentApprovalPending").value(true));
 
         Map<String, Object> request = jdbc.queryForMap("""

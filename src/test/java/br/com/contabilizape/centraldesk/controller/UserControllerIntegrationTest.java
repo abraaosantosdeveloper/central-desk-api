@@ -72,7 +72,7 @@ class UserControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.email").value(EMAIL))
                 .andExpect(jsonPath("$.fullName").value("Maria da Silva"))
-                .andExpect(jsonPath("$.departmentName").value("Geral"))
+                .andExpect(jsonPath("$.departmentName").value("Comunidade"))
                 .andExpect(jsonPath("$.departmentApprovalPending").value(false))
                 .andExpect(jsonPath("$.roles", empty()))
                 .andExpect(jsonPath("$.passwordHash").doesNotExist())
@@ -85,7 +85,7 @@ class UserControllerIntegrationTest {
 
         mockMvc.perform(get("/users/me").cookie(loginCookie()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.departmentName").value("Geral"))
+                .andExpect(jsonPath("$.departmentName").value("Comunidade"))
                 .andExpect(jsonPath("$.departmentApprovalPending").value(true));
     }
 
@@ -135,7 +135,7 @@ class UserControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.fullName").value("Maria Souza"))
                 .andExpect(jsonPath("$.email").value(EMAIL))
-                .andExpect(jsonPath("$.departmentName").value("Geral"));
+                .andExpect(jsonPath("$.departmentName").value("Comunidade"));
 
         assertThat(jdbc.queryForObject("SELECT full_name FROM users WHERE email = ?", String.class, EMAIL))
                 .isEqualTo("Maria Souza");

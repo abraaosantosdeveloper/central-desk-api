@@ -69,7 +69,7 @@ class TicketControllerIntegrationTest {
         Matcher matcher = TOKEN_IN_COOKIE.matcher(setCookie);
         assertThat(matcher.find()).isTrue();
         session = new Cookie("access_token", matcher.group(1));
-        hardwareId = jdbc.queryForObject("SELECT id FROM categories WHERE label = 'Hardware'", String.class);
+        hardwareId = jdbc.queryForObject("SELECT id FROM categories WHERE label = 'Serviços'", String.class);
     }
 
     // A limpeza padrão preserva administradores; o criado aqui sai ao final
@@ -88,7 +88,7 @@ class TicketControllerIntegrationTest {
                 .andExpect(header().string(HttpHeaders.LOCATION, startsWith("/tickets/")))
                 .andExpect(jsonPath("$.title").value("Impressora parada"))
                 .andExpect(jsonPath("$.status").value("OPEN"))
-                .andExpect(jsonPath("$.category.label").value("Hardware"))
+                .andExpect(jsonPath("$.category.label").value("Serviços"))
                 .andExpect(jsonPath("$.priority.label").value("Média"))
                 .andExpect(jsonPath("$.requesterName").value("Maria da Silva"))
                 .andExpect(jsonPath("$.assigneeId").doesNotExist())
@@ -269,9 +269,9 @@ class TicketControllerIntegrationTest {
     void listsCategoriesByName() throws Exception {
         mockMvc.perform(get("/categories").cookie(session))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(6)))
+                .andExpect(jsonPath("$", hasSize(4)))
                 .andExpect(jsonPath("$[*].label").value(contains(
-                        "Acesso e contas", "Hardware", "Outros", "Rede e internet", "Sistemas internos", "Software")))
+                        "Acesso e contas", "Outros", "Serviços", "Software")))
                 .andExpect(jsonPath("$[0].color").value("#F59E0B"));
     }
 
